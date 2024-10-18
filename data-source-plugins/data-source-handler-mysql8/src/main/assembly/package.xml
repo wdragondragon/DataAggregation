@@ -19,7 +19,7 @@
         <fileSet>
             <directory>target/</directory>
             <includes>
-                <include>data-sourcer-handler-mysql8-1.0-SNAPSHOT.jar</include>
+                <include>data-source-handler-mysql8-1.0-SNAPSHOT.jar</include>
             </includes>
             <outputDirectory>plugin/source/mysql8</outputDirectory>
         </fileSet>
