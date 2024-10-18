@@ -1,0 +1,6 @@
+{
+  "name": "mysql5",
+  "class": "com.jdragon.aggregation.datasource.mysql5.MysqlSourcePlugin",
+  "description": "mysql5",
+  "developer": "jdragon"
+}

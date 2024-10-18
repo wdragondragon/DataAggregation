@@ -1,0 +1,6 @@
+{
+  "name": "mysql8reader",
+  "class": "com.jdragon.aggregation.mysql8.Mysql8Reader",
+  "description": "mysql8",
+  "developer": "jdragon"
+}

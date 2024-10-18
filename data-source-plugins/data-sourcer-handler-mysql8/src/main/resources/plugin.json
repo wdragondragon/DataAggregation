@@ -1,0 +1,6 @@
+{
+  "name": "mysql8",
+  "class": "com.jdragon.aggregation.datasource.mysql8.Mysql8SourcePlugin",
+  "description": "mysql8",
+  "developer": "jdragon"
+}

@@ -1,0 +1,6 @@
+{
+  "name": "mysql5reader",
+  "class": "com.jdragon.aggregation.mysql5.Mysql5Reader",
+  "description": "mysql5",
+  "developer": "jdragon"
+}
