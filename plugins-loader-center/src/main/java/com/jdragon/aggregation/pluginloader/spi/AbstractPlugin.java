@@ -53,22 +53,5 @@ public abstract class AbstractPlugin implements PluginAble {
 
     }
 
-    public void preCheck() {
-    }
-
-    public void prepare() {
-    }
-
-    public void post() {
-    }
-
-    public void preHandler(Configuration jobConfiguration) {
-
-    }
-
-    public void postHandler(Configuration jobConfiguration) {
-
-    }
-
 
 }

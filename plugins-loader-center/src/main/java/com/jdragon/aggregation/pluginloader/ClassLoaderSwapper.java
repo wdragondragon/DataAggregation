@@ -2,7 +2,7 @@ package com.jdragon.aggregation.pluginloader;
 
 import com.jdragon.aggregation.pluginloader.type.IPluginType;
 
-public final class ClassLoaderSwapper {
+public final class ClassLoaderSwapper{
     private ClassLoader storeClassLoader = null;
 
     private ClassLoaderSwapper() {
@@ -12,7 +12,14 @@ public final class ClassLoaderSwapper {
         return new ClassLoaderSwapper();
     }
 
+    public static ClassLoaderSwapper newCurrentThreadClassLoaderSwapper(IPluginType pluginType, String pluginName) {
+        ClassLoaderSwapper classLoaderSwapper = new ClassLoaderSwapper();
+        classLoaderSwapper.setCurrentThreadClassLoader(pluginType, pluginName);
+        return classLoaderSwapper;
+    }
+
     public void setCurrentThreadClassLoader(IPluginType pluginType, String pluginName) {
+
         JarLoader jarLoader = LoadUtil.getJarLoader(pluginType, pluginName);
         setCurrentThreadClassLoader(jarLoader);
     }

@@ -2,7 +2,11 @@ package com.jdragon.aggregation.core.plugin;
 
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.pluginloader.spi.AbstractPlugin;
+import lombok.Getter;
+import lombok.Setter;
 
+@Setter
+@Getter
 public class AbstractJobPlugin extends AbstractPlugin {
     //作业的config
     private Configuration pluginJobConf;
@@ -12,38 +16,21 @@ public class AbstractJobPlugin extends AbstractPlugin {
 
     private String peerPluginName;
 
-    public Configuration getPluginJobConf() {
-        return pluginJobConf;
+
+    public void preCheck() {
     }
 
-    public void setPluginJobConf(Configuration pluginJobConf) {
-        this.pluginJobConf = pluginJobConf;
+    public void prepare() {
     }
 
-
-    public Configuration getPeerPluginJobConf() {
-        return peerPluginJobConf;
+    public void post() {
     }
 
-    public void setPeerPluginJobConf(Configuration peerPluginJobConf) {
-        this.peerPluginJobConf = peerPluginJobConf;
-    }
-
-    public String getPeerPluginName() {
-        return peerPluginName;
-    }
-
-    public void setPeerPluginName(String peerPluginName) {
-        this.peerPluginName = peerPluginName;
-    }
-
-    @Override
-    public void init() {
+    public void preHandler(Configuration jobConfiguration) {
 
     }
 
-    @Override
-    public void destroy() {
+    public void postHandler(Configuration jobConfiguration) {
 
     }
 }
