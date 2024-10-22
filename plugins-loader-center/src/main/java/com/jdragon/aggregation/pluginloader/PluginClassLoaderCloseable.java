@@ -5,18 +5,20 @@ import com.jdragon.aggregation.pluginloader.type.IPluginType;
 
 public final class PluginClassLoaderCloseable implements AutoCloseable {
 
-    private ClassLoaderSwapper classLoaderSwapper;
+    private final ClassLoaderSwapper classLoaderSwapper;
 
-    private IPluginType pluginType;
+    private final IPluginType pluginType;
 
-    private String pluginName;
+    private final String pluginName;
 
     public static PluginClassLoaderCloseable newCurrentThreadClassLoaderSwapper(IPluginType pluginType, String pluginName) {
-        PluginClassLoaderCloseable classLoaderSwapper = new PluginClassLoaderCloseable();
-        classLoaderSwapper.pluginName = pluginName;
-        classLoaderSwapper.pluginType = pluginType;
-        classLoaderSwapper.classLoaderSwapper = ClassLoaderSwapper.newCurrentThreadClassLoaderSwapper(pluginType, pluginName);
-        return classLoaderSwapper;
+        return new PluginClassLoaderCloseable(pluginType, pluginName);
+    }
+
+    private PluginClassLoaderCloseable(IPluginType pluginType, String pluginName) {
+        this.pluginName = pluginName;
+        this.pluginType = pluginType;
+        this.classLoaderSwapper = ClassLoaderSwapper.newCurrentThreadClassLoaderSwapper(pluginType, pluginName);
     }
 
     public <T extends AbstractPlugin> T loadPlugin() {
