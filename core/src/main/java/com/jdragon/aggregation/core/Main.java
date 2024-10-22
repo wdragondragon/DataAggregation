@@ -7,12 +7,12 @@ import com.jdragon.aggregation.pluginloader.PluginClassLoaderCloseable;
 public class Main {
     public static void main(String[] args) {
         try (PluginClassLoaderCloseable classLoaderSwapper = PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(PluginType.READER, "mysql8reader")) {
-            AbstractJobPlugin mysql8 = classLoaderSwapper.loadPlugin(AbstractJobPlugin.class);
+            AbstractJobPlugin mysql8 = classLoaderSwapper.loadPlugin();
             mysql8.init();
         }
 
         try (PluginClassLoaderCloseable classLoaderSwapper = PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(PluginType.READER, "mysql5reader")) {
-            AbstractJobPlugin mysql5 = classLoaderSwapper.loadPlugin(AbstractJobPlugin.class);
+            AbstractJobPlugin mysql5 = classLoaderSwapper.loadPlugin();
             mysql5.init();
         }
     }

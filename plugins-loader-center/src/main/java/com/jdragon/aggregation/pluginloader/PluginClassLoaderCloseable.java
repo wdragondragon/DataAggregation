@@ -19,8 +19,8 @@ public final class PluginClassLoaderCloseable implements AutoCloseable {
         return classLoaderSwapper;
     }
 
-    public <T extends AbstractPlugin> T loadPlugin(Class<T> tClass) {
-        return LoadUtil.loadJobPlugin(pluginType, pluginName, tClass);
+    public <T extends AbstractPlugin> T loadPlugin() {
+        return LoadUtil.loadJobPlugin(pluginType, pluginName);
     }
 
 

@@ -16,7 +16,7 @@ public class LoadUtil {
 
     @SuppressWarnings("unchecked")
     public static <T extends AbstractPlugin> T loadJobPlugin(IPluginType pluginType,
-                                                             String pluginName, Class<T> realClass) {
+                                                             String pluginName) {
         Class<? extends AbstractPlugin> clazz = LoadUtil.loadPluginClass(pluginType, pluginName);
 
         try {
