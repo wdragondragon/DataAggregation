@@ -23,6 +23,7 @@ public class LoadUtil {
             AbstractPlugin jobPlugin = clazz.newInstance();
             jobPlugin.setPluginConf(ConfigParser.parseOnePluginConfig(pluginType, pluginName));
             jobPlugin.setPluginType(pluginType);
+            jobPlugin.setClassLoader(clazz.getClassLoader());
             return (T) jobPlugin;
         } catch (InstantiationException | IllegalAccessException e) {
             throw AggregationException.asException(

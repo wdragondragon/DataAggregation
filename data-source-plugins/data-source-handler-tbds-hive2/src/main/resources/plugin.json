@@ -1,0 +1,6 @@
+{
+  "name": "tbds-hive2",
+  "class": "com.jdragon.aggregation.datasource.tbds.hive2.Hive2SourcePlugin",
+  "description": "mysql8",
+  "developer": "jdragon"
+}

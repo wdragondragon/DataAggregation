@@ -9,7 +9,8 @@ public enum DataSourceType {
     Oracle("oracle", "oracle.jdbc.OracleDriver"),
     SQLServer("sqlserver", "com.microsoft.sqlserver.jdbc.SQLServerDriver"),
     PostgreSQL("postgresql", "org.postgresql.Driver"),
-    DM("dm", "dm.jdbc.driver.DmDriver");
+    DM("dm", "dm.jdbc.driver.DmDriver"),
+    HIVE("hive", "org.apache.hive.jdbc.HiveDriver");
 
     private final String typeName;
 

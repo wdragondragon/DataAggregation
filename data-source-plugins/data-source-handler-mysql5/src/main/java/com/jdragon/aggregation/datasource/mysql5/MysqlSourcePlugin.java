@@ -2,6 +2,7 @@ package com.jdragon.aggregation.datasource.mysql5;
 
 import com.jdragon.aggregation.datasource.DataSourceType;
 import com.jdragon.aggregation.datasource.IDataSourceSql;
+import com.jdragon.aggregation.datasource.rdbms.DefaultSourceSql;
 import com.jdragon.aggregation.datasource.rdbms.RdbmsSourcePlugin;
 import lombok.Getter;
 
@@ -24,6 +25,6 @@ public class MysqlSourcePlugin extends RdbmsSourcePlugin {
     private final String extraParameterStart = "?";
 
     public MysqlSourcePlugin() {
-        super(new MysqlSql());
+        super(new DefaultSourceSql());
     }
 }

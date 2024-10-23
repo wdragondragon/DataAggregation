@@ -2,10 +2,16 @@ package com.jdragon.aggregation.pluginloader.spi;
 
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.pluginloader.type.IPluginType;
+import lombok.Getter;
+import lombok.Setter;
 
 public abstract class AbstractPlugin implements PluginAble {
 
     private IPluginType pluginType;
+
+    @Getter
+    @Setter
+    private ClassLoader classLoader;
 
     //插件本身的plugin
     private Configuration pluginConf;
@@ -45,13 +51,11 @@ public abstract class AbstractPlugin implements PluginAble {
 
     @Override
     public void init() {
-        
+
     }
 
     @Override
     public void destroy() {
 
     }
-
-
 }

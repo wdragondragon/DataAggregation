@@ -10,6 +10,8 @@ public abstract class AbstractDataSourcePlugin extends AbstractPlugin {
 
     public abstract Connection getConnection(BaseDataSourceDTO dataSource);
 
+    public abstract Table<Map<String, Object>> executeQuerySql(BaseDataSourceDTO dataSource, String sql, boolean columnLabel);
+
     public abstract Table<Map<String, Object>> dataModelPreview(BaseDataSourceDTO dataSource, String tableName, String limitSize);
 
 }

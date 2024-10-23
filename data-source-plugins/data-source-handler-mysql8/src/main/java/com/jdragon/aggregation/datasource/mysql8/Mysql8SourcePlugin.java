@@ -1,6 +1,7 @@
 package com.jdragon.aggregation.datasource.mysql8;
 
 import com.jdragon.aggregation.datasource.DataSourceType;
+import com.jdragon.aggregation.datasource.rdbms.DefaultSourceSql;
 import com.jdragon.aggregation.datasource.rdbms.RdbmsSourcePlugin;
 import lombok.Getter;
 
@@ -23,6 +24,6 @@ public class Mysql8SourcePlugin extends RdbmsSourcePlugin {
     private final String extraParameterStart = "?";
 
     public Mysql8SourcePlugin() {
-        super(new MysqlSql());
+        super(new DefaultSourceSql());
     }
 }
