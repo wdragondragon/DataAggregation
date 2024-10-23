@@ -22,4 +22,7 @@ public class Mysql8SourcePlugin extends RdbmsSourcePlugin {
 
     private final String extraParameterStart = "?";
 
+    public Mysql8SourcePlugin() {
+        super(new MysqlSql());
+    }
 }
