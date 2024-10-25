@@ -13,6 +13,8 @@
     <packaging>pom</packaging>
     <modules>
         <module>data-source-handler-rdbms</module>
+        <module>data-source-handler-abstract</module>
+        <module>data-source-handler-mysql5</module>
         <module>data-source-handler-mysql8</module>
         <module>data-source-handler-tbds-hive2</module>
     </modules>

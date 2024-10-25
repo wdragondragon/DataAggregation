@@ -52,6 +52,17 @@
             <artifactId>hive-common</artifactId>
             <version>2.2.0-TBDS-5.2.0.1</version>
         </dependency>
+        <dependency>
+            <groupId>org.apache.hive</groupId>
+            <artifactId>hive-exec</artifactId>
+            <version>2.2.0-TBDS-5.2.0.1</version>
+        </dependency>
+        <!-- Hadoop common dependency for Hive 2.2.0 -->
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-common</artifactId>
+            <version>2.7.2-TBDS-5.2.0.1</version> <!-- 与 Hive 2.2.0 兼容的版本 -->
+        </dependency>
     </dependencies>
     <build>
         <plugins>

@@ -14,8 +14,6 @@
         <module>core</module>
         <module>job-plugins</module>
         <module>data-source-plugins</module>
-        <module>data-source-plugins/data-source-handler-abstract</module>
-        <module>data-source-plugins/data-source-handler-mysql5</module>
     </modules>
 
     <properties>
