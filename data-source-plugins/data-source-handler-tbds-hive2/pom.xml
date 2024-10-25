@@ -39,6 +39,12 @@
         </dependency>
         <dependency>
             <groupId>com.jdragon.aggregation</groupId>
+            <artifactId>data-source-handler-abstract</artifactId>
+            <version>1.0-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.jdragon.aggregation</groupId>
             <artifactId>data-source-handler-rdbms</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>

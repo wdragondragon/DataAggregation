@@ -12,6 +12,10 @@ public abstract class AbstractDataSourcePlugin extends AbstractPlugin {
 
     public abstract Table<Map<String, Object>> executeQuerySql(BaseDataSourceDTO dataSource, String sql, boolean columnLabel);
 
+    public abstract void executeUpdate(BaseDataSourceDTO dataSource, String sql);
+
     public abstract Table<Map<String, Object>> dataModelPreview(BaseDataSourceDTO dataSource, String tableName, String limitSize);
+
+    public abstract void insertData(InsertDataDTO insertDataDTO);
 
 }

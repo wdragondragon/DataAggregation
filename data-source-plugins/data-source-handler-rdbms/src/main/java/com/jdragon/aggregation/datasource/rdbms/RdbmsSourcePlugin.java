@@ -6,6 +6,7 @@ import com.jdragon.aggregation.commons.pagination.Table;
 import com.jdragon.aggregation.datasource.AbstractDataSourcePlugin;
 import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
 import com.jdragon.aggregation.datasource.IDataSourceSql;
+import com.jdragon.aggregation.datasource.InsertDataDTO;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.calcite.adapter.jdbc.JdbcSchema;
@@ -83,6 +84,64 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
         }
     }
 
+    @Override
+    public void insertData(InsertDataDTO insertDataDto) {
+        Integer cacheSize = insertDataDto.getBatchSize();
+        if (cacheSize == null) {
+            cacheSize = 1024;
+        }
+        if (insertDataDto.isTruncate()) {
+            String sql = MessageFormat.format(getDataSourceSql().getTruncateTable(), insertDataDto.getTableName());
+            executeUpdate(insertDataDto.getBaseDataSourceDTO(), sql);
+        }
+        List<String> field = insertDataDto.getField();
+        StringBuilder fields = new StringBuilder(getQuotationMarks() + field.get(0) + getQuotationMarks());
+        for (int i = 1; i < field.size(); i++) {
+            String s = getQuotationMarks() + field.get(i) + getQuotationMarks();
+            fields.append(",").append(s);
+        }
+
+        List<String> valueCache = new LinkedList<>();
+        for (List<String> dataN : insertDataDto.getData()) {
+            for (int i = 0; i < dataN.size(); i++) {
+                String columnValue = dataN.get(i);
+                if (columnValue != null) {
+                    columnValue = "'" + columnValue + "'";
+                }
+                dataN.set(i, columnValue);
+            }
+            valueCache.add("(" + StringUtils.join(dataN, ",") + ")");
+
+            if (valueCache.size() >= cacheSize) {
+                String sql = MessageFormat.format(getDataSourceSql().getInsertData(),
+                        insertDataDto.getTableName(),
+                        fields.toString(),
+                        StringUtils.join(valueCache, ","));
+                executeUpdate(insertDataDto.getBaseDataSourceDTO(), sql);
+                valueCache.clear();
+            }
+        }
+        if (!valueCache.isEmpty()) {
+            String sql = MessageFormat.format(getDataSourceSql().getInsertData(),
+                    insertDataDto.getTableName(),
+                    fields.toString(),
+                    StringUtils.join(valueCache, ","));
+            executeUpdate(insertDataDto.getBaseDataSourceDTO(), sql);
+            valueCache.clear();
+        }
+    }
+
+    @Override
+    public void executeUpdate(BaseDataSourceDTO dataSource, String sql) {
+        try (Connection connection = getConnection(dataSource);
+             PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+            preparedStatement.execute();
+        } catch (SQLException e) {
+            log.info(sql);
+            log.error("execute query sql fail at MateDataService::excuteSql()", e);
+            throw new RuntimeException(e.getMessage());
+        }
+    }
 
     @Override
     public Table<Map<String, Object>> executeQuerySql(BaseDataSourceDTO dataSource, String sql, boolean columnLabel) {
