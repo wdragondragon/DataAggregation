@@ -1,5 +1,6 @@
 package com.jdragon.aggregation.datasource.file.tbds.hdfs;
 
+import cn.hutool.http.HttpUtil;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.TypeReference;
@@ -17,6 +18,8 @@ import org.slf4j.LoggerFactory;
 
 
 import java.io.*;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -104,11 +107,17 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
         String hdfsSiteFile = configuration.getString(Key.HDFS_SITE_FILE_PATH);
 
         if (StringUtils.isNotBlank(hdfsSiteFile)) {
-            if (new File(hdfsSiteFile).exists()) {
-                LOG.info("load hdfs-site.xml at {}", hdfsSiteFile);
-                hadoopConf.addResource(new Path(hdfsSiteFile));
+            if (hdfsSiteFile.startsWith("http")) {
+                String s = HttpUtil.get(hdfsSiteFile);
+                ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(s.getBytes(StandardCharsets.UTF_8));
+                hadoopConf.addResource(byteArrayInputStream);
             } else {
-                LOG.info("hdfs-site.xml {} not exist", hdfsSiteFile);
+                if (new File(hdfsSiteFile).exists()) {
+                    LOG.info("load hdfs-site.xml at {}", hdfsSiteFile);
+                    hadoopConf.addResource(new Path(hdfsSiteFile));
+                } else {
+                    LOG.info("hdfs-site.xml {} not exist", hdfsSiteFile);
+                }
             }
         } else {
             LOG.warn("hdfs-site.xml not set");
@@ -117,15 +126,20 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
         String coreSiteFile = configuration.getString(Key.CORE_SITE_FILE_PATH);
 
         if (StringUtils.isNotBlank(coreSiteFile)) {
-            if (new File(coreSiteFile).exists()) {
-                LOG.info("load core-site.xml at {}", coreSiteFile);
-                hadoopConf.addResource(new Path(coreSiteFile));
+            if (coreSiteFile.startsWith("http")) {
+                String s = HttpUtil.get(coreSiteFile);
+                ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(s.getBytes(StandardCharsets.UTF_8));
+                hadoopConf.addResource(byteArrayInputStream);
             } else {
-                LOG.info("core-site.xml {} not exist", coreSiteFile);
+                if (new File(coreSiteFile).exists()) {
+                    LOG.info("load core-site.xml at {}", coreSiteFile);
+                    hadoopConf.addResource(new Path(coreSiteFile));
+                } else {
+                    LOG.info("core-site.xml {} not exist", coreSiteFile);
+                }
             }
         } else {
             LOG.warn("core-site.xml not set");
-
         }
 
         //是否有Kerberos认证

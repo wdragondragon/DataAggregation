@@ -18,8 +18,10 @@ public class HdfsTest {
         String targetPath = "C:\\Users\\jdrag\\Desktop\\aggregation\\test";
 
         Configuration configuration = Configuration.newDefault();
-        configuration.set("hdfsSiteFilePath", "C:\\Users\\jdrag\\Desktop\\aggregation\\core-site.xml");
-        configuration.set("coreSiteFilePath", "C:\\Users\\jdrag\\Desktop\\aggregation\\hdfs-site.xml ");
+//        configuration.set("hdfsSiteFilePath", "C:\\Users\\jdrag\\Desktop\\aggregation\\core-site.xml");
+//        configuration.set("coreSiteFilePath", "C:\\Users\\jdrag\\Desktop\\aggregation\\hdfs-site.xml");
+        configuration.set("hdfsSiteFilePath", "http://127.0.0.1:9000/hdfs-site.xml");
+        configuration.set("coreSiteFilePath", "http://127.0.0.1:9000/core-site.xml");
         configuration.set("haveKerberos", "false");
 
         try (PluginClassLoaderCloseable classLoaderSwapper = PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(SourcePluginType.SOURCE, "tbds-hdfs")) {
