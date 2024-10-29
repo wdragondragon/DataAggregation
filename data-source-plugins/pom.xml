@@ -17,6 +17,8 @@
         <module>data-source-handler-mysql5</module>
         <module>data-source-handler-mysql8</module>
         <module>data-source-handler-tbds-hive2</module>
+        <module>data-source-handler-file-tbds-hdfs</module>
+        <module>hdfs-auth-util</module>
     </modules>
 
     <properties>
