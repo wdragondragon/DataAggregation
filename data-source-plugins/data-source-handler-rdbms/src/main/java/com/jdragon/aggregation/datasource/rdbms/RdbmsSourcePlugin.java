@@ -148,8 +148,11 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
         Table<Map<String, Object>> table = new Table<>();
         ResultSet resultSet = null;
         List<Map<String, Object>> resultList = new ArrayList<>();
-        try (Connection connection = getConnection(dataSource);
-             Statement statement = connection.createStatement()) {
+        Connection connection = null;
+        Statement statement = null;
+        try {
+            connection = getConnection(dataSource);
+            statement = connection.createStatement();
             statement.setEscapeProcessing(false);
             resultSet = statement.executeQuery(sql);
             ResultSetMetaData metaData = resultSet.getMetaData();
@@ -175,7 +178,7 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
             log.error("execute query sql fail at MateDataService::excuteSql()", e);
             throw new RuntimeException(e.getMessage());
         } finally {
-            closeResource(resultSet, null, null);
+            closeResource(resultSet, statement, connection);
         }
         table.setBodies(resultList);
         return table;

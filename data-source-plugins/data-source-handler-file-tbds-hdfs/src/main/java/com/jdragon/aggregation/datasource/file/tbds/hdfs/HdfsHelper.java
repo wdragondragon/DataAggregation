@@ -18,7 +18,6 @@ import org.slf4j.LoggerFactory;
 
 
 import java.io.*;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Map;
@@ -199,7 +198,7 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
             FileSystem fileSystem = getFileSystem();
             fileSystem.close();
         } catch (IOException e) {
-            String message = String.format("关闭FileSystem时发生IO异常,请检查您的网络是否正常！");
+            String message = "关闭FileSystem时发生IO异常,请检查您的网络是否正常！";
             LOG.error(message);
             throw new RuntimeException(e);
         }
