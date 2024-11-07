@@ -1,6 +1,7 @@
 package com.jdragon.aggregation.auth.hdfs;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.security.UserGroupInformation;
 
@@ -27,18 +28,18 @@ public class GetKerberosObject {
 
     private final Map<String, UserGroupInformation> kerberosCache = new HashMap<>();
 
-    private final Boolean hasKerberos;
+    private final String authenticationType;
 
-    public GetKerberosObject(String principal, String userKeytabFile, String krb5Conf, Configuration configuration, Boolean hasKerberos) {
+    public GetKerberosObject(String principal, String userKeytabFile, String krb5Conf, Configuration configuration, String authenticationType) {
         this.configuration = configuration;
         this.principal = principal;
         this.userKeytabFile = userKeytabFile;
         this.krb5Conf = krb5Conf;
-        this.hasKerberos = hasKerberos;
+        this.authenticationType = authenticationType;
     }
 
     public <T> T doAs(PrivilegedExceptionAction<T> privilegedExceptionAction) throws Exception {
-        if (!hasKerberos) {
+        if (authenticationType == null || StringUtils.isBlank(authenticationType)) {
             return privilegedExceptionAction.run();
         }
         UserGroupInformation userGroupInformation = this.initHadoopSecurity(principal, userKeytabFile, krb5Conf, configuration);
@@ -46,7 +47,7 @@ public class GetKerberosObject {
     }
 
     public void doAs(PrivilegedExceptionActionNoResult privilegedExceptionAction) throws Exception {
-        if (!hasKerberos) {
+        if (authenticationType == null || StringUtils.isBlank(authenticationType)) {
             privilegedExceptionAction.run();
         }
         doAs(() -> {
@@ -56,17 +57,22 @@ public class GetKerberosObject {
     }
 
     public UserGroupInformation initHadoopSecurity(String kerberosPrincipal, String kerberosKeytabFilePath, String krb5Conf, Configuration conf) throws IOException {
-        String loginContextName = kerberosPrincipal + kerberosKeytabFilePath;
-        if (kerberosCache.containsKey(loginContextName)) {
-            return kerberosCache.get(loginContextName);
+        if ("kerberos".equalsIgnoreCase(authenticationType)) {
+            String loginContextName = kerberosPrincipal + kerberosKeytabFilePath;
+            if (kerberosCache.containsKey(loginContextName)) {
+                return kerberosCache.get(loginContextName);
+            }
+            LoginUtil.setJaasConf(loginContextName, kerberosPrincipal, kerberosKeytabFilePath);
+//            LoginUtil.setJaasConf(kerberosPrincipal + "-" + kerberosKeytabFilePath, kerberosPrincipal, kerberosKeytabFilePath);
+//            LoginUtil.setZookeeperServerPrincipal("zookeeper.server.principal", "zookeeper/hadoop");
+            UserGroupInformation login = LoginUtil.login(kerberosPrincipal, kerberosKeytabFilePath, krb5Conf, conf);
+            log.info("Kerberos login success, {}", login.toString());
+            kerberosCache.put(loginContextName, login);
+            return login;
         }
-        LoginUtil.setJaasConf(loginContextName, kerberosPrincipal, kerberosKeytabFilePath);
-//        LoginUtil.setJaasConf(kerberosPrincipal + "-" + kerberosKeytabFilePath, kerberosPrincipal, kerberosKeytabFilePath);
-//        LoginUtil.setZookeeperServerPrincipal("zookeeper.server.principal", "zookeeper/hadoop");
-        UserGroupInformation login = LoginUtil.login(kerberosPrincipal, kerberosKeytabFilePath, krb5Conf, conf);
-        log.info("Kerberos login success, " + login.toString());
-        kerberosCache.put(loginContextName, login);
-        return login;
+        UserGroupInformation.setConfiguration(conf);
+        UserGroupInformation.loginUserFromSubject(null);
+        return UserGroupInformation.getLoginUser();
     }
 
     @FunctionalInterface

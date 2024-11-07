@@ -141,24 +141,23 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
             LOG.warn("core-site.xml not set");
         }
 
-        //是否有Kerberos认证
-        Boolean haveKerberos = configuration.getBool(Key.HAVE_KERBEROS, false);
-        if (haveKerberos) {
-            this.kerberosKeytabFilePath = configuration.getString(Key.KERBEROS_KEYTAB_FILE_PATH);
-            this.kerberosPrincipal = configuration.getString(Key.KERBEROS_PRINCIPAL);
-            this.krb5Conf = configuration.getString(Key.JAVA_SECURITY_KRB5_CONF_KEY);
-            hadoopConf.set(HADOOP_SECURITY_AUTHENTICATION_KEY, "kerberos");
-            System.setProperty(JAVA_SECURITY_KRB5_CONF_KEY, this.krb5Conf);
-        }
 
         Configuration hadoopConfig = configuration.getConfiguration("hadoopConfig");
 
+        String authenticationType = null;
         if (hadoopConfig != null) {
             Map<String, String> hadoopConfigMap = JSONObject.parseObject(hadoopConfig.toJSON(), new TypeReference<Map<String, String>>() {
             });
             hadoopConfigMap.forEach(this.hadoopConf::set);
+            authenticationType = hadoopConfigMap.get(HADOOP_SECURITY_AUTHENTICATION_KEY);
         }
-        this.kerberosObject = new GetKerberosObject(kerberosPrincipal, kerberosKeytabFilePath, krb5Conf, hadoopConf, haveKerberos);
+        if ("kerberos".equalsIgnoreCase(authenticationType)) {
+            this.kerberosKeytabFilePath = configuration.getString(Key.KERBEROS_KEYTAB_FILE_PATH);
+            this.kerberosPrincipal = configuration.getString(Key.KERBEROS_PRINCIPAL);
+            this.krb5Conf = configuration.getString(Key.JAVA_SECURITY_KRB5_CONF_KEY);
+            System.setProperty(JAVA_SECURITY_KRB5_CONF_KEY, this.krb5Conf);
+        }
+        this.kerberosObject = new GetKerberosObject(kerberosPrincipal, kerberosKeytabFilePath, krb5Conf, hadoopConf, authenticationType);
         LOG.info("hadoopConfig details:{}", JSON.toJSONString(this.hadoopConf));
         return true;
     }
