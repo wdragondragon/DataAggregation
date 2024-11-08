@@ -102,7 +102,7 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
     @Override
     public boolean connect(Configuration configuration) {
         hadoopConf = new org.apache.hadoop.conf.Configuration();
-        hadoopConf.set("fs.hdfs.impl", "org.apache.hadoop.hdfs.DistributedFileSystem");
+//        hadoopConf.set("fs.hdfs.impl", "org.apache.hadoop.hdfs.DistributedFileSystem");
         String hdfsSiteFile = configuration.getString(Key.HDFS_SITE_FILE_PATH);
 
         if (StringUtils.isNotBlank(hdfsSiteFile)) {
@@ -148,8 +148,10 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
         if (hadoopConfig != null) {
             Map<String, String> hadoopConfigMap = JSONObject.parseObject(hadoopConfig.toJSON(), new TypeReference<Map<String, String>>() {
             });
+            LOG.info("覆盖配置：{}", JSONObject.toJSON(hadoopConfigMap));
             hadoopConfigMap.forEach(this.hadoopConf::set);
             authenticationType = hadoopConfigMap.get(HADOOP_SECURITY_AUTHENTICATION_KEY);
+            LOG.info("认证类型：{}", authenticationType);
         }
         if ("kerberos".equalsIgnoreCase(authenticationType)) {
             this.kerberosKeytabFilePath = configuration.getString(Key.KERBEROS_KEYTAB_FILE_PATH);
