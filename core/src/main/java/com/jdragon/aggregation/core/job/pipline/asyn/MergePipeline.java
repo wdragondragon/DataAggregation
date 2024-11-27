@@ -2,25 +2,20 @@ package com.jdragon.aggregation.core.job.pipline.asyn;
 
 import com.jdragon.aggregation.core.job.Message;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 
-public class MergePipeline extends StreamHandler {
-    private final ExecutorService executorService;
-    private final StreamHandler[] nodes;
+public class MergePipeline extends PipelineAbstract {
 
     public MergePipeline(StreamHandler... nodes) {
+        super(nodes);
         setOutputQueue(new LinkedBlockingQueue<>());
-        this.nodes = nodes;
-        this.executorService = Executors.newCachedThreadPool();
     }
 
     @Override
     public void process() throws InterruptedException {
-        for (StreamHandler node : this.nodes) {
+        for (StreamHandler node : this.getNodes()) {
             node.process();
-            executorService.submit(() -> {
+            getExecutorService().submit(() -> {
                 try {
                     while (true) {
                         Message take = node.getOutputQueue().take();
@@ -31,12 +26,5 @@ public class MergePipeline extends StreamHandler {
                 }
             });
         }
-    }
-
-    public void stop() {
-        for (StreamHandler handler : this.nodes) {
-            handler.stop();
-        }
-        executorService.shutdownNow();
     }
 }

@@ -2,17 +2,13 @@ package com.jdragon.aggregation.core.job.pipline.asyn;
 
 import com.jdragon.aggregation.core.job.Message;
 
-import java.util.List;
 import java.util.concurrent.*;
 
-public class Pipeline extends StreamHandler {
-    private final ExecutorService executorService;
-    private final StreamHandler[] nodes;  // DAG图的节点
-
+public class Pipeline extends PipelineAbstract {
     public Pipeline(StreamHandler... nodes) {
-        this.nodes = nodes;
+        super(nodes);
         StreamHandler pre = null;
-        for (StreamHandler node : this.nodes) {
+        for (StreamHandler node : this.getNodes()) {
             if (node.getOutputQueue() == null) {
                 node.setOutputQueue(new LinkedBlockingQueue<>());
             }
@@ -21,14 +17,13 @@ public class Pipeline extends StreamHandler {
             }
             pre = node;
         }
-        this.executorService = Executors.newCachedThreadPool();
     }
 
     // 启动流管道，依次处理所有流处理器
     @Override
-    public void process() {
-        for (StreamHandler node : nodes) {
-            executorService.submit(() -> {
+    public void process() throws InterruptedException {
+        for (StreamHandler node : getNodes()) {
+            getExecutorService().submit(() -> {
                 try {
                     node.process();  // 启动流处理器任务
                 } catch (InterruptedException e) {
@@ -40,32 +35,21 @@ public class Pipeline extends StreamHandler {
 
     @Override
     public void setInputQueue(BlockingQueue<Message> inputQueue) {
-        nodes[0].setInputQueue(inputQueue);
+        getNodes()[0].setInputQueue(inputQueue);
     }
 
     @Override
     public void setOutputQueue(BlockingQueue<Message> outputQueue) {
-        nodes[nodes.length - 1].setOutputQueue(outputQueue);
+        getNodes()[getNodes().length - 1].setOutputQueue(outputQueue);
     }
 
     @Override
     public BlockingQueue<Message> getInputQueue() {
-        return nodes[0].getInputQueue();
+        return getNodes()[0].getInputQueue();
     }
 
     @Override
     public BlockingQueue<Message> getOutputQueue() {
-        return nodes[nodes.length - 1].getOutputQueue();
-    }
-
-    public void start() {
-        process();
-    }
-
-    public void stop() {
-        for (StreamHandler handler : this.nodes) {
-            handler.stop();
-        }
-        executorService.shutdownNow();
+        return getNodes()[getNodes().length - 1].getOutputQueue();
     }
 }
