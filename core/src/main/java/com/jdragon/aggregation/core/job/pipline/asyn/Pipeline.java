@@ -12,14 +12,14 @@ public class Pipeline extends StreamHandler {
     public Pipeline(StreamHandler... nodes) {
         this.nodes = nodes;
         StreamHandler pre = null;
-        for (StreamHandler streamHandler : this.nodes) {
-            if (streamHandler.getOutputQueue() == null) {
-                streamHandler.setOutputQueue(new LinkedBlockingQueue<>());
+        for (StreamHandler node : this.nodes) {
+            if (node.getOutputQueue() == null) {
+                node.setOutputQueue(new LinkedBlockingQueue<>());
             }
             if (pre != null) {
-                streamHandler.setInputQueue(pre.getOutputQueue());
+                node.setInputQueue(pre.getOutputQueue());
             }
-            pre = streamHandler;
+            pre = node;
         }
         this.executorService = Executors.newCachedThreadPool();
     }

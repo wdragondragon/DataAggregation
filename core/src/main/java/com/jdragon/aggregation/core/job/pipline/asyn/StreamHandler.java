@@ -6,13 +6,13 @@ import lombok.Getter;
 
 import java.util.concurrent.BlockingQueue;
 
-@Getter
+
 @Data
 public abstract class StreamHandler {
 
-    protected BlockingQueue<Message> inputQueue;
+    private BlockingQueue<Message> inputQueue;
 
-    protected BlockingQueue<Message> outputQueue;
+    private BlockingQueue<Message> outputQueue;
 
     public StreamHandler() {
     }
