@@ -7,9 +7,9 @@ import java.util.concurrent.*;
 
 public class Pipeline extends StreamHandler {
     private final ExecutorService executorService;
-    private final List<StreamHandler> nodes;  // DAG图的节点
+    private final StreamHandler[] nodes;  // DAG图的节点
 
-    public Pipeline(List<StreamHandler> nodes) {
+    public Pipeline(StreamHandler... nodes) {
         this.nodes = nodes;
         StreamHandler pre = null;
         for (StreamHandler streamHandler : this.nodes) {
@@ -40,22 +40,22 @@ public class Pipeline extends StreamHandler {
 
     @Override
     public void setInputQueue(BlockingQueue<Message> inputQueue) {
-        nodes.get(0).setInputQueue(inputQueue);
+        nodes[0].setInputQueue(inputQueue);
     }
 
     @Override
     public void setOutputQueue(BlockingQueue<Message> outputQueue) {
-        nodes.get(nodes.size() - 1).setOutputQueue(outputQueue);
+        nodes[nodes.length - 1].setOutputQueue(outputQueue);
     }
 
     @Override
     public BlockingQueue<Message> getInputQueue() {
-        return nodes.get(0).getInputQueue();
+        return nodes[0].getInputQueue();
     }
 
     @Override
     public BlockingQueue<Message> getOutputQueue() {
-        return nodes.get(nodes.size() - 1).getOutputQueue();
+        return nodes[nodes.length - 1].getOutputQueue();
     }
 
     public void start() {

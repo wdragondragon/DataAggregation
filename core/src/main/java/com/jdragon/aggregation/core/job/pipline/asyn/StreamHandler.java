@@ -2,9 +2,11 @@ package com.jdragon.aggregation.core.job.pipline.asyn;
 
 import com.jdragon.aggregation.core.job.Message;
 import lombok.Data;
+import lombok.Getter;
 
 import java.util.concurrent.BlockingQueue;
 
+@Getter
 @Data
 public abstract class StreamHandler {
 
