@@ -1,6 +1,7 @@
 package com.jdragon.aggregation.datasource.queue.rocketmq;
 
 import com.jdragon.aggregation.datasource.queue.QueueAbstract;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
@@ -12,13 +13,14 @@ import org.apache.rocketmq.common.message.MessageExt;
 import java.util.Map;
 import java.util.function.Function;
 
+@Slf4j
 public class RocketQueue extends QueueAbstract {
 
     private DefaultMQProducer producer;
 
     private DefaultMQPushConsumer consumer;
 
-    public RocketQueue(Map<String, Object> configParams) {
+    public RocketQueue() {
 
     }
 
@@ -26,11 +28,11 @@ public class RocketQueue extends QueueAbstract {
     public void init(Map<String, Object> config) throws Exception {
         // 从 Map 中提取参数
         super.configParams = config;
-        String queueName = (String) configParams.get("queueName");
-        String brokerAddress = (String) configParams.get("brokerAddress");
+        String namesrvAddr = (String) configParams.get("namesrvAddr");
+        String producerGroup = (String) configParams.get("producerGroup");
 
-        producer = new DefaultMQProducer();
-        producer.setNamesrvAddr(brokerAddress);
+        producer = new DefaultMQProducer(producerGroup);
+        producer.setNamesrvAddr(namesrvAddr);
         try {
             producer.start();
         } catch (MQClientException e) {
@@ -40,10 +42,11 @@ public class RocketQueue extends QueueAbstract {
 
     @Override
     public void sendMessage(String message) throws Exception {
-        String queueName = (String) configParams.get("queueName");
-        Message msg = new Message(queueName, "tag", message.getBytes());
+        String topic = (String) configParams.get("topic");
+        Message msg = new Message(topic, "tag", message.getBytes());
+        log.info("RocketMQ发送消息: {}", message);
         SendResult sendResult = producer.send(msg);
-        System.out.println("RocketMQ消息已发送: " + sendResult);
+        log.info("RocketMQ消息已发送: {}", sendResult);
     }
 
     @Override
@@ -51,11 +54,11 @@ public class RocketQueue extends QueueAbstract {
         // RocketMQ 消费者实现
         // 创建消费者实例
         String consumerGroup = (String) configParams.get("consumerGroup");
-        String brokerAddress = (String) configParams.get("brokerAddress");
+        String namesrvAddr = (String) configParams.get("namesrvAddr");
         String topic = (String) configParams.get("topic");
-        String subExpression = (String) configParams.getOrDefault("topic", "*");
+        String subExpression = (String) configParams.getOrDefault("subExpression", "*");
         consumer = new DefaultMQPushConsumer(consumerGroup);
-        consumer.setNamesrvAddr(brokerAddress);
+        consumer.setNamesrvAddr(namesrvAddr);
         // 订阅主题
         consumer.subscribe(topic, subExpression);
 
@@ -65,11 +68,11 @@ public class RocketQueue extends QueueAbstract {
                 String message = new String(msg.getBody());
                 Boolean apply = messageProcessor.apply(message);
                 if (!apply) {
-                    System.out.println("停止消费消息: " + message);
+                    log.info("停止消费消息: {}", message);
                     consumer.resume();
                     break;
                 }
-                System.out.println("收到消息：" + message);
+                log.info("收到消息：{}", message);
             }
             return null;
         });
