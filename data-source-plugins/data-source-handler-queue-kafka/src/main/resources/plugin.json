@@ -1,0 +1,6 @@
+{
+  "name": "kafka",
+  "class": "com.jdragon.aggregation.datasource.queue.kafka.KafkaQueue",
+  "description": "kafka",
+  "developer": "jdragon"
+}

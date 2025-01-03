@@ -1,0 +1,6 @@
+{
+  "name": "rabbitmq",
+  "class": "com.jdragon.aggregation.datasource.queue.rabbitmq.RabbitQueue",
+  "description": "rabbitmq",
+  "developer": "jdragon"
+}

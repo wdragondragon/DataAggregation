@@ -1,0 +1,6 @@
+{
+  "name": "rocketmq",
+  "class": "com.jdragon.aggregation.datasource.queue.rocketmq.RocketQueue",
+  "description": "rocketmq",
+  "developer": "jdragon"
+}
