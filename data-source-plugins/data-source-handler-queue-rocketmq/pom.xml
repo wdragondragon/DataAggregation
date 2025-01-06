@@ -35,6 +35,11 @@
             <artifactId>rocketmq-client</artifactId>
             <version>4.9.3</version>
         </dependency>
+        <dependency>
+            <groupId>org.apache.rocketmq</groupId>
+            <artifactId>rocketmq-acl</artifactId>
+            <version>4.9.3</version>
+        </dependency>
     </dependencies>
     <build>
         <plugins>

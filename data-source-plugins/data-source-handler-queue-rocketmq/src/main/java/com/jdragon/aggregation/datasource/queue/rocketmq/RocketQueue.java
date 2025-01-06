@@ -2,6 +2,8 @@ package com.jdragon.aggregation.datasource.queue.rocketmq;
 
 import com.jdragon.aggregation.datasource.queue.QueueAbstract;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.rocketmq.acl.common.AclClientRPCHook;
+import org.apache.rocketmq.acl.common.SessionCredentials;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
@@ -30,8 +32,10 @@ public class RocketQueue extends QueueAbstract {
         super.configParams = config;
         String namesrvAddr = (String) configParams.get("namesrvAddr");
         String producerGroup = (String) configParams.get("producerGroup");
-
-        producer = new DefaultMQProducer(producerGroup);
+        String accessKey = (String) configParams.get("accessKey");
+        String secretKey = (String) configParams.get("secretKey");
+        AclClientRPCHook auth = new AclClientRPCHook(new SessionCredentials(accessKey, secretKey));
+        producer = new DefaultMQProducer(producerGroup, auth);
         producer.setNamesrvAddr(namesrvAddr);
         try {
             producer.start();
