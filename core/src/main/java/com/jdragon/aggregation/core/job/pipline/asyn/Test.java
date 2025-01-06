@@ -2,8 +2,8 @@ package com.jdragon.aggregation.core.job.pipline.asyn;
 
 public class Test {
     public static void main(String[] args) throws InterruptedException {
-        serial();
-//        merge();
+//        serial();
+        merge();
     }
 
     private static void serial() throws InterruptedException {
