@@ -1,4 +1,4 @@
-package com.jdragon.aggregation.core;
+package test;
 
 import com.jdragon.aggregation.datasource.SourcePluginType;
 import com.jdragon.aggregation.datasource.queue.QueueAbstract;
