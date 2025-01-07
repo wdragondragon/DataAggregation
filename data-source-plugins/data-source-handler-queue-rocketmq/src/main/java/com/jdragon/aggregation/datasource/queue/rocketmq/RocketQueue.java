@@ -5,11 +5,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.acl.common.AclClientRPCHook;
 import org.apache.rocketmq.acl.common.SessionCredentials;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.listener.ConsumeOrderlyStatus;
+import org.apache.rocketmq.client.consumer.listener.MessageListenerOrderly;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.common.message.Message;
-import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
 import org.apache.rocketmq.common.message.MessageExt;
 
 import java.util.Map;
@@ -67,7 +68,7 @@ public class RocketQueue extends QueueAbstract {
         consumer.subscribe(topic, subExpression);
 
         // 注册消息监听
-        consumer.registerMessageListener((MessageListenerConcurrently) (msgList, context) -> {
+        consumer.registerMessageListener((MessageListenerOrderly) (msgList, context) -> {
             for (MessageExt msg : msgList) {
                 String message = new String(msg.getBody());
                 Boolean apply = messageProcessor.apply(message);
@@ -78,7 +79,7 @@ public class RocketQueue extends QueueAbstract {
                 }
                 log.info("收到消息：{}", message);
             }
-            return null;
+            return ConsumeOrderlyStatus.SUCCESS;
         });
         // 启动消费者
         consumer.start();
