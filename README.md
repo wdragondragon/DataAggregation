@@ -13,3 +13,14 @@
 - [ ] 实现分布式任务，负载均衡，故障转移，重试，检查点等。
 - [ ] 可植入到springboot，实现starter自动装载。
 
+## 已集成的数据源插件
+- [x] rdbms
+  - [x] mysql
+  - [x] tbds-hive2
+- [x] file system
+  - [x] tbds-hdfs
+- [x] mq
+  - [x] kafka
+  - [x] rocketmq
+  - [x] rabbitmq
+
