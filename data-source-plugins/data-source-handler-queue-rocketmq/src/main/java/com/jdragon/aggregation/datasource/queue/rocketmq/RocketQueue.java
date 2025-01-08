@@ -2,6 +2,7 @@ package com.jdragon.aggregation.datasource.queue.rocketmq;
 
 import com.jdragon.aggregation.datasource.queue.QueueAbstract;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang.StringUtils;
 import org.apache.rocketmq.acl.common.AclClientRPCHook;
 import org.apache.rocketmq.acl.common.SessionCredentials;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
@@ -48,7 +49,11 @@ public class RocketQueue extends QueueAbstract {
     @Override
     public void sendMessage(String message) throws Exception {
         String topic = (String) configParams.get("topic");
-        Message msg = new Message(topic, "tag", message.getBytes());
+        String tag = (String) configParams.get("tag");
+        if (StringUtils.isBlank(tag)) {
+            tag = null;
+        }
+        Message msg = new Message(topic, tag, message.getBytes());
         log.info("RocketMQ发送消息: {}", message);
         SendResult sendResult = producer.send(msg);
         log.info("RocketMQ消息已发送: {}", sendResult);
@@ -61,7 +66,10 @@ public class RocketQueue extends QueueAbstract {
         String consumerGroup = (String) configParams.get("consumerGroup");
         String namesrvAddr = (String) configParams.get("namesrvAddr");
         String topic = (String) configParams.get("topic");
-        String subExpression = (String) configParams.getOrDefault("subExpression", "*");
+        String subExpression = (String) configParams.getOrDefault("tag", "*");
+        if (StringUtils.isBlank(subExpression)) {
+            subExpression = null;
+        }
         consumer = new DefaultMQPushConsumer(consumerGroup);
         consumer.setNamesrvAddr(namesrvAddr);
         // 订阅主题
