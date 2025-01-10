@@ -120,14 +120,14 @@ public abstract class Channel {
     }
 
     public String statPrint() {
-        return statPrintRead() + "\n" + statPrintWrite();
+        return "\n" + statPrintRead() + "\n" + statPrintWrite();
     }
 
     public String statPrintRead() {
         Long waitReaderTime = communication.getLongCounter(CommunicationTool.WAIT_READER_TIME);
         Long readSucceedRecords = communication.getLongCounter(CommunicationTool.READ_SUCCEED_RECORDS);
         Long readSucceedBytes = communication.getLongCounter(CommunicationTool.READ_SUCCEED_BYTES);
-        return String.format("reader info: %d records, %d bytes, wait writer time %,.3fs",
+        return String.format("reader info: %d records, %d bytes, wait read time %,.3fs",
                 readSucceedRecords, readSucceedBytes,
                 ((float) TimeUnit.NANOSECONDS.toNanos(waitReaderTime)) / 1000000000);
     }
@@ -136,7 +136,7 @@ public abstract class Channel {
         Long waitWriterTime = communication.getLongCounter(CommunicationTool.WAIT_WRITER_TIME);
         Long writeReceivedRecords = communication.getLongCounter(CommunicationTool.WRITE_RECEIVED_RECORDS);
         Long writeReceivedBytes = communication.getLongCounter(CommunicationTool.WRITE_RECEIVED_BYTES);
-        return String.format("writer info: %d records, %d bytes, wait writer time %,.3fs",
+        return String.format("writer info: %d records, %d bytes, wait write time %,.3fs",
                 writeReceivedRecords, writeReceivedBytes,
                 ((float) TimeUnit.NANOSECONDS.toNanos(waitWriterTime)) / 1000000000);
     }
