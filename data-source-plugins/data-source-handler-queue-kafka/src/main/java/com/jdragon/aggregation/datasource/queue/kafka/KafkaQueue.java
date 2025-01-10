@@ -68,7 +68,7 @@ public class KafkaQueue extends QueueAbstract {
     public void sendMessage(String message) {
         ProducerRecord<String, String> record = new ProducerRecord<>(topic, message);
         producer.send(record);
-        LOG.info("Kafka消息已发送: {}", message);
+        LOG.debug("Kafka消息已发送: {}", message);
     }
 
     @Override
@@ -85,7 +85,7 @@ public class KafkaQueue extends QueueAbstract {
                     sign.set(false);
                     return;
                 }
-                LOG.info("Kafka 消费消息: {}", message);
+                LOG.debug("Kafka 消费消息: {}", message);
             });
             if (!sign.get()) {
                 break;

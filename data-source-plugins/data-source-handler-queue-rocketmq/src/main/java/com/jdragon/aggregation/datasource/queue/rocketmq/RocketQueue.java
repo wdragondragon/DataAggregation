@@ -59,9 +59,9 @@ public class RocketQueue extends QueueAbstract {
             tag = null;
         }
         Message msg = new Message(topic, tag, message.getBytes());
-        log.info("RocketMQ发送消息: {}", message);
+        log.debug("RocketMQ发送消息: {}", message);
         SendResult sendResult = producer.send(msg);
-        log.info("RocketMQ消息已发送: {}", sendResult);
+        log.debug("RocketMQ消息已发送: {}", sendResult);
     }
 
     @Override
@@ -91,7 +91,7 @@ public class RocketQueue extends QueueAbstract {
                     consumer.resume();
                     break;
                 }
-                log.info("收到消息：{}", message);
+                log.debug("收到消息：{}", message);
             }
             return ConsumeOrderlyStatus.SUCCESS;
         });

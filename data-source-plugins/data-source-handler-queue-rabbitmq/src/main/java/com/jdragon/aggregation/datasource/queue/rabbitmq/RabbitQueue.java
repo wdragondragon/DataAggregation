@@ -50,7 +50,7 @@ public class RabbitQueue extends QueueAbstract {
     public void sendMessage(String message) throws Exception {
         channel.queueDeclare(queueName, false, false, false, null);
         channel.basicPublish("", queueName, null, message.getBytes(StandardCharsets.UTF_8));
-        log.info("RabbitMQ消息已发送: {}", message);
+        log.debug("RabbitMQ消息已发送: {}", message);
     }
 
     @Override
@@ -68,7 +68,7 @@ public class RabbitQueue extends QueueAbstract {
                     log.info("停止消费消息: {}", message);
                     break;
                 }
-                log.info("RabbitMQ 消费消息: {}", message);
+                log.debug("RabbitMQ 消费消息: {}", message);
             }
         }
     }
