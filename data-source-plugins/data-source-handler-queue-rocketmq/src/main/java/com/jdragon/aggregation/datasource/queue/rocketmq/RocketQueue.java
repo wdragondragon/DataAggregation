@@ -1,5 +1,6 @@
 package com.jdragon.aggregation.datasource.queue.rocketmq;
 
+import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.queue.QueueAbstract;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
@@ -14,7 +15,6 @@ import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageExt;
 
-import java.util.Map;
 import java.util.function.Function;
 
 @Slf4j
@@ -29,15 +29,19 @@ public class RocketQueue extends QueueAbstract {
     }
 
     @Override
-    public void init(Map<String, Object> config) throws Exception {
+    public void init() {
         // 从 Map 中提取参数
-        super.configParams = config;
+        Configuration configParams = getPluginQueueConf();
         String namesrvAddr = (String) configParams.get("namesrvAddr");
         String producerGroup = (String) configParams.get("producerGroup");
         String accessKey = (String) configParams.get("accessKey");
         String secretKey = (String) configParams.get("secretKey");
-        AclClientRPCHook auth = new AclClientRPCHook(new SessionCredentials(accessKey, secretKey));
-        producer = new DefaultMQProducer(producerGroup, auth);
+        if (StringUtils.isNotBlank(accessKey) && StringUtils.isNotBlank(secretKey)) {
+            AclClientRPCHook auth = new AclClientRPCHook(new SessionCredentials(accessKey, secretKey));
+            producer = new DefaultMQProducer(producerGroup, auth);
+        } else {
+            producer = new DefaultMQProducer(producerGroup);
+        }
         producer.setNamesrvAddr(namesrvAddr);
         try {
             producer.start();
@@ -48,8 +52,9 @@ public class RocketQueue extends QueueAbstract {
 
     @Override
     public void sendMessage(String message) throws Exception {
-        String topic = (String) configParams.get("topic");
-        String tag = (String) configParams.get("tag");
+        Configuration configParams = getPluginQueueConf();
+        String topic = configParams.getString("topic");
+        String tag = configParams.getString("tag");
         if (StringUtils.isBlank(tag)) {
             tag = null;
         }
@@ -63,10 +68,11 @@ public class RocketQueue extends QueueAbstract {
     public void receiveMessage(Function<String, Boolean> messageProcessor) throws Exception {
         // RocketMQ 消费者实现
         // 创建消费者实例
-        String consumerGroup = (String) configParams.get("consumerGroup");
-        String namesrvAddr = (String) configParams.get("namesrvAddr");
-        String topic = (String) configParams.get("topic");
-        String subExpression = (String) configParams.getOrDefault("tag", "*");
+        Configuration configParams = getPluginQueueConf();
+        String consumerGroup = configParams.getString("consumerGroup");
+        String namesrvAddr = configParams.getString("namesrvAddr");
+        String topic = configParams.getString("topic");
+        String subExpression = configParams.getString("tag", "*");
         if (StringUtils.isBlank(subExpression)) {
             subExpression = null;
         }
@@ -93,7 +99,8 @@ public class RocketQueue extends QueueAbstract {
         consumer.start();
     }
 
-    public void close() {
+    @Override
+    public void destroy() {
         if (producer != null) {
             producer.shutdown();
         }

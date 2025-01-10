@@ -1,25 +1,24 @@
 package test;
 
+import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.SourcePluginType;
 import com.jdragon.aggregation.datasource.queue.QueueAbstract;
 import com.jdragon.aggregation.pluginloader.PluginClassLoaderCloseable;
 import lombok.extern.slf4j.Slf4j;
-
-import java.util.HashMap;
-import java.util.Map;
 
 @Slf4j
 public class RocketTest {
     public static void main(String[] args) throws Exception {
         try (PluginClassLoaderCloseable classLoaderSwapper = PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(SourcePluginType.SOURCE, "rocketmq")) {
             QueueAbstract queueAbstract = classLoaderSwapper.loadPlugin();
-            Map<String, Object> params = new HashMap<>();
-            params.put("namesrvAddr", "192.168.100.194:9876");
-            params.put("topic", "TestTopic");
-            params.put("consumerGroup", "please_rename_unique_group_name");
-            params.put("producerGroup", "please_rename_unique_group_name");
-            params.put("subExpression", "*");
-            queueAbstract.init(params);
+            Configuration params = Configuration.newDefault();
+            params.set("namesrvAddr", "192.168.100.194:9876");
+            params.set("topic", "TestTopic");
+            params.set("consumerGroup", "please_rename_unique_group_name");
+            params.set("producerGroup", "please_rename_unique_group_name");
+            params.set("subExpression", "*");
+            queueAbstract.setPluginQueueConf(params);
+            queueAbstract.init();
             queueAbstract.receiveMessage(message -> {
                 log.info("处理 rocket 消息: {}", message);
                 return !message.equals("exit");  // 如果收到 exit 消息，停止消费
@@ -30,7 +29,7 @@ public class RocketTest {
             }
             queueAbstract.sendMessage("exit");
 
-            queueAbstract.close();
+            queueAbstract.destroy();
         }
     }
 }

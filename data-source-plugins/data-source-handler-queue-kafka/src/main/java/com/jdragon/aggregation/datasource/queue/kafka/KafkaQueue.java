@@ -1,5 +1,8 @@
 package com.jdragon.aggregation.datasource.queue.kafka;
 
+import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.TypeReference;
+import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.queue.QueueAbstract;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -37,14 +40,16 @@ public class KafkaQueue extends QueueAbstract {
     }
 
     @Override
-    public void init(Map<String, Object> config) {
-        super.configParams = config;
+    public void init() {
+        Configuration configuration = getPluginQueueConf();
         // 从 Map 中提取参数
         Properties props = new Properties();
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        Map<String, Object> config = JSONObject.parseObject(configuration.toJSON(), new TypeReference<Map<String, Object>>() {
+        });
         for (Map.Entry<String, Object> entry : config.entrySet()) {
             String key = entry.getKey();
             Object value = entry.getValue();
@@ -90,7 +95,7 @@ public class KafkaQueue extends QueueAbstract {
 
 
     @Override
-    public void close() throws Exception {
+    public void destroy() {
         if (consumer != null) {
             consumer.close();
         }

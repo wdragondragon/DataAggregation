@@ -1,17 +1,17 @@
 package com.jdragon.aggregation.datasource.queue.rabbitmq;
 
+import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.queue.QueueAbstract;
 import com.rabbitmq.client.*;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
 @Slf4j
 public class RabbitQueue extends QueueAbstract {
-
-    private ConnectionFactory factory;
 
     private Connection connection;
 
@@ -24,23 +24,26 @@ public class RabbitQueue extends QueueAbstract {
     }
 
     @Override
-    public void init(Map<String, Object> config) throws Exception {
+    public void init() {
         // 从 Map 中提取参数
-        super.configParams = config;
-
+        Configuration configParams = getPluginQueueConf();
         queueName = (String) configParams.get("queueName");
-        String host = (String) configParams.getOrDefault("host", "localhost");
-        String username = (String) configParams.getOrDefault("username", "guest");
-        String password = (String) configParams.getOrDefault("password", "guest");
-        Integer port = (Integer) configParams.getOrDefault("port", 5672);
+        String host = configParams.getString("host", "localhost");
+        String username = configParams.getString("username", "guest");
+        String password = configParams.getString("password", "guest");
+        Integer port = configParams.getInt("port", 5672);
 
-        factory = new ConnectionFactory();
+        ConnectionFactory factory = new ConnectionFactory();
         factory.setHost(host);
         factory.setUsername(username);
         factory.setPassword(password);
         factory.setPort(port);
-        connection = factory.newConnection();
-        channel = connection.createChannel();
+        try {
+            connection = factory.newConnection();
+            channel = connection.createChannel();
+        } catch (IOException | TimeoutException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -72,12 +75,16 @@ public class RabbitQueue extends QueueAbstract {
 
 
     @Override
-    public void close() throws Exception {
-        if (channel != null) {
-            channel.close();
-        }
-        if (connection != null) {
-            connection.close();
+    public void destroy() {
+        try {
+            if (channel != null) {
+                channel.close();
+            }
+            if (connection != null) {
+                connection.close();
+            }
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
         }
     }
 }
