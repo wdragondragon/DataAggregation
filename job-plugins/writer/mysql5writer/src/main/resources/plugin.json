@@ -1,0 +1,6 @@
+{
+  "name": "mysql5writer",
+  "class": "com.jdragon.aggregation.writer.mysql5.Mysql5Writer",
+  "description": "mysql5writer",
+  "developer": "jdragon"
+}

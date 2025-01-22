@@ -1,0 +1,65 @@
+package com.jdragon.aggregation.core.job;
+
+import com.jdragon.aggregation.commons.util.Configuration;
+import com.jdragon.aggregation.core.plugin.AbstractJobPlugin;
+import com.jdragon.aggregation.core.plugin.PluginType;
+import com.jdragon.aggregation.core.taskgroup.runner.ReaderRunner;
+import com.jdragon.aggregation.core.taskgroup.runner.WriterRunner;
+import com.jdragon.aggregation.core.transport.channel.Channel;
+import com.jdragon.aggregation.core.transport.channel.memory.MemoryChannel;
+import com.jdragon.aggregation.core.transport.exchanger.BufferedRecordExchanger;
+import com.jdragon.aggregation.pluginloader.PluginClassLoaderCloseable;
+
+import java.io.File;
+
+public class JobContainer {
+
+    public static void main(String[] args) {
+        Configuration configuration = Configuration.from(new File("C:\\dev\\ideaProject\\DataAggregation\\core\\src\\main\\resources\\job.json"));
+        JobContainer container = new JobContainer();
+        container.start(configuration);
+    }
+
+    public void start(Configuration configuration) {
+
+        Configuration reader = configuration.getConfiguration("reader");
+        String readerType = reader.getString("type");
+        Configuration readerConfiguration = reader.getConfiguration("config");
+
+        Configuration writer = configuration.getConfiguration("writer");
+        String writerType = writer.getString("type");
+        Configuration writerConfiguration = writer.getConfiguration("config");
+
+        Channel channel = new MemoryChannel();
+
+        Thread readerThread, writerThread;
+        try (PluginClassLoaderCloseable classLoaderSwapper = PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(PluginType.READER, readerType + PluginType.READER.getName())) {
+            AbstractJobPlugin jobPlugin = classLoaderSwapper.loadPlugin();
+            jobPlugin.setPluginJobConf(readerConfiguration);
+            jobPlugin.setPeerPluginJobConf(writerConfiguration);
+
+            ReaderRunner readerRunner = new ReaderRunner(jobPlugin);
+
+            readerRunner.setRecordSender(new BufferedRecordExchanger(channel));
+            readerThread = new Thread(readerRunner,
+                    String.format("%d-%d-%d-reader",
+                            1, 1, 1));
+            readerThread.setContextClassLoader(jobPlugin.getClassLoader());
+        }
+        try (PluginClassLoaderCloseable classLoaderSwapper = PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(PluginType.WRITER, writerType + PluginType.WRITER.getName())) {
+            AbstractJobPlugin jobPlugin = classLoaderSwapper.loadPlugin();
+            jobPlugin.setPluginJobConf(writerConfiguration);
+            jobPlugin.setPeerPluginJobConf(readerConfiguration);
+
+            WriterRunner writerRunner = new WriterRunner(jobPlugin);
+            writerRunner.setRecordReceiver(new BufferedRecordExchanger(channel));
+            writerThread = new Thread(writerRunner,
+                    String.format("%d-%d-%d-writer",
+                            1, 1, 1));
+            writerThread.setContextClassLoader(jobPlugin.getClassLoader());
+        }
+
+        readerThread.start();
+        writerThread.start();
+    }
+}

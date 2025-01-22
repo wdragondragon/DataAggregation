@@ -1,0 +1,44 @@
+{
+  "reader": {
+    "type": "mysql8",
+    "config": {
+      "connect": {
+        "host": "rmHost",
+        "port": "3305",
+        "database": "datax_test",
+        "userName": "root",
+        "password": "951753",
+        "other": "",
+        "userPool": true,
+        "extraParams": {}
+      },
+      "table": "datax_test1",
+      "columns": [
+        "id",
+        "test_param1"
+      ]
+    }
+  },
+  "writer": {
+    "type": "mysql8",
+    "config": {
+      "connect": {
+        "host": "rmHost",
+        "port": "3305",
+        "database": "datax_test",
+        "userName": "root",
+        "password": "951753",
+        "other": "",
+        "userPool": true,
+        "extraParams": {}
+      },
+      "table": "datax_test2",
+      "columns": [
+        "id",
+        "test_param1"
+      ]
+    }
+  },
+  "transformer": [
+  ]
+}

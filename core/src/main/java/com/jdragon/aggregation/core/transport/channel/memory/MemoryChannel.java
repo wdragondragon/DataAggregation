@@ -30,6 +30,10 @@ public class MemoryChannel extends Channel {
 
     private final Condition notEmpty;
 
+    public MemoryChannel() {
+        this(1024, 10240);
+    }
+
     public MemoryChannel(int bufferSize, int capacity) {
         this.queue = new ArrayBlockingQueue<>(capacity);
         this.bufferSize = bufferSize;

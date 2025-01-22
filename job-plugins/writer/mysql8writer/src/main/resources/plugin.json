@@ -1,0 +1,6 @@
+{
+  "name": "mysql8writer",
+  "class": "com.jdragon.aggregation.writer.mysql8.Mysql8Writer",
+  "description": "mysql8writer",
+  "developer": "jdragon"
+}

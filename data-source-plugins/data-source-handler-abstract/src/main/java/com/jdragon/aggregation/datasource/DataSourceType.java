@@ -10,8 +10,10 @@ public enum DataSourceType {
     SQLServer("sqlserver", "com.microsoft.sqlserver.jdbc.SQLServerDriver"),
     PostgreSQL("postgresql", "org.postgresql.Driver"),
     DM("dm", "dm.jdbc.driver.DmDriver"),
-    HIVE("hive", "org.apache.hive.jdbc.HiveDriver");
+    HIVE("hive", "org.apache.hive.jdbc.HiveDriver"),
+    ClickHouse("clickhouse", "ru.yandex.clickhouse.ClickHouseDriver"),
 
+    ;
     private final String typeName;
 
     private final String driverClassName;
