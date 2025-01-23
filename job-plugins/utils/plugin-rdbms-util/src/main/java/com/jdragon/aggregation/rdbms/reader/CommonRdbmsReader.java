@@ -44,6 +44,7 @@ public class CommonRdbmsReader extends Reader.Job {
         String tableName = this.getPluginJobConf().getString("table");
         List<String> columns = this.getPluginJobConf().getList("columns", String.class);
         selectSql = String.format("select %s from %s", String.join(",", columns), tableName);
+        LOG.info("rdbms query sql: {}", selectSql);
         mandatoryEncoding = this.getPluginJobConf().getString("mandatoryEncoding", "utf-8");
     }
 
@@ -85,7 +86,7 @@ public class CommonRdbmsReader extends Reader.Job {
             }
         } catch (Exception e) {
             if (IS_DEBUG) {
-                LOG.debug("read data " + record.toString() + " occur exception:", e);
+                LOG.debug("read data {} occur exception:", record.toString(), e);
             }
             //TODO 这里识别为脏数据靠谱吗？
             if (e instanceof AggregationException) {

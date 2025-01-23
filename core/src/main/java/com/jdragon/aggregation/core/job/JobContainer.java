@@ -5,12 +5,16 @@ import com.jdragon.aggregation.core.plugin.AbstractJobPlugin;
 import com.jdragon.aggregation.core.plugin.PluginType;
 import com.jdragon.aggregation.core.taskgroup.runner.ReaderRunner;
 import com.jdragon.aggregation.core.taskgroup.runner.WriterRunner;
+import com.jdragon.aggregation.core.transformer.TransformerExecution;
 import com.jdragon.aggregation.core.transport.channel.Channel;
 import com.jdragon.aggregation.core.transport.channel.memory.MemoryChannel;
 import com.jdragon.aggregation.core.transport.exchanger.BufferedRecordExchanger;
+import com.jdragon.aggregation.core.transport.exchanger.BufferedRecordTransformerExchanger;
+import com.jdragon.aggregation.core.utils.TransformerUtil;
 import com.jdragon.aggregation.pluginloader.PluginClassLoaderCloseable;
 
 import java.io.File;
+import java.util.List;
 
 public class JobContainer {
 
@@ -32,6 +36,8 @@ public class JobContainer {
 
         Channel channel = new MemoryChannel();
 
+        List<TransformerExecution> transformerExecutions = TransformerUtil.buildTransformerInfo(configuration);
+
         Thread readerThread, writerThread;
         try (PluginClassLoaderCloseable classLoaderSwapper = PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(PluginType.READER, readerType + PluginType.READER.getName())) {
             AbstractJobPlugin jobPlugin = classLoaderSwapper.loadPlugin();
@@ -40,7 +46,7 @@ public class JobContainer {
 
             ReaderRunner readerRunner = new ReaderRunner(jobPlugin);
 
-            readerRunner.setRecordSender(new BufferedRecordExchanger(channel));
+            readerRunner.setRecordSender(new BufferedRecordTransformerExchanger(channel, transformerExecutions));
             readerThread = new Thread(readerRunner,
                     String.format("%d-%d-%d-reader",
                             1, 1, 1));

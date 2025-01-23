@@ -40,5 +40,12 @@
     }
   },
   "transformer": [
+    {
+      "name": "dx_substr",
+      "parameter": {
+        "columnIndex": 1,
+        "paras": ["0","2"]
+      }
+    }
   ]
 }

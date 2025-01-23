@@ -71,6 +71,7 @@ public class CommonRdbmsWriter extends Writer.Job {
                 ")" + onDuplicateKeyUpdateString(columns);
 
         insertSql = String.format(insertSqlTemplate, tableName);
+        LOG.info("rdbms writer template: {}", insertSql);
         batchSize = this.getPluginJobConf().getInt("batchSize", 1024);
         emptyAsNull = this.getPluginJobConf().getBool("emptyAsNull", false);
 
