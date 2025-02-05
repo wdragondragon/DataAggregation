@@ -124,7 +124,7 @@ public class JobContainer {
                 // 5.如果当前时间已经超出汇报时间的interval，那么我们需要马上汇报
                 long now = System.currentTimeMillis();
                 if (now - lastReportTimeStamp > reportIntervalInMillSec) {
-                    reportTaskGroupCommunication(
+                    lastTaskGroupContainerCommunication = reportTaskGroupCommunication(
                             lastTaskGroupContainerCommunication, jobCommunication);
                     lastReportTimeStamp = now;
                 }
@@ -149,11 +149,12 @@ public class JobContainer {
         }
     }
 
-    private void reportTaskGroupCommunication(Communication lastTaskGroupContainerCommunication, Communication nowCommunication) {
+    private Communication reportTaskGroupCommunication(Communication lastTaskGroupContainerCommunication, Communication nowCommunication) {
         Communication nowTaskGroupContainerCommunication = nowCommunication.clone();
         nowTaskGroupContainerCommunication.setTimestamp(System.currentTimeMillis());
         Communication reportCommunication = CommunicationTool.getReportCommunication(nowTaskGroupContainerCommunication,
                 lastTaskGroupContainerCommunication);
         log.info(CommunicationTool.Stringify.getSnapshot(reportCommunication));
+        return reportCommunication;
     }
 }
