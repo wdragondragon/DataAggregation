@@ -9,7 +9,7 @@ import lombok.Data;
 
 
 @Data
-public class AbstractRunner {
+public class AbstractRunner implements Runnable{
     private AbstractJobPlugin plugin;
 
     private Configuration jobConf;
@@ -54,5 +54,21 @@ public class AbstractRunner {
         mark(State.FAILED);
         this.runnerCommunication.setTimestamp(System.currentTimeMillis());
         this.runnerCommunication.setThrowable(throwable);
+    }
+
+    /**
+     * When an object implementing interface <code>Runnable</code> is used
+     * to create a thread, starting the thread causes the object's
+     * <code>run</code> method to be called in that separately executing
+     * thread.
+     * <p>
+     * The general contract of the method <code>run</code> is that it may
+     * take any action whatsoever.
+     *
+     * @see Thread#run()
+     */
+    @Override
+    public void run() {
+
     }
 }

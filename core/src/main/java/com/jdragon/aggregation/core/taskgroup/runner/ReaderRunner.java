@@ -7,7 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
-public class ReaderRunner extends AbstractRunner implements Runnable {
+public class ReaderRunner extends AbstractRunner {
 
     private static final Logger LOG = LoggerFactory
             .getLogger(ReaderRunner.class);

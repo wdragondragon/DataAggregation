@@ -6,7 +6,7 @@ import com.jdragon.aggregation.core.plugin.spi.Writer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class WriterRunner extends AbstractRunner implements Runnable {
+public class WriterRunner extends AbstractRunner {
 
     private static final Logger LOG = LoggerFactory
             .getLogger(WriterRunner.class);
