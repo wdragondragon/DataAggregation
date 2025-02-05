@@ -24,3 +24,18 @@
   - [x] rocketmq
   - [x] rabbitmq
 
+## 已集成的reader
+- [x] rdbms
+  - [x] mysql
+- [ ] file system
+- [ ] mq
+
+## 已集成的writer
+- [x] rdbms
+  - [x] mysql
+- [ ] file system
+- [ ] mq
+
+## 已集成的transformer
+- [x] 内置的datax transformer
+- [ ] 其他
