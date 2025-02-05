@@ -2,6 +2,9 @@ package com.jdragon.aggregation.core.transport.exchanger;
 
 import com.jdragon.aggregation.commons.element.Record;
 import com.jdragon.aggregation.commons.exception.AggregationException;
+import com.jdragon.aggregation.core.plugin.TaskPluginCollector;
+import com.jdragon.aggregation.core.statistics.communication.Communication;
+import com.jdragon.aggregation.core.statistics.communication.CommunicationTool;
 import com.jdragon.aggregation.core.transformer.TransformerErrorCode;
 import com.jdragon.aggregation.core.transformer.TransformerExecution;
 import com.jdragon.aggregation.core.transport.record.DefaultRecord;
@@ -23,9 +26,20 @@ public abstract class TransformerExchanger {
     private final ClassLoaderSwapper classLoaderSwapper = ClassLoaderSwapper
             .newCurrentThreadClassLoaderSwapper();
 
+    protected final Communication currentCommunication;
 
-    public TransformerExchanger(List<TransformerExecution> transformerExecs) {
+    protected final TaskPluginCollector pluginCollector;
+
+    private long totalExaustedTime = 0;
+    private long totalFilterRecords = 0;
+    private long totalSuccessRecords = 0;
+    private long totalFailedRecords = 0;
+    private long totalReplaceRecords = 0;
+
+    public TransformerExchanger(List<TransformerExecution> transformerExecs, Communication communication, final TaskPluginCollector pluginCollector) {
         this.transformerExecs = transformerExecs;
+        this.currentCommunication = communication;
+        this.pluginCollector = pluginCollector;
     }
 
 
@@ -36,7 +50,8 @@ public abstract class TransformerExchanger {
 
         DefaultRecord orignal = (DefaultRecord) record;
         DefaultRecord result = null;
-        String errorMsg;
+        long diffExaustedTime = 0;
+        String errorMsg = null;
         boolean failed = false;
         for (TransformerExecution transformerInfoExec : transformerExecs) {
             long startTs = System.nanoTime();
@@ -80,17 +95,25 @@ public abstract class TransformerExchanger {
                 /**
                  * 这个null不能传到writer，必须消化掉
                  */
+                totalFilterRecords++;
                 break;
+            } else {
+                if (!result.equals(orignal)) {
+                    totalReplaceRecords++;
+                }
             }
 
             long diff = System.nanoTime() - startTs;
-            //transformerInfoExec.addExaustedTime(diff);
-            //transformerInfoExec.addSuccessRecords(1);
+            diffExaustedTime += diff;
         }
 
+        totalExaustedTime += diffExaustedTime;
         if (failed) {
+            totalFailedRecords++;
+            this.pluginCollector.collectDirtyRecord(record, errorMsg);
             return null;
         } else {
+            totalSuccessRecords++;
             return result;
         }
     }
@@ -100,10 +123,10 @@ public abstract class TransformerExchanger {
          * todo 对于多个transformer时，各个transformer的单独统计进行显示。最后再汇总整个transformer的时间消耗.
          * 暂时不统计。
          */
-//        currentCommunication.setLongCounter(CommunicationTool.TRANSFORMER_SUCCEED_RECORDS, totalSuccessRecords);
-//        currentCommunication.setLongCounter(CommunicationTool.TRANSFORMER_FAILED_RECORDS, totalFailedRecords);
-//        currentCommunication.setLongCounter(CommunicationTool.TRANSFORMER_FILTER_RECORDS, totalFilterRecords);
-//        currentCommunication.setLongCounter(CommunicationTool.TRANSFORMER_USED_TIME, totalExaustedTime);
+        currentCommunication.setLongCounter(CommunicationTool.TRANSFORMER_SUCCEED_RECORDS, totalSuccessRecords);
+        currentCommunication.setLongCounter(CommunicationTool.TRANSFORMER_FAILED_RECORDS, totalFailedRecords);
+        currentCommunication.setLongCounter(CommunicationTool.TRANSFORMER_FILTER_RECORDS, totalFilterRecords);
+        currentCommunication.setLongCounter(CommunicationTool.TRANSFORMER_USED_TIME, totalExaustedTime);
     }
 
 

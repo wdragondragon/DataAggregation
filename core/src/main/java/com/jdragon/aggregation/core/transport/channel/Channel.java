@@ -28,7 +28,7 @@ public abstract class Channel {
 
     protected volatile long waitWriterTime = 0;
 
-    private final Communication communication = new Communication();
+    private Communication communication = new Communication();
 
     public Channel() {
         this.byteCapacity = 8 * 1024 * 1024;
@@ -44,6 +44,11 @@ public abstract class Channel {
 
     public boolean isClosed() {
         return isClosed;
+    }
+
+    public void setCommunication(Communication communication) {
+        Validate.notNull(communication);
+        this.communication = communication;
     }
 
     public void push(final Record r) {

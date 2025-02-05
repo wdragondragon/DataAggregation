@@ -6,6 +6,8 @@ import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.exception.CommonErrorCode;
 import com.jdragon.aggregation.core.plugin.RecordReceiver;
 import com.jdragon.aggregation.core.plugin.RecordSender;
+import com.jdragon.aggregation.core.plugin.TaskPluginCollector;
+import com.jdragon.aggregation.core.statistics.communication.Communication;
 import com.jdragon.aggregation.core.transformer.TransformerExecution;
 import com.jdragon.aggregation.core.transport.channel.Channel;
 import com.jdragon.aggregation.core.transport.record.TerminateRecord;
@@ -37,8 +39,10 @@ public class BufferedRecordTransformerExchanger extends TransformerExchanger imp
     @SuppressWarnings("unchecked")
     public BufferedRecordTransformerExchanger(
             final Channel channel,
+            final Communication communication,
+            final TaskPluginCollector pluginCollector,
             final List<TransformerExecution> tInfoExecs) {
-        super(tInfoExecs);
+        super(tInfoExecs, communication, pluginCollector);
         assert null != channel;
 
         this.channel = channel;

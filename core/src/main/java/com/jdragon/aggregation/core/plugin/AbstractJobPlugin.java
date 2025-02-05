@@ -8,6 +8,8 @@ import lombok.Setter;
 @Setter
 @Getter
 public class AbstractJobPlugin extends AbstractPlugin {
+    private String jobId;
+    
     //作业的config
     private Configuration pluginJobConf;
 
@@ -16,6 +18,7 @@ public class AbstractJobPlugin extends AbstractPlugin {
 
     private String peerPluginName;
 
+    private TaskPluginCollector taskPluginCollector;
 
     public void preCheck() {
     }

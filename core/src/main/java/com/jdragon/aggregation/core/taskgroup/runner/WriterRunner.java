@@ -51,8 +51,11 @@ public class WriterRunner extends AbstractRunner implements Runnable {
             LOG.info("job writer post start");
             jobWriter.post();
             LOG.info("job writer post end");
+
+            super.markSuccess();
         } catch (Throwable e) {
             LOG.error("Writer Runner Received Exceptions:", e);
+            super.markFail(e);
         } finally {
             super.destroy();
         }

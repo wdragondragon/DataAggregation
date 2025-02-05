@@ -55,6 +55,7 @@ public class ReaderRunner extends AbstractRunner implements Runnable {
             LOG.info("job reader post end");
         } catch (Throwable e) {
             LOG.error("Writer Runner Received Exceptions:", e);
+            super.markFail(e);
         } finally {
             super.destroy();
         }
