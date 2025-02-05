@@ -75,9 +75,9 @@ public class GroovyTransformer extends Transformer {
             }
         }
         sb.append("import static com.jdragon.aggregation.core.transformer.internal.GroovyTransformerStaticUtil.*;");
-        sb.append("import com.jdragon.aggregation.common.element.*;");
-        sb.append("import com.jdragon.aggregation.common.exception.DataXException;");
-        sb.append("import com.jdragon.aggregation.core.transformer.Transformer;");
+        sb.append("import com.jdragon.aggregation.commons.element.*;");
+        sb.append("import com.jdragon.aggregation.commons.exception.AggregationException;");
+        sb.append("import com.jdragon.aggregation.core.plugin.Transformer;");
         sb.append("import java.util.*;");
         sb.append("public class RULE extends Transformer").append("{");
         sb.append("public Record evaluate(Record record, Object... paras) {");

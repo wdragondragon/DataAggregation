@@ -25,7 +25,7 @@ public class JobContainer {
     }
 
     public void start(Configuration configuration) {
-
+        Integer jobId = configuration.getInt("jobId", 1);
         Configuration reader = configuration.getConfiguration("reader");
         String readerType = reader.getString("type");
         Configuration readerConfiguration = reader.getConfiguration("config");
@@ -48,8 +48,7 @@ public class JobContainer {
 
             readerRunner.setRecordSender(new BufferedRecordTransformerExchanger(channel, transformerExecutions));
             readerThread = new Thread(readerRunner,
-                    String.format("%d-%d-%d-reader",
-                            1, 1, 1));
+                    String.format("%d-reader", jobId));
             readerThread.setContextClassLoader(jobPlugin.getClassLoader());
         }
         try (PluginClassLoaderCloseable classLoaderSwapper = PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(PluginType.WRITER, writerType + PluginType.WRITER.getName())) {
@@ -60,8 +59,7 @@ public class JobContainer {
             WriterRunner writerRunner = new WriterRunner(jobPlugin);
             writerRunner.setRecordReceiver(new BufferedRecordExchanger(channel));
             writerThread = new Thread(writerRunner,
-                    String.format("%d-%d-%d-writer",
-                            1, 1, 1));
+                    String.format("%d-writer", jobId));
             writerThread.setContextClassLoader(jobPlugin.getClassLoader());
         }
 
