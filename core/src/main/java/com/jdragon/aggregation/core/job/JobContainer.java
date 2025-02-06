@@ -12,6 +12,7 @@ import com.jdragon.aggregation.core.statistics.communication.CommunicationTool;
 import com.jdragon.aggregation.core.taskgroup.runner.AbstractRunner;
 import com.jdragon.aggregation.core.taskgroup.runner.ReaderRunner;
 import com.jdragon.aggregation.core.taskgroup.runner.WriterRunner;
+import com.jdragon.aggregation.core.transformer.ParamsKey;
 import com.jdragon.aggregation.core.transformer.TransformerExecution;
 import com.jdragon.aggregation.core.transport.channel.Channel;
 import com.jdragon.aggregation.core.transport.channel.memory.MemoryChannel;
@@ -22,9 +23,11 @@ import com.jdragon.aggregation.core.utils.FrameworkErrorCode;
 import com.jdragon.aggregation.core.utils.TransformerUtil;
 import com.jdragon.aggregation.pluginloader.PluginClassLoaderCloseable;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 public class JobContainer {
@@ -36,6 +39,7 @@ public class JobContainer {
     }
 
     public void start(Configuration configuration) {
+        log.info("start job from configuration: {}", filterSensitiveConfiguration(configuration.clone()).beautify());
         // 初始化全局channel 和 communication
         Communication jobCommunication = new Communication();
         Channel channel = new MemoryChannel();
@@ -62,12 +66,14 @@ public class JobContainer {
         String taskCollectorClass = configuration.getString("core.statistics.collector.plugin.taskClass",
                 "com.jdragon.aggregation.core.plugin.StdoutPluginCollector");
 
+        List<TransformerExecution> transformerExecutions = TransformerUtil.buildTransformerInfo(configuration);
+
         Thread readerThread = initExecThread(jobId, PluginType.READER, readerType,
-                readerConfiguration, writerConfiguration,
+                readerConfiguration, writerConfiguration, transformerExecutions,
                 taskCollectorClass, jobCommunication, channel);
 
         Thread writerThread = initExecThread(jobId, PluginType.WRITER, writerType,
-                writerConfiguration, readerConfiguration,
+                writerConfiguration, readerConfiguration, transformerExecutions,
                 taskCollectorClass, jobCommunication, channel);
 
         readerThread.start();
@@ -77,7 +83,7 @@ public class JobContainer {
     }
 
     private Thread initExecThread(Integer jobId, PluginType pluginType, String pluginName,
-                                  Configuration configuration, Configuration peerConfiguration,
+                                  Configuration configuration, Configuration peerConfiguration, List<TransformerExecution> transformerExecutions,
                                   String taskCollectorClass, Communication jobCommunication, Channel channel) {
         try (PluginClassLoaderCloseable classLoaderSwapper = PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(pluginType, pluginName + pluginType.getName())) {
             AbstractJobPlugin jobPlugin = classLoaderSwapper.loadPlugin();
@@ -92,7 +98,6 @@ public class JobContainer {
             AbstractRunner runner;
             if (pluginType == PluginType.READER) {
                 ReaderRunner readerRunner = new ReaderRunner(jobPlugin);
-                List<TransformerExecution> transformerExecutions = TransformerUtil.buildTransformerInfo(configuration);
                 readerRunner.setRecordSender(new BufferedRecordTransformerExchanger(channel, jobCommunication, pluginCollector, transformerExecutions));
                 runner = readerRunner;
             } else {
@@ -116,9 +121,9 @@ public class JobContainer {
         Communication lastTaskGroupContainerCommunication = new Communication();
         try {
             while (true) {
-                if (jobCommunication.getState() == State.SUCCEEDED) {
+                if (jobCommunication.isFinished()) {
                     reportTaskGroupCommunication(lastTaskGroupContainerCommunication, jobCommunication);
-                    log.info("completed it's job.");
+                    log.info("completed it's job. status is {}", jobCommunication.getState());
                     break;
                 }
                 // 5.如果当前时间已经超出汇报时间的interval，那么我们需要马上汇报
@@ -156,5 +161,17 @@ public class JobContainer {
                 lastTaskGroupContainerCommunication);
         log.info(CommunicationTool.Stringify.getSnapshot(reportCommunication));
         return reportCommunication;
+    }
+
+    public static Configuration filterSensitiveConfiguration(Configuration configuration) {
+        Set<String> keys = configuration.getKeys();
+        for (final String key : keys) {
+            boolean isSensitive = StringUtils.endsWithIgnoreCase(key, "password")
+                    || StringUtils.endsWithIgnoreCase(key, "accessKey");
+            if (isSensitive && configuration.get(key) instanceof String) {
+                configuration.set(key, configuration.getString(key).replaceAll(".", "*"));
+            }
+        }
+        return configuration;
     }
 }

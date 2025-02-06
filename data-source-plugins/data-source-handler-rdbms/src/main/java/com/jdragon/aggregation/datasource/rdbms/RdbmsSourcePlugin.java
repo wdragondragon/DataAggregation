@@ -154,6 +154,7 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
             connection = getConnection(dataSource);
             statement = connection.createStatement();
             statement.setEscapeProcessing(false);
+            log.info("execute query: {}", sql);
             resultSet = statement.executeQuery(sql);
             ResultSetMetaData metaData = resultSet.getMetaData();
             int columnCount = metaData.getColumnCount();

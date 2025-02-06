@@ -8,8 +8,10 @@ import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
 import com.jdragon.aggregation.datasource.rdbms.RdbmsSourcePlugin;
+import com.jdragon.aggregation.rdbms.util.DBUtil;
 import com.jdragon.aggregation.rdbms.util.DBUtilErrorCode;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Triple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,6 +45,12 @@ public class CommonRdbmsReader extends Reader.Job {
         dataSource.setName(sourcePlugin.getType().getTypeName());
         String tableName = this.getPluginJobConf().getString("table");
         List<String> columns = this.getPluginJobConf().getList("columns", String.class);
+        if (columns.size() == 1 && columns.get(0).equalsIgnoreCase("*")) {
+            Connection connection = sourcePlugin.getConnection(dataSource);
+            Triple<List<String>, List<Integer>, List<String>> metaData = DBUtil.getColumnMetaData(connection,
+                    tableName, "*");
+            columns = metaData.getLeft();
+        }
         selectSql = String.format("select %s from %s", String.join(",", columns), tableName);
         LOG.info("rdbms query sql: {}", selectSql);
         mandatoryEncoding = this.getPluginJobConf().getString("mandatoryEncoding", "utf-8");

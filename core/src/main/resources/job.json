@@ -14,8 +14,7 @@
       },
       "table": "datax_test1",
       "columns": [
-        "id",
-        "test_param1"
+        "*"
       ]
     }
   },
@@ -34,8 +33,7 @@
       },
       "table": "datax_test2",
       "columns": [
-        "id",
-        "test_param1"
+        "*"
       ]
     }
   },
