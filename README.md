@@ -36,7 +36,7 @@
   - [x] mysql
 - [ ] file system
 - [x] mq
- - [x] kafka
+  - [x] kafka
 
 ## 已集成的transformer
 - [x] 内置的datax transformer
