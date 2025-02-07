@@ -18,8 +18,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 public class KafkaReader extends Reader.Job {
-    private static final Logger LOG = LoggerFactory
-            .getLogger(KafkaReader.class);
+    private static final Logger LOG = LoggerFactory.getLogger(KafkaReader.class);
 
     private Configuration configuration;
 
@@ -106,7 +105,6 @@ public class KafkaReader extends Reader.Job {
             if (retry.get() > 5) {
                 return false;
             }
-            LOG.info("kafka try read [{}] times ,poll over", retry.incrementAndGet());
             for (ConsumerRecord<String, String> record : records) {
                 String value = record.value();
                 try {
@@ -124,7 +122,7 @@ public class KafkaReader extends Reader.Job {
                 }
             }
             if (records.isEmpty()) {
-                retry.incrementAndGet();
+                LOG.info("read records is empty, try read [{}] times", retry.incrementAndGet());
             } else {
                 retry.set(0);
             }
