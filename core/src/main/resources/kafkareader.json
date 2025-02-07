@@ -1,0 +1,68 @@
+{
+  "reader": {
+    "type": "kafka",
+    "config": {
+      "bootstrapServers": "192.168.100.194:9092",
+      "topic": "test",
+      "groupId": "test",
+      "offsetReset": "earliest",
+      "batchSize": 500,
+      "parsingRules": "json",
+      "fieldDelimiter": ",",
+      "resetOffset": "true",
+      "otherProperties": {
+      },
+      "keepReadTime": "360000",
+      "columns": [
+        {
+          "index": 0,
+          "name": "id"
+        },
+        {
+          "index": 1,
+          "name": "test_param1"
+        }
+      ]
+    }
+  },
+  "writer": {
+    "type": "mysql8",
+    "config": {
+      "connect": {
+        "host": "rmHost",
+        "port": "3305",
+        "database": "datax_test",
+        "userName": "root",
+        "password": "951753",
+        "other": "",
+        "userPool": true,
+        "extraParams": {}
+      },
+      "table": "datax_test2",
+      "columns": [
+        "id",
+        "test_param1"
+      ]
+    }
+  },
+  "transformer": [
+    {
+      "name": "dx_substr",
+      "parameter": {
+        "columnIndex": 1,
+        "paras": [
+          "0",
+          "2"
+        ]
+      }
+    },
+    {
+      "name": "dx_groovy",
+      "parameter": {
+        "code": "Column column = record.getColumn(1);\nString string = column.asString();\nrecord.setColumn(1, new StringColumn(string + \"test\"));return record;",
+        "extraPackage": [
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "kafkawriter",
+  "class": "com.jdragon.aggregation.writer.kafka.KafkaWriter",
+  "description": "kafkawriter",
+  "developer": "jdragon"
+}

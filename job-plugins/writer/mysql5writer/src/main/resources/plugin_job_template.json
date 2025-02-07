@@ -1,5 +1,20 @@
 {
-  "name": "mysql5writer",
-  "parameter": {
+  "type": "mysql5",
+  "config": {
+    "connect": {
+      "host": "rmHost",
+      "port": "3305",
+      "database": "",
+      "userName": "root",
+      "password": "",
+      "other": "",
+      "userPool": true,
+      "extraParams": {}
+    },
+    "table": "",
+    "columns": [
+      "id",
+      "test_param1"
+    ]
   }
 }

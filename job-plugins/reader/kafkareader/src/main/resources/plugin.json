@@ -1,0 +1,6 @@
+{
+  "name": "kafkareader",
+  "class": "com.jdragon.aggregation.kafka.KafkaReader",
+  "description": "kafkareader",
+  "developer": "jdragon"
+}

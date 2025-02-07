@@ -1,0 +1,26 @@
+{
+  "type": "kafka",
+  "config": {
+    "bootstrapServers": "192.168.100.194:9092",
+    "topic": "test",
+    "retries": "0",
+    "batchSize": "16384",
+    "fieldDelimiter": ",",
+    "autoCreateTopic": true,
+    "createTopicNumPartition": "1",
+    "createTopicReplicationFactor": "1",
+    "writeType": "json",
+    "otherProperties": {
+    },
+    "columns": [
+      {
+        "index": 0,
+        "name": "id"
+      },
+      {
+        "index": 1,
+        "name": "test_param1"
+      }
+    ]
+  }
+}

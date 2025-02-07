@@ -1,0 +1,26 @@
+{
+  "type": "kafka",
+  "config": {
+    "bootstrapServers": "192.168.100.194:9092",
+    "topic": "test",
+    "groupId": "test",
+    "offsetReset": "earliest",
+    "batchSize": 500,
+    "parsingRules": "json",
+    "fieldDelimiter": ",",
+    "resetOffset": "true",
+    "otherProperties": {
+    },
+    "keepReadTime": "360000",
+    "columns": [
+      {
+        "index": 0,
+        "name": "id"
+      },
+      {
+        "index": 1,
+        "name": "test_param1"
+      }
+    ]
+  }
+}

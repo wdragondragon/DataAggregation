@@ -33,7 +33,7 @@ import java.util.Set;
 public class JobContainer {
 
     public static void main(String[] args) {
-        Configuration configuration = Configuration.from(new File("C:\\dev\\ideaProject\\DataAggregation\\core\\src\\main\\resources\\job.json"));
+        Configuration configuration = Configuration.from(new File("C:\\dev\\ideaProject\\DataAggregation\\core\\src\\main\\resources\\kafkareader.json"));
         JobContainer container = new JobContainer();
         container.start(configuration);
     }

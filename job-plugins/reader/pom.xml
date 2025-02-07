@@ -15,6 +15,7 @@
     <modules>
         <module>mysql5reader</module>
         <module>mysql8reader</module>
+        <module>kafkareader</module>
     </modules>
 
     <properties>

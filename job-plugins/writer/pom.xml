@@ -15,6 +15,7 @@
     <modules>
         <module>mysql5writer</module>
         <module>mysql8writer</module>
+        <module>kafkawriter</module>
     </modules>
 
     <properties>
