@@ -41,3 +41,19 @@
 ## 已集成的transformer
 - [x] 内置的datax transformer
 - [ ] 其他
+
+
+## 快速开始
+mvn install后执行package_all/packe_move.sh，在package_all下生成aggregation文件。
+
+设置变量为aggregation的全路径
+`-Daggregation.home=C:\\dev\\ideaProject\\DataAggregation\\package_all\\aggregation`
+
+主入口JobContainer.main
+```java
+public static void main(String[] args) {
+    Configuration configuration = Configuration.from(new File("json配置文件路径"));
+    JobContainer container = new JobContainer();
+    container.start(configuration);
+}
+```
