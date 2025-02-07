@@ -28,13 +28,15 @@
 - [x] rdbms
   - [x] mysql
 - [ ] file system
-- [ ] mq
+- [x] mq
+  - [x] kafka
 
 ## 已集成的writer
 - [x] rdbms
   - [x] mysql
 - [ ] file system
-- [ ] mq
+- [x] mq
+ - [x] kafka
 
 ## 已集成的transformer
 - [x] 内置的datax transformer
