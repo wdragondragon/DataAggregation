@@ -6,6 +6,7 @@ import com.jdragon.aggregation.core.statistics.communication.Communication;
 import com.jdragon.aggregation.core.statistics.communication.CommunicationTool;
 import com.jdragon.aggregation.core.transport.record.TerminateRecord;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.Validate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,7 +15,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-
+@Slf4j
 @Getter
 public abstract class Channel {
 
@@ -59,6 +60,7 @@ public abstract class Channel {
 
     public void pushTerminate(final TerminateRecord r) {
         Validate.notNull(r, "record不能为空.");
+        log.debug("send terminate record: {}", r);
         this.doPush(r);
     }
 

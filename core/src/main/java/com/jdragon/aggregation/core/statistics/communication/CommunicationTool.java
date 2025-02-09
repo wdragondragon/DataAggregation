@@ -38,8 +38,6 @@ public class CommunicationTool {
     public static final String BYTE_SPEED = "byteSpeed";
     public static final String RECORD_SPEED = "recordSpeed";
 
-    public static final String STAGE = "stage";
-
     public static final String TRANSFORMER_USED_TIME = "totalTransformerUsedTime";
     public static final String TRANSFORMER_SUCCEED_RECORDS = "totalTransformerSuccessRecords";
     public static final String TRANSFORMER_FAILED_RECORDS = "totalTransformerFailedRecords";

@@ -34,17 +34,13 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
         Connection connection;
         try {
             String jdbcUrl = joinJdbcUrl(dataSource);
-            if (log.isDebugEnabled()) {
-                log.debug("start get {} connection, jdbcUrl={}", getType(), jdbcUrl);
-            }
+            log.info("start get {} connection, jdbcUrl={}", getType(), jdbcUrl);
             if (dataSource.isUsePool()) {
                 connection = DatasourceCache.getConnection(jdbcUrl, getDriver(), dataSource.getUserName(), dataSource.getPassword(), getTestQuery());
             } else {
                 connection = JdbcSchema.dataSource(jdbcUrl, getDriver(), dataSource.getUserName(), dataSource.getPassword()).getConnection();
             }
-            if (log.isDebugEnabled()) {
-                log.debug("connection：{}", connection);
-            }
+            log.info("connection success: {}", connection);
         } catch (Exception e) {
             log.error("get connection fail", e);
             throw new RuntimeException(e.getMessage(), e);
@@ -232,6 +228,7 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
         if (conn != null) {
             try {
                 conn.close();
+                log.info("close connection success");
             } catch (Exception e) {
                 log.error(e.getMessage(), e);
             }

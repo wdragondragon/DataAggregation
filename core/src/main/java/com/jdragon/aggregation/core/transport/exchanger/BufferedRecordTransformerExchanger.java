@@ -12,12 +12,14 @@ import com.jdragon.aggregation.core.transformer.TransformerExecution;
 import com.jdragon.aggregation.core.transport.channel.Channel;
 import com.jdragon.aggregation.core.transport.record.TerminateRecord;
 import com.jdragon.aggregation.core.utils.FrameworkErrorCode;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.Validate;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+@Slf4j
 public class BufferedRecordTransformerExchanger extends TransformerExchanger implements RecordSender, RecordReceiver {
 
     private final Channel channel;
@@ -130,6 +132,7 @@ public class BufferedRecordTransformerExchanger extends TransformerExchanger imp
 
         Record record = this.buffer.get(this.bufferIndex++);
         if (record instanceof TerminateRecord) {
+            log.debug("get terminate record: {}", record);
             record = null;
         }
         return record;

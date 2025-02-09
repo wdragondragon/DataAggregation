@@ -8,12 +8,14 @@ import com.jdragon.aggregation.core.plugin.RecordSender;
 import com.jdragon.aggregation.core.transport.channel.Channel;
 import com.jdragon.aggregation.core.transport.record.TerminateRecord;
 import com.jdragon.aggregation.core.utils.FrameworkErrorCode;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.Validate;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+@Slf4j
 public class BufferedRecordExchanger implements RecordSender, RecordReceiver {
 
     private final Channel channel;
@@ -108,11 +110,14 @@ public class BufferedRecordExchanger implements RecordSender, RecordReceiver {
         if (isEmpty) {
             receive();
         }
-
+        long l = System.currentTimeMillis();
+        log.debug("get record from reader in {} buffer index: {} buffer size: {}", l, this.bufferIndex, this.buffer.size());
         Record record = this.buffer.get(this.bufferIndex++);
         if (record instanceof TerminateRecord) {
+            log.debug("get terminate record: {}", record);
             record = null;
         }
+        log.debug("get record from reader cost {}", System.currentTimeMillis() - l);
         return record;
     }
 

@@ -4,12 +4,13 @@ import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.enums.State;
 import com.jdragon.aggregation.core.plugin.AbstractJobPlugin;
 import com.jdragon.aggregation.core.statistics.communication.Communication;
-import com.jdragon.aggregation.core.statistics.communication.CommunicationTool;
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 
 
+@Slf4j
 @Data
-public class AbstractRunner implements Runnable{
+public class AbstractRunner implements Runnable {
     private AbstractJobPlugin plugin;
 
     private Configuration jobConf;
@@ -35,11 +36,7 @@ public class AbstractRunner implements Runnable{
 
     private void mark(State state) {
         this.runnerCommunication.setState(state);
-        if (state == State.SUCCEEDED) {
-            // 对 stage + 1
-            this.runnerCommunication.setLongCounter(CommunicationTool.STAGE,
-                    this.runnerCommunication.getLongCounter(CommunicationTool.STAGE) + 1);
-        }
+        log.info("runner mark status:{}", state);
     }
 
     public void markRun() {

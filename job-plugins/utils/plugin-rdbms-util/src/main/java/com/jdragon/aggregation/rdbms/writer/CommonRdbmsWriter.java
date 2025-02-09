@@ -63,11 +63,14 @@ public class CommonRdbmsWriter extends Writer.Job {
         columns = this.getPluginJobConf().getList("columns", String.class);
         columnNumber = columns.size();
         if (columnNumber == 1 && columns.get(0).equalsIgnoreCase("*")) {
-            Connection connection = sourcePlugin.getConnection(dataSource);
-            this.resultSetMetaData = DBUtil.getColumnMetaData(connection,
-                    this.tableName, "*");
-            columns = this.resultSetMetaData.getLeft();
-            columnNumber = columns.size();
+            try (Connection connection = sourcePlugin.getConnection(dataSource);) {
+                this.resultSetMetaData = DBUtil.getColumnMetaData(connection,
+                        this.tableName, "*");
+                columns = this.resultSetMetaData.getLeft();
+                columnNumber = columns.size();
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
         }
         List<String> valueHolders = new ArrayList<>(columns.size());
         for (int i = 0; i < columns.size(); i++) {
@@ -109,9 +112,12 @@ public class CommonRdbmsWriter extends Writer.Job {
     @Override
     public void prepare() {
         if (this.resultSetMetaData == null) {
-            Connection connection = sourcePlugin.getConnection(dataSource);
-            this.resultSetMetaData = DBUtil.getColumnMetaData(connection,
-                    this.tableName, StringUtils.join(DBUtil.handleKeywords(sourcePlugin, this.columns), ","));
+            try (Connection connection = sourcePlugin.getConnection(dataSource)) {
+                this.resultSetMetaData = DBUtil.getColumnMetaData(connection,
+                        this.tableName, StringUtils.join(DBUtil.handleKeywords(sourcePlugin, this.columns), ","));
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 

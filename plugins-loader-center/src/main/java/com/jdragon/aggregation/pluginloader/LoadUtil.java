@@ -70,4 +70,12 @@ public class LoadUtil {
                 pluginName);
     }
 
+    public static void updateJarLoader(IPluginType pluginType, String pluginName) {
+        String pluginKey = generatePluginKey(pluginType, pluginName);
+        JarLoaderCenter.removeJarLoader(pluginKey);
+    }
+
+    public static void updateJarLoader() {
+        JarLoaderCenter.clearJarLoader();
+    }
 }

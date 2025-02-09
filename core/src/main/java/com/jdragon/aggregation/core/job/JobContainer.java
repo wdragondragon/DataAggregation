@@ -76,10 +76,22 @@ public class JobContainer {
                 writerConfiguration, readerConfiguration, transformerExecutions,
                 taskCollectorClass, jobCommunication, channel);
 
-        readerThread.start();
-        writerThread.start();
-
         jobCommunication.setState(State.RUNNING);
+        writerThread.start();
+        // reader没有起来，writer不可能结束
+        if (!writerThread.isAlive() || jobCommunication.getState() == State.FAILED) {
+            throw AggregationException.asException(
+                    FrameworkErrorCode.RUNTIME_ERROR,
+                    jobCommunication.getThrowable());
+        }
+        readerThread.start();
+        // 这里reader可能很快结束
+        if (!readerThread.isAlive() && jobCommunication.getState() == State.FAILED) {
+            // 这里有可能出现Reader线上启动即挂情况 对于这类情况 需要立刻抛出异常
+            throw AggregationException.asException(
+                    FrameworkErrorCode.RUNTIME_ERROR,
+                    jobCommunication.getThrowable());
+        }
     }
 
     private Thread initExecThread(Integer jobId, PluginType pluginType, String pluginName,

@@ -361,8 +361,8 @@ public final class DBUtil {
         ResultSet rs = null;
 
         Triple<List<String>, List<Integer>, List<String>> columnMetaData = new ImmutableTriple<List<String>, List<Integer>, List<String>>(
-                new ArrayList<String>(), new ArrayList<Integer>(),
-                new ArrayList<String>());
+                new ArrayList<>(), new ArrayList<>(),
+                new ArrayList<>());
         try {
             statement = conn.createStatement();
             String queryColumnSql = "select " + column + " from " + tableName

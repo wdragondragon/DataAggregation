@@ -5,6 +5,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.HikariPoolMXBean;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
@@ -29,7 +30,10 @@ public class DatasourceCache {
             }).expireAfterAccess(60, TimeUnit.MINUTES).build();
 
     public static Connection getConnection(String jdbcUrl, String driverClassName, String user, String password, String testQuery) throws SQLException {
-        return get(jdbcUrl, driverClassName, user, password, testQuery).getConnection();
+        logMon(jdbcUrl, driverClassName, user, password);
+        Connection connection = get(jdbcUrl, driverClassName, user, password, testQuery).getConnection();
+        logMon(jdbcUrl, driverClassName, user, password);
+        return connection;
     }
 
     public static DataSource get(String jdbcUrl, String driverClassName, String user, String password, String testQuery) {
@@ -56,6 +60,7 @@ public class DatasourceCache {
             hikariConfig.setMaxLifetime(180000L);
             hikariConfig.setKeepaliveTime(30000L);
             hikariConfig.setConnectionTimeout(60000L);
+            hikariConfig.setRegisterMbeans(true);
             if (StringUtils.isNotBlank(testQuery)) {
                 hikariConfig.setConnectionTestQuery(testQuery);
             }
@@ -65,6 +70,30 @@ public class DatasourceCache {
         } catch (Throwable e) {
             throw e;
         }
+    }
+
+    public static void logMon(String jdbcUrl, String driverClassName, String user, String password) {
+        String key = String.join("*",
+                jdbcUrl,
+                driverClassName,
+                user,
+                password);
+        String mon = getMon(key);
+        log.info("datasource cache monitor: [{}],[{}]", jdbcUrl, mon);
+    }
+
+    public static String getMon(String key) {
+        DataSource ifPresent = dataSourceCache.getIfPresent(key);
+        if (ifPresent != null) {
+            HikariPoolMXBean hikariPoolMXBean = ((HikariDataSource) ifPresent).getHikariPoolMXBean();
+            int totalConnections = hikariPoolMXBean.getTotalConnections();
+            int activeConnections = hikariPoolMXBean.getActiveConnections();
+            int idleConnections = hikariPoolMXBean.getIdleConnections();
+            int threadsAwaitingConnection = hikariPoolMXBean.getThreadsAwaitingConnection();
+            return String.format("total: %d,active: %d, idle: %d, thread await: %d",
+                    totalConnections, activeConnections, idleConnections, threadsAwaitingConnection);
+        }
+        return null;
     }
 
 }

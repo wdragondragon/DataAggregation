@@ -46,10 +46,13 @@ public class CommonRdbmsReader extends Reader.Job {
         String tableName = this.getPluginJobConf().getString("table");
         List<String> columns = this.getPluginJobConf().getList("columns", String.class);
         if (columns.size() == 1 && columns.get(0).equalsIgnoreCase("*")) {
-            Connection connection = sourcePlugin.getConnection(dataSource);
-            Triple<List<String>, List<Integer>, List<String>> metaData = DBUtil.getColumnMetaData(connection,
-                    tableName, "*");
-            columns = metaData.getLeft();
+            try (Connection connection = sourcePlugin.getConnection(dataSource)) {
+                Triple<List<String>, List<Integer>, List<String>> metaData = DBUtil.getColumnMetaData(connection,
+                        tableName, "*");
+                columns = metaData.getLeft();
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
         }
         selectSql = String.format("select %s from %s", String.join(",", columns), tableName);
         LOG.info("rdbms query sql: {}", selectSql);
@@ -64,16 +67,14 @@ public class CommonRdbmsReader extends Reader.Job {
 
     @Override
     public void startRead(RecordSender recordSender) {
-        try {
-            Connection connection = sourcePlugin.getConnection(dataSource);
-            Statement statement = connection.createStatement();
-            ResultSet rs = statement.executeQuery(selectSql);
+        try (Connection connection = sourcePlugin.getConnection(dataSource);
+             Statement statement = connection.createStatement();
+             ResultSet rs = statement.executeQuery(selectSql);) {
             ResultSetMetaData metaData = rs.getMetaData();
             int columnNumber = metaData.getColumnCount();
             while (rs.next()) {
                 this.transportOneRecord(recordSender, rs, metaData, columnNumber, mandatoryEncoding);
             }
-            rs.close();
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
