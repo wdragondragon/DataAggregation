@@ -21,7 +21,9 @@ import com.jdragon.aggregation.core.transport.exchanger.BufferedRecordTransforme
 import com.jdragon.aggregation.core.utils.ClassUtil;
 import com.jdragon.aggregation.core.utils.FrameworkErrorCode;
 import com.jdragon.aggregation.core.utils.TransformerUtil;
+import com.jdragon.aggregation.pluginloader.ClassLoaderSwapper;
 import com.jdragon.aggregation.pluginloader.PluginClassLoaderCloseable;
+import com.jdragon.aggregation.pluginloader.type.IPluginType;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
@@ -68,15 +70,39 @@ public class JobContainer {
 
         List<TransformerExecution> transformerExecutions = TransformerUtil.buildTransformerInfo(configuration);
 
-        Thread readerThread = initExecThread(jobId, PluginType.READER, readerType,
-                readerConfiguration, writerConfiguration, transformerExecutions,
-                taskCollectorClass, jobCommunication, channel);
+        AbstractJobPlugin readerJobPlugin = initJobPlugin(PluginType.READER, readerType, readerConfiguration, writerConfiguration);
+        AbstractJobPlugin writerJobPlugin = initJobPlugin(PluginType.WRITER, writerType, writerConfiguration, readerConfiguration);
 
-        Thread writerThread = initExecThread(jobId, PluginType.WRITER, writerType,
-                writerConfiguration, readerConfiguration, transformerExecutions,
-                taskCollectorClass, jobCommunication, channel);
+        Thread readerThread = initExecThread(jobId, readerJobPlugin, transformerExecutions, taskCollectorClass, jobCommunication, channel);
+        Thread writerThread = initExecThread(jobId, writerJobPlugin, transformerExecutions, taskCollectorClass, jobCommunication, channel);
 
         jobCommunication.setState(State.RUNNING);
+
+        // 先确保执行init成功，再执行start
+        ClassLoaderSwapper classLoaderSwapper = ClassLoaderSwapper.newCurrentThreadClassLoaderSwapper();
+        classLoaderSwapper.setCurrentThreadClassLoader(writerJobPlugin.getClassLoader());
+        try {
+            log.info("job writer init start");
+            writerJobPlugin.init();
+            log.info("job writer init end");
+        } catch (Throwable e) {
+            throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "job writer init error", e);
+        } finally {
+            classLoaderSwapper.restoreCurrentThreadClassLoader();
+        }
+
+        classLoaderSwapper.setCurrentThreadClassLoader(readerJobPlugin.getClassLoader());
+        try {
+            log.info("job reader init start");
+            readerJobPlugin.init();
+            log.info("job reader init end");
+        } catch (Throwable e) {
+            throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "job reader init error", e);
+        } finally {
+            classLoaderSwapper.restoreCurrentThreadClassLoader();
+        }
+        log.info("plugin init finish");
+
         writerThread.start();
         // reader没有起来，writer不可能结束
         if (!writerThread.isAlive() || jobCommunication.getState() == State.FAILED) {
@@ -94,36 +120,43 @@ public class JobContainer {
         }
     }
 
-    private Thread initExecThread(Integer jobId, PluginType pluginType, String pluginName,
-                                  Configuration configuration, Configuration peerConfiguration, List<TransformerExecution> transformerExecutions,
-                                  String taskCollectorClass, Communication jobCommunication, Channel channel) {
+    private AbstractJobPlugin initJobPlugin(PluginType pluginType, String pluginName,
+                                            Configuration configuration, Configuration peerConfiguration) {
         try (PluginClassLoaderCloseable classLoaderSwapper = PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(pluginType, pluginName + pluginType.getName())) {
             AbstractJobPlugin jobPlugin = classLoaderSwapper.loadPlugin();
             jobPlugin.setPluginJobConf(configuration);
             jobPlugin.setPeerPluginJobConf(peerConfiguration);
-            AbstractTaskPluginCollector pluginCollector = ClassUtil.instantiate(
-                    taskCollectorClass, AbstractTaskPluginCollector.class,
-                    configuration, jobCommunication,
-                    pluginType);
-            jobPlugin.setTaskPluginCollector(pluginCollector);
-
-            AbstractRunner runner;
-            if (pluginType == PluginType.READER) {
-                ReaderRunner readerRunner = new ReaderRunner(jobPlugin);
-                readerRunner.setRecordSender(new BufferedRecordTransformerExchanger(channel, jobCommunication, pluginCollector, transformerExecutions));
-                runner = readerRunner;
-            } else {
-                WriterRunner writerRunner = new WriterRunner(jobPlugin);
-                writerRunner.setRecordReceiver(new BufferedRecordExchanger(channel));
-                runner = writerRunner;
-            }
-            runner.setJobId(jobId);
-            runner.setRunnerCommunication(jobCommunication);
-            Thread runThread = new Thread(runner,
-                    String.format("%d-%s", jobId, pluginType.getName()));
-            runThread.setContextClassLoader(jobPlugin.getClassLoader());
-            return runThread;
+            return jobPlugin;
         }
+    }
+
+    private Thread initExecThread(Integer jobId, AbstractJobPlugin jobPlugin,
+                                  List<TransformerExecution> transformerExecutions, String taskCollectorClass,
+                                  Communication jobCommunication, Channel channel) {
+        IPluginType pluginType = jobPlugin.getPluginType();
+        Configuration configuration = jobPlugin.getPluginJobConf();
+        AbstractTaskPluginCollector pluginCollector = ClassUtil.instantiate(
+                taskCollectorClass, AbstractTaskPluginCollector.class,
+                configuration, jobCommunication,
+                pluginType);
+        jobPlugin.setTaskPluginCollector(pluginCollector);
+
+        AbstractRunner runner;
+        if (pluginType == PluginType.READER) {
+            ReaderRunner readerRunner = new ReaderRunner(jobPlugin);
+            readerRunner.setRecordSender(new BufferedRecordTransformerExchanger(channel, jobCommunication, pluginCollector, transformerExecutions));
+            runner = readerRunner;
+        } else {
+            WriterRunner writerRunner = new WriterRunner(jobPlugin);
+            writerRunner.setRecordReceiver(new BufferedRecordExchanger(channel));
+            runner = writerRunner;
+        }
+        runner.setJobId(jobId);
+        runner.setRunnerCommunication(jobCommunication);
+        Thread runThread = new Thread(runner,
+                String.format("%d-%s", jobId, pluginType.getName()));
+        runThread.setContextClassLoader(jobPlugin.getClassLoader());
+        return runThread;
     }
 
     private void holdDoStat(Communication jobCommunication, Configuration configuration) {

@@ -62,22 +62,7 @@ public class KafkaWriter extends Writer.Job {
         //字段名，用于拼接json
         this.columnList = ColumnEntry.getListColumnEntry(conf, Key.COLUMNS);
         this.columnArr = columnList.stream().map(ColumnEntry::getName).collect(Collectors.toList());
-    }
 
-    private Properties getProperties() {
-        Properties properties = new Properties();
-        properties.put("bootstrap.servers", bootstrapServers);
-        properties.put("acks", acks);//这意味着leader需要等待所有备份都成功写入日志，这种策略会保证只要有一个备份存活就不会丢失数据。这是最强的保证。
-        properties.put("retries", retries);
-        properties.put("batch.size", batchSize);
-        properties.put("linger.ms", 1);
-        properties.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-        properties.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-        return properties;
-    }
-
-    @Override
-    public void prepare() {
         Properties properties = getProperties();
         KafkaAuthUtil.login(properties, conf);
         properties.putAll(otherProperties);
@@ -105,6 +90,18 @@ public class KafkaWriter extends Writer.Job {
                 throw AggregationException.asException(KafkaWriterErrorCode.CREATE_TOPIC, KafkaWriterErrorCode.REQUIRED_VALUE.getDescription());
             }
         }
+    }
+
+    private Properties getProperties() {
+        Properties properties = new Properties();
+        properties.put("bootstrap.servers", bootstrapServers);
+        properties.put("acks", acks);//这意味着leader需要等待所有备份都成功写入日志，这种策略会保证只要有一个备份存活就不会丢失数据。这是最强的保证。
+        properties.put("retries", retries);
+        properties.put("batch.size", batchSize);
+        properties.put("linger.ms", 1);
+        properties.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        properties.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        return properties;
     }
 
     @Override

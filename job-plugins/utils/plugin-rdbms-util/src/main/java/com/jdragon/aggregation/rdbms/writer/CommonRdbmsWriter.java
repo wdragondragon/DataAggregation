@@ -63,7 +63,7 @@ public class CommonRdbmsWriter extends Writer.Job {
         columns = this.getPluginJobConf().getList("columns", String.class);
         columnNumber = columns.size();
         if (columnNumber == 1 && columns.get(0).equalsIgnoreCase("*")) {
-            try (Connection connection = sourcePlugin.getConnection(dataSource);) {
+            try (Connection connection = DBUtil.getConnection(sourcePlugin, dataSource)) {
                 this.resultSetMetaData = DBUtil.getColumnMetaData(connection,
                         this.tableName, "*");
                 columns = this.resultSetMetaData.getLeft();
@@ -112,7 +112,7 @@ public class CommonRdbmsWriter extends Writer.Job {
     @Override
     public void prepare() {
         if (this.resultSetMetaData == null) {
-            try (Connection connection = sourcePlugin.getConnection(dataSource)) {
+            try (Connection connection = DBUtil.getConnection(sourcePlugin, dataSource)) {
                 this.resultSetMetaData = DBUtil.getColumnMetaData(connection,
                         this.tableName, StringUtils.join(DBUtil.handleKeywords(sourcePlugin, this.columns), ","));
             } catch (SQLException e) {
@@ -126,7 +126,7 @@ public class CommonRdbmsWriter extends Writer.Job {
 
     @Override
     public void startWrite(RecordReceiver recordReceiver) {
-        Connection connection = sourcePlugin.getConnection(dataSource);
+        Connection connection = DBUtil.getConnection(sourcePlugin, dataSource);
         List<Record> writeBuffer = new ArrayList<>(batchSize);
         try {
             Record record;
@@ -410,7 +410,7 @@ public class CommonRdbmsWriter extends Writer.Job {
         DBUtil.closeDBResources(null, null, connection);
         LOG.warn("连接异常，重新建立数据库连接，将会重试10次");
         //重新获取连接
-        return sourcePlugin.getConnection(dataSource);
+        return DBUtil.getConnection(sourcePlugin, dataSource);
     }
 
     @Override

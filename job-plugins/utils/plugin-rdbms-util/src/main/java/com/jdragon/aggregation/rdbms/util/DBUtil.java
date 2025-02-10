@@ -5,6 +5,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.commons.util.RetryUtil;
+import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
 import com.jdragon.aggregation.datasource.DataSourceType;
 import com.jdragon.aggregation.datasource.rdbms.RdbmsSourcePlugin;
 import org.apache.commons.lang3.StringUtils;
@@ -34,68 +35,18 @@ public final class DBUtil {
     private DBUtil() {
     }
 
-    /**
-     * Get direct JDBC connection
-     * <p/>
-     * if connecting failed, try to connect for MAX_TRY_TIMES times
-     * <p/>
-     * NOTE: In DataX, we don't need connection pool in fact
-     */
-    public static Connection getConnection(final RdbmsSourcePlugin rdbmsSourcePlugin,
-                                           final String jdbcUrl, final String username, final String password) {
 
-        return getConnection(rdbmsSourcePlugin, jdbcUrl, username, password, String.valueOf(Constant.SOCKET_TIMEOUT_INSECOND * 1000));
-    }
-
-    /**
-     * @param dataBaseType
-     * @param jdbcUrl
-     * @param username
-     * @param password
-     * @param socketTimeout 设置socketTimeout，单位ms，String类型
-     * @return
-     */
-    public static Connection getConnection(final RdbmsSourcePlugin rdbmsSourcePlugin,
-                                           final String jdbcUrl, final String username, final String password, final String socketTimeout) {
-
+    public static Connection getConnection(final RdbmsSourcePlugin rdbmsSourcePlugin, final BaseDataSourceDTO dataSourceDTO) {
         try {
-            return RetryUtil.executeWithRetry(new Callable<Connection>() {
-                @Override
-                public Connection call() throws Exception {
-                    return DBUtil.connect(rdbmsSourcePlugin, jdbcUrl, username,
-                            password, socketTimeout);
-                }
-            }, 9, 1000L, true);
+            return RetryUtil.executeWithRetry(
+                    () -> rdbmsSourcePlugin.getConnection(dataSourceDTO),
+                    3, 1000L, true);
         } catch (Exception e) {
             throw AggregationException.asException(
-                    DBUtilErrorCode.CONN_DB_ERROR,
-                    String.format("数据库连接失败. 因为根据您配置的连接信息:%s获取数据库连接失败. 请检查您的配置并作出修改.", jdbcUrl), e);
+                    DBUtilErrorCode.CONN_DB_ERROR, "数据库连接失败. 因为根据您配置的连接信息:%s获取数据库连接失败. 请检查您的配置并作出修改.", e);
         }
     }
 
-    /**
-     * Get direct JDBC connection
-     * <p/>
-     * if connecting failed, try to connect for MAX_TRY_TIMES times
-     * <p/>
-     * NOTE: In DataX, we don't need connection pool in fact
-     */
-    public static Connection getConnectionWithoutRetry(final RdbmsSourcePlugin rdbmsSourcePlugin,
-                                                       final String jdbcUrl, final String username, final String password) {
-        return getConnectionWithoutRetry(rdbmsSourcePlugin, jdbcUrl, username,
-                password, String.valueOf(Constant.SOCKET_TIMEOUT_INSECOND * 1000));
-    }
-
-    public static Connection getConnectionWithoutRetry(final RdbmsSourcePlugin rdbmsSourcePlugin,
-                                                       final String jdbcUrl, final String username, final String password, String socketTimeout) {
-        return DBUtil.connect(rdbmsSourcePlugin, jdbcUrl, username,
-                password, socketTimeout);
-    }
-
-    private static synchronized Connection connect(RdbmsSourcePlugin rdbmsSourcePlugin,
-                                                   String url, String user, String pass) {
-        return connect(rdbmsSourcePlugin, url, user, pass, String.valueOf(Constant.SOCKET_TIMEOUT_INSECOND * 1000));
-    }
 
     private static synchronized Connection connect(RdbmsSourcePlugin rdbmsSourcePlugin,
                                                    String url, String user, String pass, String socketTimeout) {
@@ -266,10 +217,9 @@ public final class DBUtil {
         closeDBResources(null, stmt, conn);
     }
 
-    public static List<String> getTableColumns(RdbmsSourcePlugin rdbmsSourcePlugin,
-                                               String jdbcUrl, String user, String pass, String tableName) {
-        Connection conn = getConnection(rdbmsSourcePlugin, jdbcUrl, user, pass);
-        return getTableColumnsByConn(rdbmsSourcePlugin, conn, tableName, "jdbcUrl:" + jdbcUrl);
+    public static List<String> getTableColumns(RdbmsSourcePlugin rdbmsSourcePlugin, BaseDataSourceDTO dataSourceDTO, String tableName) {
+        Connection conn = getConnection(rdbmsSourcePlugin, dataSourceDTO);
+        return getTableColumnsByConn(rdbmsSourcePlugin, conn, tableName);
     }
 
     //经过"或`转义的列名。用来预防有保留关键字字段
@@ -312,7 +262,7 @@ public final class DBUtil {
         return findColumns;
     }
 
-    public static List<String> getTableColumnsByConn(RdbmsSourcePlugin rdbmsSourcePlugin, Connection conn, String tableName, String basicMsg) {
+    public static List<String> getTableColumnsByConn(RdbmsSourcePlugin rdbmsSourcePlugin, Connection conn, String tableName) {
         DataSourceType dataBaseType = rdbmsSourcePlugin.getType();
         List<String> columns = new ArrayList<String>();
         Statement statement = null;
@@ -341,11 +291,10 @@ public final class DBUtil {
      * @return Left:ColumnName Middle:ColumnType Right:ColumnTypeName
      */
     public static Triple<List<String>, List<Integer>, List<String>> getColumnMetaData(
-            RdbmsSourcePlugin rdbmsSourcePlugin, String jdbcUrl, String user,
-            String pass, String tableName, String column) {
+            RdbmsSourcePlugin rdbmsSourcePlugin, BaseDataSourceDTO dataSourceDTO, String tableName, String column) {
         Connection conn = null;
         try {
-            conn = getConnection(rdbmsSourcePlugin, jdbcUrl, user, pass);
+            conn = getConnection(rdbmsSourcePlugin, dataSourceDTO);
             return getColumnMetaData(conn, tableName, column);
         } finally {
             DBUtil.closeDBResources(null, null, conn);
@@ -387,7 +336,6 @@ public final class DBUtil {
             DBUtil.closeDBResources(rs, statement, null);
         }
     }
-
 
 
     public static ResultSet query(Connection conn, String sql)

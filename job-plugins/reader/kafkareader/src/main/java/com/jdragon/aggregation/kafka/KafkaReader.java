@@ -64,10 +64,7 @@ public class KafkaReader extends Reader.Job {
         otherProperties = configuration.getMap(Key.OTHER_PROPERTIES, new HashMap<>(), String.class);
         resetOffset = configuration.getBool(Key.RESET_OFFSET, false);
         keepReadTime = configuration.getLong(Key.KEEP_READ_TIME, 60 * 60 * 1000L);
-    }
 
-    @Override
-    public void prepare() {
         Properties properties = getProperties();
         KafkaAuthUtil.login(properties, configuration);
         properties.putAll(otherProperties);

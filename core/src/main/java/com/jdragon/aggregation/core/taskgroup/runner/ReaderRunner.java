@@ -37,10 +37,6 @@ public class ReaderRunner extends AbstractRunner {
     public void run() {
         Reader.Job jobReader = (Reader.Job) this.getPlugin();
         try {
-            LOG.info("job reader init start");
-            jobReader.init();
-            LOG.info("job reader init end");
-
             LOG.info("job reader prepare start");
             jobReader.prepare();
             LOG.info("job reader prepare end");

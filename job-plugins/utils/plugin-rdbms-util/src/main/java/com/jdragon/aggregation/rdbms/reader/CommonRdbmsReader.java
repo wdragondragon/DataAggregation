@@ -46,7 +46,7 @@ public class CommonRdbmsReader extends Reader.Job {
         String tableName = this.getPluginJobConf().getString("table");
         List<String> columns = this.getPluginJobConf().getList("columns", String.class);
         if (columns.size() == 1 && columns.get(0).equalsIgnoreCase("*")) {
-            try (Connection connection = sourcePlugin.getConnection(dataSource)) {
+            try (Connection connection = DBUtil.getConnection(sourcePlugin, dataSource)) {
                 Triple<List<String>, List<Integer>, List<String>> metaData = DBUtil.getColumnMetaData(connection,
                         tableName, "*");
                 columns = metaData.getLeft();
@@ -67,9 +67,9 @@ public class CommonRdbmsReader extends Reader.Job {
 
     @Override
     public void startRead(RecordSender recordSender) {
-        try (Connection connection = sourcePlugin.getConnection(dataSource);
+        try (Connection connection = DBUtil.getConnection(sourcePlugin, dataSource);
              Statement statement = connection.createStatement();
-             ResultSet rs = statement.executeQuery(selectSql);) {
+             ResultSet rs = statement.executeQuery(selectSql)) {
             ResultSetMetaData metaData = rs.getMetaData();
             int columnNumber = metaData.getColumnCount();
             while (rs.next()) {

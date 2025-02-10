@@ -36,10 +36,6 @@ public class WriterRunner extends AbstractRunner {
     public void run() {
         Writer.Job jobWriter = (Writer.Job) this.getPlugin();
         try {
-            LOG.info("job writer init start");
-            jobWriter.init();
-            LOG.info("job writer init end");
-
             LOG.info("job writer prepare start");
             jobWriter.prepare();
             LOG.info("job writer prepare end");
