@@ -60,7 +60,7 @@ public class DatasourceCache {
             hikariConfig.setMaxLifetime(180000L);
             hikariConfig.setKeepaliveTime(30000L);
             hikariConfig.setConnectionTimeout(60000L);
-            hikariConfig.setRegisterMbeans(true);
+//            hikariConfig.setRegisterMbeans(true);
             if (StringUtils.isNotBlank(testQuery)) {
                 hikariConfig.setConnectionTestQuery(testQuery);
             }

@@ -9,7 +9,7 @@
         "userName": "root",
         "password": "951753",
         "other": "",
-        "userPool": true,
+        "usePool": true,
         "extraParams": {}
       },
       "table": "datax_test1",
