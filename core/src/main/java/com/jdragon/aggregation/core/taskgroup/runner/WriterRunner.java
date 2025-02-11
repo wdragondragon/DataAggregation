@@ -3,22 +3,20 @@ package com.jdragon.aggregation.core.taskgroup.runner;
 import com.jdragon.aggregation.core.plugin.AbstractJobPlugin;
 import com.jdragon.aggregation.core.plugin.RecordReceiver;
 import com.jdragon.aggregation.core.plugin.spi.Writer;
+import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@Setter
 public class WriterRunner extends AbstractRunner {
 
     private static final Logger LOG = LoggerFactory
             .getLogger(WriterRunner.class);
 
-    public WriterRunner(AbstractJobPlugin abstractJobPlugin) {
-        super(abstractJobPlugin);
-    }
-
     private RecordReceiver recordReceiver;
 
-    public void setRecordReceiver(RecordReceiver receiver) {
-        this.recordReceiver = receiver;
+    public WriterRunner(AbstractJobPlugin abstractJobPlugin) {
+        super(abstractJobPlugin);
     }
 
     /**

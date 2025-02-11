@@ -20,6 +20,8 @@ public class AbstractJobPlugin extends AbstractPlugin {
 
     private TaskPluginCollector taskPluginCollector;
 
+    private JobPointReporter jobPointReporter;
+
     public void preCheck() {
     }
 

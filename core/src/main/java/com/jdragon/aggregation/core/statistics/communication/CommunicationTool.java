@@ -1,10 +1,6 @@
 package com.jdragon.aggregation.core.statistics.communication;
 
-import com.jdragon.aggregation.commons.statistics.PerfTrace;
-import com.jdragon.aggregation.commons.util.StrUtil;
 import org.apache.commons.lang.Validate;
-
-import java.text.DecimalFormat;
 
 public class CommunicationTool {
     public static final String READ_SUCCEED_RECORDS = "readSucceedRecords";
@@ -24,15 +20,15 @@ public class CommunicationTool {
     public static final String WRITE_RECEIVED_BYTES = "writeReceivedBytes";
 
     public static final String TOTAL_READ_RECORDS = "totalReadRecords";
-    private static final String TOTAL_READ_BYTES = "totalReadBytes";
+    public static final String TOTAL_READ_BYTES = "totalReadBytes";
 
-    private static final String TOTAL_ERROR_RECORDS = "totalErrorRecords";
-    private static final String TOTAL_ERROR_BYTES = "totalErrorBytes";
+    public static final String TOTAL_ERROR_RECORDS = "totalErrorRecords";
+    public static final String TOTAL_ERROR_BYTES = "totalErrorBytes";
 
     public static final String TOTAL_DIRTY_RECORDS = "totalDirtyRecords";
 
-    private static final String WRITE_SUCCEED_RECORDS = "writeSucceedRecords";
-    private static final String WRITE_SUCCEED_BYTES = "writeSucceedBytes";
+    public static final String WRITE_SUCCEED_RECORDS = "writeSucceedRecords";
+    public static final String WRITE_SUCCEED_BYTES = "writeSucceedBytes";
 
 
     public static final String BYTE_SPEED = "byteSpeed";
@@ -44,59 +40,9 @@ public class CommunicationTool {
     public static final String TRANSFORMER_FILTER_RECORDS = "totalTransformerFilterRecords";
 
     public static class Stringify {
-        private final static DecimalFormat df = new DecimalFormat("0.00");
-
         public static String getSnapshot(final Communication communication) {
-            StringBuilder sb = new StringBuilder();
-            sb.append("\n\tTotal ");
-            sb.append(getTotal(communication));
-            sb.append(" | ");
-            sb.append("Speed ");
-            sb.append(getSpeed(communication));
-            sb.append(" | ");
-            sb.append("Error ");
-            sb.append(getError(communication));
-            sb.append("\n\tAll Task WaitWriterTime ");
-            sb.append(PerfTrace.unitTime(communication.getLongCounter(WAIT_WRITER_TIME)));
-            sb.append(" | ");
-            sb.append(" All Task WaitReaderTime ");
-            sb.append(PerfTrace.unitTime(communication.getLongCounter(WAIT_READER_TIME)));
-            if (communication.getLongCounter(CommunicationTool.TRANSFORMER_USED_TIME) > 0
-                    || communication.getLongCounter(CommunicationTool.TRANSFORMER_SUCCEED_RECORDS) > 0
-                    || communication.getLongCounter(CommunicationTool.TRANSFORMER_FAILED_RECORDS) > 0
-                    || communication.getLongCounter(CommunicationTool.TRANSFORMER_FILTER_RECORDS) > 0) {
-                sb.append("\n\tTransfermor Success ");
-                sb.append(String.format("%d records", communication.getLongCounter(CommunicationTool.TRANSFORMER_SUCCEED_RECORDS)));
-                sb.append(" | ");
-                sb.append("Transformer Error ");
-                sb.append(String.format("%d records", communication.getLongCounter(CommunicationTool.TRANSFORMER_FAILED_RECORDS)));
-                sb.append(" | ");
-                sb.append("Transformer Filter ");
-                sb.append(String.format("%d records", communication.getLongCounter(CommunicationTool.TRANSFORMER_FILTER_RECORDS)));
-                sb.append(" | ");
-                sb.append("Transformer usedTime ");
-                sb.append(PerfTrace.unitTime(communication.getLongCounter(CommunicationTool.TRANSFORMER_USED_TIME)));
-            }
-            return sb.toString();
-        }
-
-
-        private static String getTotal(final Communication communication) {
-            return String.format("%d records, %d bytes",
-                    communication.getLongCounter(TOTAL_READ_RECORDS),
-                    communication.getLongCounter(TOTAL_READ_BYTES));
-        }
-
-        private static String getSpeed(final Communication communication) {
-            return String.format("%s/s, %d records/s",
-                    StrUtil.stringify(communication.getLongCounter(BYTE_SPEED)),
-                    communication.getLongCounter(RECORD_SPEED));
-        }
-
-        private static String getError(final Communication communication) {
-            return String.format("%d records, %d bytes",
-                    communication.getLongCounter(TOTAL_ERROR_RECORDS),
-                    communication.getLongCounter(TOTAL_ERROR_BYTES));
+            RunStatus runStatus = new RunStatus(communication);
+            return runStatus.getStringify();
         }
     }
 

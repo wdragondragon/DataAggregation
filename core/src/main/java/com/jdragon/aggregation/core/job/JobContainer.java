@@ -1,10 +1,12 @@
 package com.jdragon.aggregation.core.job;
 
+import com.alibaba.fastjson.JSONObject;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.statistics.VMInfo;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.enums.State;
 import com.jdragon.aggregation.core.plugin.AbstractJobPlugin;
+import com.jdragon.aggregation.core.plugin.JobPointReporter;
 import com.jdragon.aggregation.core.plugin.PluginType;
 import com.jdragon.aggregation.core.plugin.spi.collector.AbstractTaskPluginCollector;
 import com.jdragon.aggregation.core.statistics.communication.Communication;
@@ -12,7 +14,6 @@ import com.jdragon.aggregation.core.statistics.communication.CommunicationTool;
 import com.jdragon.aggregation.core.taskgroup.runner.AbstractRunner;
 import com.jdragon.aggregation.core.taskgroup.runner.ReaderRunner;
 import com.jdragon.aggregation.core.taskgroup.runner.WriterRunner;
-import com.jdragon.aggregation.core.transformer.ParamsKey;
 import com.jdragon.aggregation.core.transformer.TransformerExecution;
 import com.jdragon.aggregation.core.transport.channel.Channel;
 import com.jdragon.aggregation.core.transport.channel.memory.MemoryChannel;
@@ -24,6 +25,7 @@ import com.jdragon.aggregation.core.utils.TransformerUtil;
 import com.jdragon.aggregation.pluginloader.ClassLoaderSwapper;
 import com.jdragon.aggregation.pluginloader.PluginClassLoaderCloseable;
 import com.jdragon.aggregation.pluginloader.type.IPluginType;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
@@ -31,31 +33,45 @@ import java.io.File;
 import java.util.List;
 import java.util.Set;
 
+@Getter
 @Slf4j
 public class JobContainer {
+
+    private final JobPointReporter jobPointReporter = new JobPointReporter();
+
+    private long startTime;
 
     public static void main(String[] args) {
         Configuration configuration = Configuration.from(new File("C:\\dev\\ideaProject\\DataAggregation\\core\\src\\main\\resources\\kafkareader.json"));
         JobContainer container = new JobContainer();
+        container.getJobPointReporter().reg(runStatus -> log.info(JSONObject.toJSONString(runStatus)));
         container.start(configuration);
     }
 
     public void start(Configuration configuration) {
+        startTime = System.currentTimeMillis();
+
         log.info("start job from configuration: {}", filterSensitiveConfiguration(configuration.clone()).beautify());
         // 初始化全局channel 和 communication
         Communication jobCommunication = new Communication();
+        jobCommunication.setTimestamp(startTime);
         Channel channel = new MemoryChannel();
         channel.setCommunication(jobCommunication);
+        jobPointReporter.setTrackCommunication(jobCommunication);
+
 
         // 启动作业
-        this.startJob(configuration, channel, jobCommunication);
+        this.startJob(configuration, channel, jobCommunication, jobPointReporter);
 
         // 持续输出作业状态
         this.holdDoStat(jobCommunication, configuration);
+
+        //上报作业运行状态
+        jobPointReporter.openReport().report();
     }
 
     private void startJob(Configuration configuration, Channel channel,
-                          Communication jobCommunication) {
+                          Communication jobCommunication, JobPointReporter jobPointReporter) {
         Integer jobId = configuration.getInt("jobId", 1);
         Configuration reader = configuration.getConfiguration("reader");
         String readerType = reader.getString("type");
@@ -73,8 +89,8 @@ public class JobContainer {
         AbstractJobPlugin readerJobPlugin = initJobPlugin(PluginType.READER, readerType, readerConfiguration, writerConfiguration);
         AbstractJobPlugin writerJobPlugin = initJobPlugin(PluginType.WRITER, writerType, writerConfiguration, readerConfiguration);
 
-        Thread readerThread = initExecThread(jobId, readerJobPlugin, transformerExecutions, taskCollectorClass, jobCommunication, channel);
-        Thread writerThread = initExecThread(jobId, writerJobPlugin, transformerExecutions, taskCollectorClass, jobCommunication, channel);
+        Thread readerThread = initExecThread(jobId, readerJobPlugin, transformerExecutions, taskCollectorClass, jobCommunication, channel, jobPointReporter);
+        Thread writerThread = initExecThread(jobId, writerJobPlugin, transformerExecutions, taskCollectorClass, jobCommunication, channel, jobPointReporter);
 
         jobCommunication.setState(State.RUNNING);
 
@@ -132,7 +148,7 @@ public class JobContainer {
 
     private Thread initExecThread(Integer jobId, AbstractJobPlugin jobPlugin,
                                   List<TransformerExecution> transformerExecutions, String taskCollectorClass,
-                                  Communication jobCommunication, Channel channel) {
+                                  Communication jobCommunication, Channel channel, JobPointReporter jobPointReporter) {
         IPluginType pluginType = jobPlugin.getPluginType();
         Configuration configuration = jobPlugin.getPluginJobConf();
         AbstractTaskPluginCollector pluginCollector = ClassUtil.instantiate(
@@ -140,6 +156,7 @@ public class JobContainer {
                 configuration, jobCommunication,
                 pluginType);
         jobPlugin.setTaskPluginCollector(pluginCollector);
+        jobPlugin.setJobPointReporter(jobPointReporter);
 
         AbstractRunner runner;
         if (pluginType == PluginType.READER) {
