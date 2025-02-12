@@ -1,4 +1,4 @@
-package com.jdragon.aggregation.core.plugin;
+package com.jdragon.aggregation.core.plugin.spi.reporter;
 
 import com.jdragon.aggregation.core.statistics.communication.RunStatus;
 

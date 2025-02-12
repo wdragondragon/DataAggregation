@@ -2,7 +2,7 @@ package com.jdragon.aggregation.core.statistics.communication;
 
 import com.jdragon.aggregation.commons.statistics.PerfTrace;
 import com.jdragon.aggregation.commons.util.StrUtil;
-import com.jdragon.aggregation.core.plugin.JobPointReporter;
+import com.jdragon.aggregation.core.plugin.spi.reporter.JobPointReporter;
 import lombok.Data;
 
 import java.util.LinkedHashMap;

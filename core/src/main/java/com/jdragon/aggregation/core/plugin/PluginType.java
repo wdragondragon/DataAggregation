@@ -6,6 +6,7 @@ public enum PluginType implements IPluginType {
     READER("reader"),
     TRANSFORMER("transformer"),
     WRITER("writer"),
+    REPORT("report"),
     ;
 
     private final String name;

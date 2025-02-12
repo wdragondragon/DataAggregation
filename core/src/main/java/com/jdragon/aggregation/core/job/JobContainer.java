@@ -4,11 +4,14 @@ import com.alibaba.fastjson.JSONObject;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.statistics.VMInfo;
 import com.jdragon.aggregation.commons.util.Configuration;
+import com.jdragon.aggregation.core.enums.Key;
 import com.jdragon.aggregation.core.enums.State;
 import com.jdragon.aggregation.core.plugin.AbstractJobPlugin;
-import com.jdragon.aggregation.core.plugin.JobPointReporter;
+import com.jdragon.aggregation.core.plugin.spi.reporter.AbstractJobReporter;
+import com.jdragon.aggregation.core.plugin.spi.reporter.JobPointReporter;
 import com.jdragon.aggregation.core.plugin.PluginType;
 import com.jdragon.aggregation.core.plugin.spi.collector.AbstractTaskPluginCollector;
+import com.jdragon.aggregation.core.plugin.spi.reporter.ReporterInfo;
 import com.jdragon.aggregation.core.statistics.communication.Communication;
 import com.jdragon.aggregation.core.statistics.communication.CommunicationTool;
 import com.jdragon.aggregation.core.taskgroup.runner.AbstractRunner;
@@ -30,6 +33,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -37,18 +41,26 @@ import java.util.Set;
 @Slf4j
 public class JobContainer {
 
-    private final JobPointReporter jobPointReporter = new JobPointReporter();
+    private final Configuration configuration;
+
+    private final JobPointReporter jobPointReporter;
 
     private long startTime;
 
     public static void main(String[] args) {
         Configuration configuration = Configuration.from(new File("C:\\dev\\ideaProject\\DataAggregation\\core\\src\\main\\resources\\kafkareader.json"));
-        JobContainer container = new JobContainer();
+        configuration.merge(Configuration.from(new File("C:\\dev\\ideaProject\\DataAggregation\\core\\src\\main\\resources\\core.json")), true);
+        JobContainer container = new JobContainer(configuration);
         container.getJobPointReporter().reg(runStatus -> log.info(JSONObject.toJSONString(runStatus)));
-        container.start(configuration);
+        container.start();
     }
 
-    public void start(Configuration configuration) {
+    public JobContainer(Configuration configuration) {
+        this.configuration = configuration;
+        this.jobPointReporter = new JobPointReporter(configuration);
+    }
+
+    public void start() {
         startTime = System.currentTimeMillis();
 
         log.info("start job from configuration: {}", filterSensitiveConfiguration(configuration.clone()).beautify());
@@ -57,17 +69,20 @@ public class JobContainer {
         jobCommunication.setTimestamp(startTime);
         Channel channel = new MemoryChannel();
         channel.setCommunication(jobCommunication);
+
         jobPointReporter.setTrackCommunication(jobCommunication);
+        jobPointReporter.start();
+        try {
+            // 启动作业
+            this.startJob(configuration, channel, jobCommunication, jobPointReporter);
 
+            // 持续输出作业状态
+            this.holdDoStat(jobCommunication, configuration);
 
-        // 启动作业
-        this.startJob(configuration, channel, jobCommunication, jobPointReporter);
-
-        // 持续输出作业状态
-        this.holdDoStat(jobCommunication, configuration);
-
-        //上报作业运行状态
-        jobPointReporter.openReport().report();
+        } finally {
+            //上报作业运行状态
+            jobPointReporter.openReport().report();
+        }
     }
 
     private void startJob(Configuration configuration, Channel channel,
@@ -81,7 +96,7 @@ public class JobContainer {
         String writerType = writer.getString("type");
         Configuration writerConfiguration = writer.getConfiguration("config");
 
-        String taskCollectorClass = configuration.getString("core.statistics.collector.plugin.taskClass",
+        String taskCollectorClass = configuration.getString(Key.COLLECTOR_CLASS,
                 "com.jdragon.aggregation.core.plugin.StdoutPluginCollector");
 
         List<TransformerExecution> transformerExecutions = TransformerUtil.buildTransformerInfo(configuration);

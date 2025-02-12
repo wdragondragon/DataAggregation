@@ -1,0 +1,11 @@
+{
+  "core": {
+    "plugin": {
+      "reporter": [
+        {
+          "className": "com.jdragon.aggregation.core.plugin.spi.reporter.StdoutJobReporter"
+        }
+      ]
+    }
+  }
+}

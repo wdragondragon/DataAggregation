@@ -1,6 +1,7 @@
 package com.jdragon.aggregation.core.plugin;
 
 import com.jdragon.aggregation.commons.util.Configuration;
+import com.jdragon.aggregation.core.plugin.spi.reporter.JobPointReporter;
 import com.jdragon.aggregation.pluginloader.spi.AbstractPlugin;
 import lombok.Getter;
 import lombok.Setter;

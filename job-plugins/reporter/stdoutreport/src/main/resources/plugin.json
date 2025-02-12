@@ -1,0 +1,6 @@
+{
+  "name": "stdout",
+  "class": "com.jdragon.aggregation.report.stdout.StdoutReporter",
+  "description": "stdout-reporter",
+  "developer": "jdragon"
+}
