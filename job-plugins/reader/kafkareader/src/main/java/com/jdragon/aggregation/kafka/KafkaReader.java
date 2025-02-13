@@ -6,7 +6,6 @@ import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.commons.util.FastJsonMemory;
 import com.jdragon.aggregation.core.plugin.RecordSender;
 import com.jdragon.aggregation.core.plugin.spi.Reader;
-import com.jdragon.aggregation.core.statistics.communication.RunStatus;
 import com.jdragon.aggregation.datasource.queue.kafka.KafkaAuthUtil;
 import com.jdragon.aggregation.datasource.queue.kafka.KafkaQueue;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
