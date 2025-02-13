@@ -25,4 +25,15 @@ public class JobReporterExecutor {
             classLoaderSwapper.restoreCurrentThreadClassLoader();
         }
     }
+
+    public void recovery(RunStatus runStatus) {
+        classLoaderSwapper.setCurrentThreadClassLoader(jobReporterExecInterface.getClassLoader());
+        try {
+            jobReporterExecInterface.recovery(runStatus);
+        } catch (Throwable e) {
+            log.error("任务状态恢复失败：{}", e.getMessage(), e);
+        } finally {
+            classLoaderSwapper.restoreCurrentThreadClassLoader();
+        }
+    }
 }

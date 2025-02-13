@@ -7,11 +7,14 @@ import lombok.Data;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static com.jdragon.aggregation.core.statistics.communication.CommunicationTool.*;
 
 @Data
 public class RunStatus {
+
+    private String jobId;
 
     private long total;
 
@@ -37,7 +40,7 @@ public class RunStatus {
 
     private long waitReaderTime;
 
-    private Map<String, Object> otherReportInfo = new LinkedHashMap<>();
+    private Map<String, Object> otherReportInfo = new ConcurrentHashMap<>();
 
     private Communication communication;
 
@@ -48,9 +51,17 @@ public class RunStatus {
         init();
     }
 
+    public RunStatus(Communication communication, JobPointReporter jobReport) {
+        this.communication = communication;
+        this.jobReport = jobReport;
+        this.otherReportInfo = jobReport.getOtherReportInfo();
+        init();
+    }
+
     public RunStatus(JobPointReporter jobReport) {
         this.jobReport = jobReport;
         this.communication = jobReport.getTrackCommunication();
+        this.otherReportInfo = jobReport.getOtherReportInfo();
         init();
     }
 
@@ -70,15 +81,6 @@ public class RunStatus {
         this.transformerSuccess = communication.getLongCounter(CommunicationTool.TRANSFORMER_SUCCEED_RECORDS);
         this.transformerError = communication.getLongCounter(CommunicationTool.TRANSFORMER_FAILED_RECORDS);
         this.transformerFilter = communication.getLongCounter(CommunicationTool.TRANSFORMER_FILTER_RECORDS);
-    }
-
-    public void put(String key, Object value) {
-        otherReportInfo.put(key, value);
-    }
-
-    @SuppressWarnings("unchecked")
-    public <T> T get(String key) {
-        return (T) otherReportInfo.get(key);
     }
 
     public void report() {

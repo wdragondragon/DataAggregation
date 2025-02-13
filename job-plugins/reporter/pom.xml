@@ -12,9 +12,10 @@
     <artifactId>reporter</artifactId>
     <packaging>pom</packaging>
 
-   <modules>
-       <module>stdoutreport</module>
-   </modules>
+    <modules>
+        <module>stdoutreport</module>
+        <module>local_file_report</module>
+    </modules>
 
     <properties>
         <maven.compiler.source>8</maven.compiler.source>

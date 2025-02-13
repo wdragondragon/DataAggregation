@@ -1,17 +1,14 @@
 package com.jdragon.aggregation.core.job;
 
-import com.alibaba.fastjson.JSONObject;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.statistics.VMInfo;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.enums.Key;
 import com.jdragon.aggregation.core.enums.State;
 import com.jdragon.aggregation.core.plugin.AbstractJobPlugin;
-import com.jdragon.aggregation.core.plugin.spi.reporter.AbstractJobReporter;
 import com.jdragon.aggregation.core.plugin.spi.reporter.JobPointReporter;
 import com.jdragon.aggregation.core.plugin.PluginType;
 import com.jdragon.aggregation.core.plugin.spi.collector.AbstractTaskPluginCollector;
-import com.jdragon.aggregation.core.plugin.spi.reporter.ReporterInfo;
 import com.jdragon.aggregation.core.statistics.communication.Communication;
 import com.jdragon.aggregation.core.statistics.communication.CommunicationTool;
 import com.jdragon.aggregation.core.taskgroup.runner.AbstractRunner;
@@ -22,9 +19,7 @@ import com.jdragon.aggregation.core.transport.channel.Channel;
 import com.jdragon.aggregation.core.transport.channel.memory.MemoryChannel;
 import com.jdragon.aggregation.core.transport.exchanger.BufferedRecordExchanger;
 import com.jdragon.aggregation.core.transport.exchanger.BufferedRecordTransformerExchanger;
-import com.jdragon.aggregation.core.utils.ClassUtil;
-import com.jdragon.aggregation.core.utils.FrameworkErrorCode;
-import com.jdragon.aggregation.core.utils.TransformerUtil;
+import com.jdragon.aggregation.core.utils.*;
 import com.jdragon.aggregation.pluginloader.ClassLoaderSwapper;
 import com.jdragon.aggregation.pluginloader.PluginClassLoaderCloseable;
 import com.jdragon.aggregation.pluginloader.type.IPluginType;
@@ -33,9 +28,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+
 
 @Getter
 @Slf4j
@@ -51,7 +46,6 @@ public class JobContainer {
         Configuration configuration = Configuration.from(new File("C:\\dev\\ideaProject\\DataAggregation\\core\\src\\main\\resources\\kafkareader.json"));
         configuration.merge(Configuration.from(new File("C:\\dev\\ideaProject\\DataAggregation\\core\\src\\main\\resources\\core.json")), true);
         JobContainer container = new JobContainer(configuration);
-        container.getJobPointReporter().reg(runStatus -> log.info(JSONObject.toJSONString(runStatus)));
         container.start();
     }
 
@@ -71,23 +65,30 @@ public class JobContainer {
         channel.setCommunication(jobCommunication);
 
         jobPointReporter.setTrackCommunication(jobCommunication);
-        jobPointReporter.start();
+        jobPointReporter.recovery();
+        Thread jobPointReportThread = new Thread(jobPointReporter);
         try {
+            jobPointReportThread.start();
             // 启动作业
             this.startJob(configuration, channel, jobCommunication, jobPointReporter);
 
             // 持续输出作业状态
             this.holdDoStat(jobCommunication, configuration);
-
         } finally {
             //上报作业运行状态
             jobPointReporter.openReport().report();
+            //最后打印cpu的平均消耗，GC的统计
+            VMInfo vmInfo = VMInfo.getVmInfo();
+            if (vmInfo != null) {
+                vmInfo.getDelta(false);
+                log.info(vmInfo.totalString());
+            }
         }
     }
 
     private void startJob(Configuration configuration, Channel channel,
                           Communication jobCommunication, JobPointReporter jobPointReporter) {
-        Integer jobId = configuration.getInt("jobId", 1);
+        long jobId = configuration.getLong("jobId", 1);
         Configuration reader = configuration.getConfiguration("reader");
         String readerType = reader.getString("type");
         Configuration readerConfiguration = reader.getConfiguration("config");
@@ -117,6 +118,7 @@ public class JobContainer {
             writerJobPlugin.init();
             log.info("job writer init end");
         } catch (Throwable e) {
+            jobCommunication.setState(State.FAILED);
             throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "job writer init error", e);
         } finally {
             classLoaderSwapper.restoreCurrentThreadClassLoader();
@@ -128,6 +130,7 @@ public class JobContainer {
             readerJobPlugin.init();
             log.info("job reader init end");
         } catch (Throwable e) {
+            jobCommunication.setState(State.FAILED);
             throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "job reader init error", e);
         } finally {
             classLoaderSwapper.restoreCurrentThreadClassLoader();
@@ -161,7 +164,7 @@ public class JobContainer {
         }
     }
 
-    private Thread initExecThread(Integer jobId, AbstractJobPlugin jobPlugin,
+    private Thread initExecThread(long jobId, AbstractJobPlugin jobPlugin,
                                   List<TransformerExecution> transformerExecutions, String taskCollectorClass,
                                   Communication jobCommunication, Channel channel, JobPointReporter jobPointReporter) {
         IPluginType pluginType = jobPlugin.getPluginType();
@@ -186,7 +189,7 @@ public class JobContainer {
         runner.setJobId(jobId);
         runner.setRunnerCommunication(jobCommunication);
         Thread runThread = new Thread(runner,
-                String.format("%d-%s", jobId, pluginType.getName()));
+                String.format("DataAggregation-Thread-%s-%d", pluginType.getName(), jobId));
         runThread.setContextClassLoader(jobPlugin.getClassLoader());
         return runThread;
     }
@@ -221,13 +224,6 @@ public class JobContainer {
             log.info(CommunicationTool.Stringify.getSnapshot(jobCommunication));
             throw AggregationException.asException(
                     FrameworkErrorCode.RUNTIME_ERROR, e);
-        } finally {
-            //最后打印cpu的平均消耗，GC的统计
-            VMInfo vmInfo = VMInfo.getVmInfo();
-            if (vmInfo != null) {
-                vmInfo.getDelta(false);
-                log.info(vmInfo.totalString());
-            }
         }
     }
 

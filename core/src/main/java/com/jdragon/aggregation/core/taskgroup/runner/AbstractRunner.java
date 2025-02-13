@@ -15,7 +15,7 @@ public class AbstractRunner implements Runnable {
 
     private Configuration jobConf;
 
-    private int jobId;
+    private long jobId;
 
     private Communication runnerCommunication;
 

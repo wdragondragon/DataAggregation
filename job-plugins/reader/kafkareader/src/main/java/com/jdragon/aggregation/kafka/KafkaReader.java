@@ -6,6 +6,7 @@ import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.commons.util.FastJsonMemory;
 import com.jdragon.aggregation.core.plugin.RecordSender;
 import com.jdragon.aggregation.core.plugin.spi.Reader;
+import com.jdragon.aggregation.core.statistics.communication.RunStatus;
 import com.jdragon.aggregation.datasource.queue.kafka.KafkaAuthUtil;
 import com.jdragon.aggregation.datasource.queue.kafka.KafkaQueue;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -49,8 +50,12 @@ public class KafkaReader extends Reader.Job {
 
     private final KafkaQueue kafkaQueue = new KafkaQueue();
 
+    private int runCount;
+
     @Override
     public void init() {
+        runCount = getJobPointReporter().get("count", 1);
+        LOG.info("kafka任务运行次数：{}", runCount);
         configuration = super.getPluginJobConf();
         split = configuration.getString(Key.SPLIT);
         bootstrapServers = configuration.getString(Key.BOOTSTRAP_SERVERS);
@@ -130,6 +135,11 @@ public class KafkaReader extends Reader.Job {
             }
             return true;
         });
+    }
+
+    @Override
+    public void post() {
+        getJobPointReporter().put("count", runCount + 1);
     }
 
     private Record buildOneRecord(RecordSender recordSender, String value) throws Exception {

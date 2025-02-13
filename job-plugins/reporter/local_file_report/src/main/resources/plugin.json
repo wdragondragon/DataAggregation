@@ -1,0 +1,6 @@
+{
+  "name": "local_file",
+  "class": "com.jdragon.aggregation.report.localfile.LocalFileReporter",
+  "description": "stdout-reporter",
+  "developer": "jdragon"
+}

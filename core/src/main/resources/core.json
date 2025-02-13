@@ -3,7 +3,7 @@
     "plugin": {
       "reporter": [
         {
-          "className": "com.jdragon.aggregation.core.plugin.spi.reporter.StdoutJobReporter"
+          "name": "local_file"
         }
       ]
     }

@@ -14,16 +14,19 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
-import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingDeque;
 
 @Slf4j
 @Setter
 @Getter
-public class JobPointReporter extends Thread {
+public class JobPointReporter implements Runnable {
+
+    private long jobId;
 
     private BlockingQueue<RunStatus> fileStorageQueue = new LinkedBlockingDeque<>();
 
@@ -31,8 +34,14 @@ public class JobPointReporter extends Thread {
 
     private List<JobReporterExecutor> jobReporterExecInterfaceList = new LinkedList<>();
 
+    private Configuration configuration;
+
+    private Map<String, Object> otherReportInfo = new ConcurrentHashMap<>();
+
     public JobPointReporter(Configuration configuration) {
         loadReporter(configuration);
+        this.jobId = configuration.getLong("jobId", 1L);
+        this.configuration = configuration;
     }
 
     private void loadReporter(Configuration configuration) {
@@ -43,16 +52,32 @@ public class JobPointReporter extends Thread {
             String className = reporterInfo.getClassName();
             if (StringUtils.isNotBlank(className)) {
                 jobReporter = ClassUtil.instantiate(
-                        className, AbstractJobReporter.class);
+                        className, AbstractJobReporter.class, configuration);
                 jobReporter.setClassLoader(Thread.currentThread().getContextClassLoader());
             } else {
                 String name = reporterInfo.getName();
                 try (PluginClassLoaderCloseable classLoaderSwapper = PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(PluginType.REPORT, name)) {
                     jobReporter = classLoaderSwapper.loadPlugin();
+                    jobReporter.setConfiguration(configuration);
                 }
             }
             reg(jobReporter);
         }
+    }
+
+    public void put(String key, Object value) {
+        otherReportInfo.put(key, value);
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T get(String key, Object defaultValue) {
+        return (T) otherReportInfo.getOrDefault(key, defaultValue);
+    }
+
+    public RunStatus recovery() {
+        RunStatus runStatus = openReport();
+        jobReporterExecInterfaceList.forEach(jobReporterExecInterface -> jobReporterExecInterface.recovery(runStatus));
+        return runStatus;
     }
 
     public RunStatus openReport() {
@@ -70,7 +95,7 @@ public class JobPointReporter extends Thread {
         now.setTimestamp(System.currentTimeMillis());
         Communication start = new Communication();
         start.setTimestamp(communication.getTimestamp());
-        this.report(new RunStatus(CommunicationTool.getReportCommunication(now, start)));
+        this.report(new RunStatus(CommunicationTool.getReportCommunication(now, start),this));
     }
 
     private void report(RunStatus runStatus) {
@@ -78,7 +103,7 @@ public class JobPointReporter extends Thread {
     }
 
     public void reg(JobReporterExecInterface jobReporterExecInterface) {
-        reg(new BaseJobReporter(jobReporterExecInterface));
+        reg(new BaseJobReporter(jobReporterExecInterface, configuration));
     }
 
     public void reg(AbstractJobReporter reporter) {
