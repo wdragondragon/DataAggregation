@@ -6,6 +6,7 @@ import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.enums.Key;
 import com.jdragon.aggregation.core.enums.State;
 import com.jdragon.aggregation.core.plugin.AbstractJobPlugin;
+import com.jdragon.aggregation.core.plugin.CustomPluginCreator;
 import com.jdragon.aggregation.core.plugin.spi.reporter.JobPointReporter;
 import com.jdragon.aggregation.core.plugin.PluginType;
 import com.jdragon.aggregation.core.plugin.spi.collector.AbstractTaskPluginCollector;
@@ -28,7 +29,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 
@@ -39,6 +42,12 @@ public class JobContainer {
     private final Configuration configuration;
 
     private final JobPointReporter jobPointReporter;
+
+    private AbstractJobPlugin readerJobPlugin;
+
+    private AbstractJobPlugin writerJobPlugin;
+
+    private final Map<IPluginType, CustomPluginCreator> customPlugins = new HashMap<>();
 
     private long startTime;
 
@@ -66,17 +75,21 @@ public class JobContainer {
 
         jobPointReporter.setTrackCommunication(jobCommunication);
         jobPointReporter.recovery();
-        Thread jobPointReportThread = new Thread(jobPointReporter);
+
         try {
-            jobPointReportThread.start();
             // 启动作业
             this.startJob(configuration, channel, jobCommunication, jobPointReporter);
-
-            // 持续输出作业状态
-            this.holdDoStat(jobCommunication, configuration);
+            try {
+                // 启动上报线程
+                Thread jobPointReportThread = new Thread(jobPointReporter);
+                jobPointReportThread.start();
+                // 持续输出作业状态
+                this.holdDoStat(jobCommunication, configuration);
+            } finally {
+                // 最后一次上报作业运行状态
+                jobPointReporter.openReport().report();
+            }
         } finally {
-            //上报作业运行状态
-            jobPointReporter.openReport().report();
             //最后打印cpu的平均消耗，GC的统计
             VMInfo vmInfo = VMInfo.getVmInfo();
             if (vmInfo != null) {
@@ -102,8 +115,8 @@ public class JobContainer {
 
         List<TransformerExecution> transformerExecutions = TransformerUtil.buildTransformerInfo(configuration);
 
-        AbstractJobPlugin readerJobPlugin = initJobPlugin(PluginType.READER, readerType, readerConfiguration, writerConfiguration);
-        AbstractJobPlugin writerJobPlugin = initJobPlugin(PluginType.WRITER, writerType, writerConfiguration, readerConfiguration);
+        readerJobPlugin = initJobPlugin(PluginType.READER, readerType, readerConfiguration, writerConfiguration);
+        writerJobPlugin = initJobPlugin(PluginType.WRITER, writerType, writerConfiguration, readerConfiguration);
 
         Thread readerThread = initExecThread(jobId, readerJobPlugin, transformerExecutions, taskCollectorClass, jobCommunication, channel, jobPointReporter);
         Thread writerThread = initExecThread(jobId, writerJobPlugin, transformerExecutions, taskCollectorClass, jobCommunication, channel, jobPointReporter);
@@ -154,14 +167,34 @@ public class JobContainer {
         }
     }
 
+    public void addConsumerPlugin(IPluginType type, CustomPluginCreator customPluginCreator) {
+        customPlugins.put(type, customPluginCreator);
+    }
+
+    public void addConsumerPlugin(IPluginType type, AbstractJobPlugin jobPlugin) {
+        customPlugins.put(type, (configuration, peerConfig) -> jobPlugin);
+    }
+
     private AbstractJobPlugin initJobPlugin(PluginType pluginType, String pluginName,
                                             Configuration configuration, Configuration peerConfiguration) {
-        try (PluginClassLoaderCloseable classLoaderSwapper = PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(pluginType, pluginName + pluginType.getName())) {
-            AbstractJobPlugin jobPlugin = classLoaderSwapper.loadPlugin();
-            jobPlugin.setPluginJobConf(configuration);
-            jobPlugin.setPeerPluginJobConf(peerConfiguration);
-            return jobPlugin;
+        AbstractJobPlugin jobPlugin;
+        if ("custom".equalsIgnoreCase(pluginName)) {
+            if (!customPlugins.containsKey(pluginType)) {
+                throw AggregationException.asException(pluginType + "类型custom插件未注册");
+            }
+            jobPlugin = customPlugins.get(pluginType).createJobPlugin(configuration, peerConfiguration);
+            if (jobPlugin.getClassLoader() == null) {
+                jobPlugin.setClassLoader(Thread.currentThread().getContextClassLoader());
+            }
+            jobPlugin.setPluginType(pluginType);
+        } else {
+            try (PluginClassLoaderCloseable classLoaderSwapper = PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(pluginType, pluginName + pluginType.getName())) {
+                jobPlugin = classLoaderSwapper.loadPlugin();
+            }
         }
+        jobPlugin.setPluginJobConf(configuration);
+        jobPlugin.setPeerPluginJobConf(peerConfiguration);
+        return jobPlugin;
     }
 
     private Thread initExecThread(long jobId, AbstractJobPlugin jobPlugin,

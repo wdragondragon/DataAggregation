@@ -1,0 +1,45 @@
+{
+  "reader": {
+    "type": "custom",
+    "config": {}
+  },
+  "writer": {
+    "type": "mysql8",
+    "config": {
+      "connect": {
+        "host": "rmHost",
+        "port": "3305",
+        "database": "datax_test",
+        "userName": "root",
+        "password": "951753",
+        "other": "",
+        "usePool": true,
+        "extraParams": {}
+      },
+      "table": "datax_test2",
+      "columns": [
+        "*"
+      ]
+    }
+  },
+  "transformer": [
+    {
+      "name": "dx_substr",
+      "parameter": {
+        "columnIndex": 1,
+        "paras": [
+          "0",
+          "2"
+        ]
+      }
+    },
+    {
+      "name": "dx_groovy",
+      "parameter": {
+        "code": "Column column = record.getColumn(1);\nString string = column.asString();\nrecord.setColumn(1, new StringColumn(string + \"test\"));return record;",
+        "extraPackage": [
+        ]
+      }
+    }
+  ]
+}
