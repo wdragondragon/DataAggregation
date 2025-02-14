@@ -1,0 +1,6 @@
+{
+  "name": "sftp",
+  "class": "com.jdragon.aggregation.datasource.file.sftp.SftpHelper",
+  "description": "sftp",
+  "developer": "jdragon"
+}

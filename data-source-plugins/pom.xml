@@ -22,6 +22,8 @@
         <module>data-source-handler-queue-rabbitmq</module>
         <module>data-source-handler-queue-rocketmq</module>
         <module>hdfs-auth-util</module>
+        <module>data-source-handler-file-ftp</module>
+        <module>data-source-handler-file-sftp</module>
     </modules>
 
     <properties>

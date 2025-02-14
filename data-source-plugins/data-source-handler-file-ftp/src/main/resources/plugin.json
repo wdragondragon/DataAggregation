@@ -1,0 +1,6 @@
+{
+  "name": "ftp",
+  "class": "com.jdragon.aggregation.datasource.file.ftp.FtpHelper",
+  "description": "ftp",
+  "developer": "jdragon"
+}

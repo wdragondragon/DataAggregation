@@ -26,7 +26,7 @@ public class KafkaAuthUtil {
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
-        } else if (StringUtils.isNoneBlank(username, password)) {
+        } else if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
             login(properties, username, password);
         }
     }
