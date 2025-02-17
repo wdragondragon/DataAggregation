@@ -24,6 +24,7 @@
         <module>hdfs-auth-util</module>
         <module>data-source-handler-file-ftp</module>
         <module>data-source-handler-file-sftp</module>
+        <module>data-source-handler-file-s3-minio</module>
     </modules>
 
     <properties>
