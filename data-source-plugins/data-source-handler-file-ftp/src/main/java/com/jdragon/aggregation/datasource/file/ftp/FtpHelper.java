@@ -237,9 +237,7 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
         String filePath = processingPath(path, name);
         try {
             this.printWorkingDirectory();
-            String parentDir = filePath.substring(0,
-                    StringUtils.lastIndexOf(filePath, IOUtils.DIR_SEPARATOR));
-            this.ftpClient.changeWorkingDirectory(parentDir);
+            this.ftpClient.changeWorkingDirectory(path);
             this.printWorkingDirectory();
             OutputStream writeOutputStream = this.ftpClient
                     .appendFileStream(filePath);

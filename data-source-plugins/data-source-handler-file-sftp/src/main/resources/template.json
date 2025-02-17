@@ -1,0 +1,7 @@
+{
+  "host": "",
+  "port": 22,
+  "username": "",
+  "password": "",
+  "timeout": 600000
+}

@@ -1,0 +1,9 @@
+{
+  "host": "",
+  "port": 21,
+  "username": "",
+  "password": "",
+  "timeout": 600000,
+  "ftpTLS": "none",
+  "connectMode": "PASV"
+}
