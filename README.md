@@ -19,6 +19,8 @@
   - [x] tbds-hive2
 - [x] file system
   - [x] tbds-hdfs
+  - [x] ftp/sftp
+  - [x] s3-minio
 - [x] mq
   - [x] kafka
   - [x] rocketmq
