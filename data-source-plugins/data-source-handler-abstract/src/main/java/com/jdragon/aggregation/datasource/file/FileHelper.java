@@ -55,4 +55,7 @@ public interface FileHelper extends AutoCloseable {
     InputStream getInputStream(String path, String name) throws IOException;
 
     OutputStream getOutputStream(String path, String name) throws IOException;
+
+    default void fresh() {
+    }
 }

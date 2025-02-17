@@ -30,12 +30,13 @@ public class FtpTest {
             InputStream inputStream = fileHelper.getInputStream("/home/jdragon/dev", "broker.conf");
             String fileContent = IOUtils.toString(inputStream, StandardCharsets.UTF_8);
             inputStream.close();
+            fileHelper.fresh();
 
             log.info("file:\n{}", fileContent);
 
             fileHelper.mkdir("/home/jdragon/dev/ftpTest");
             OutputStream outputStream = fileHelper.getOutputStream("/home/jdragon/dev/ftpTest", "test.txt");
-            IOUtils.write(fileContent, outputStream, StandardCharsets.UTF_8);
+            IOUtils.write("123", outputStream, StandardCharsets.UTF_8);
             outputStream.close();
 
             fileHelper.close();

@@ -244,9 +244,7 @@ public class SftpHelper extends AbstractPlugin implements FileHelper {
         String filePath = processingPath(path, name);
         try {
             this.printWorkingDirectory();
-            String parentDir = filePath.substring(0,
-                    StringUtils.lastIndexOf(filePath, IOUtils.DIR_SEPARATOR));
-            this.channelSftp.cd(parentDir);
+            this.channelSftp.cd(path);
             this.printWorkingDirectory();
             OutputStream writeOutputStream = this.channelSftp.put(filePath,
                     ChannelSftp.APPEND);

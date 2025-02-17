@@ -5,7 +5,6 @@ import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.file.FileHelper;
 import com.jdragon.aggregation.pluginloader.spi.AbstractPlugin;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -157,41 +156,21 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
 
     @Override
     public void mkdir(String directoryPath) throws IOException {
+        // ftp server不支持递归创建目录,只能一级一级创建
         StringBuilder dirPath = new StringBuilder();
-        dirPath.append(IOUtils.DIR_SEPARATOR_UNIX);
-        String[] dirSplit = StringUtils.split(directoryPath, IOUtils.DIR_SEPARATOR_UNIX);
-        String message = String.format("创建目录:%s时发生异常,请确认与ftp服务器的连接正常,拥有目录创建权限", directoryPath);
-        try {
-            // ftp server不支持递归创建目录,只能一级一级创建
-            for (String dirName : dirSplit) {
-                dirPath.append(dirName);
-                boolean mkdirSuccess = mkDirSingleHierarchy(dirPath.toString());
-                dirPath.append(IOUtils.DIR_SEPARATOR_UNIX);
-                if (!mkdirSuccess) {
-                    throw AggregationException.asException(
-                            FtpHelperErrorCode.COMMAND_FTP_IO_EXCEPTION,
-                            message);
-                }
+        String[] dirSplit = StringUtils.split(directoryPath, "/");
+        for (String dirName : dirSplit) {
+            dirPath.append("/").append(dirName);
+            // 如果directoryPath目录不存在,则创建
+            if (ftpClient.changeWorkingDirectory(dirPath.toString())) {
+                continue;
             }
-        } catch (IOException e) {
-            message = String.format("%s, errorMessage:%s", message,
-                    e.getMessage());
-            LOG.error(message);
-            throw AggregationException.asException(
-                    FtpHelperErrorCode.COMMAND_FTP_IO_EXCEPTION, message, e);
+            int replayCode = this.ftpClient.mkd(dirPath.toString());
+            if (replayCode != FTPReply.COMMAND_OK
+                    && replayCode != FTPReply.PATHNAME_CREATED) {
+                log.error("create path fail [{}]", dirPath.toString());
+            }
         }
-    }
-
-    public boolean mkDirSingleHierarchy(String directoryPath) throws IOException {
-        boolean isDirExist = this.ftpClient
-                .changeWorkingDirectory(directoryPath);
-        // 如果directoryPath目录不存在,则创建
-        if (!isDirExist) {
-            int replayCode = this.ftpClient.mkd(directoryPath);
-            return replayCode == FTPReply.COMMAND_OK
-                    || replayCode == FTPReply.PATHNAME_CREATED;
-        }
-        return true;
     }
 
     @Override
@@ -237,10 +216,16 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
         String filePath = processingPath(path, name);
         try {
             this.printWorkingDirectory();
-            this.ftpClient.changeWorkingDirectory(path);
+            this.ftpClient.setFileType(FTPClient.BINARY_FILE_TYPE);
+            this.ftpClient.enterLocalPassiveMode();
+
+            boolean b = this.ftpClient.changeWorkingDirectory(path);
             this.printWorkingDirectory();
+            if (!b) {
+                log.error("切换目录失败.{}:{}", this.ftpClient.getReplyCode(), this.ftpClient.getReplyCode());
+            }
             OutputStream writeOutputStream = this.ftpClient
-                    .appendFileStream(filePath);
+                    .storeFileStream(filePath);
             LOG.info("ftp获取文件流{},状态码：{},回复：{}", filePath, this.ftpClient.getReplyCode(), this.ftpClient.getReplyString());
             String message = String.format(
                     "打开FTP文件[%s]获取写出流时出错,请确认文件%s有权限创建，有权限写出等", filePath,
@@ -264,11 +249,19 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
 
     private void printWorkingDirectory() {
         try {
-            LOG.info(String.format("current working directory:%s",
-                    this.ftpClient.printWorkingDirectory()));
+            LOG.info("current working directory:{}", this.ftpClient.printWorkingDirectory());
         } catch (Exception e) {
-            LOG.warn(String.format("printWorkingDirectory error:%s",
-                    e.getMessage()));
+            LOG.warn("printWorkingDirectory error:{}", e.getMessage());
+        }
+    }
+
+    @Override
+    public void fresh() {
+        try {
+            this.ftpClient.completePendingCommand();
+        } catch (IOException e) {
+            throw AggregationException.asException(
+                    FtpHelperErrorCode.COMPLETE_PENDING_COMMAND_ERROR, e);
         }
     }
 

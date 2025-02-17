@@ -5,6 +5,7 @@ import com.jdragon.aggregation.commons.spi.ErrorCode;
 public enum FtpHelperErrorCode implements ErrorCode {
     REQUIRED_VALUE("Ftp-00", "您缺失了必须填写的参数值."),
     OPEN_FILE_ERROR("Ftp-06", "您配置的文件在打开时异常."),
+    COMPLETE_PENDING_COMMAND_ERROR("Ftp-07", "发送completePendingCommand指令失败."),
     FAIL_LOGIN("Ftp-12", "登录失败,无法与ftp服务器建立连接."),
     FAIL_DISCONNECT("Ftp-13", "关闭ftp连接失败,无法与ftp服务器断开连接."),
     COMMAND_FTP_IO_EXCEPTION("Ftp-14", "与ftp服务器连接异常."),
