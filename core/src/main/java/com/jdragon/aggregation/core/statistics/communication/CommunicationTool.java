@@ -39,6 +39,10 @@ public class CommunicationTool {
     public static final String TRANSFORMER_FAILED_RECORDS = "totalTransformerFailedRecords";
     public static final String TRANSFORMER_FILTER_RECORDS = "totalTransformerFilterRecords";
 
+    public static final String START_TIME = "startTime";
+    public static final String END_TIME = "endTime";
+    public static final String TIME_INTERVAL_SECONDS = "timeIntervalSeconds";
+
     public static class Stringify {
         public static String getSnapshot(final Communication communication) {
             RunStatus runStatus = new RunStatus(communication);
@@ -73,7 +77,9 @@ public class CommunicationTool {
         if (old.getThrowable() != null) {
             now.setThrowable(old.getThrowable());
         }
-
+        now.setLongCounter(START_TIME, old.getTimestamp());
+        now.setLongCounter(END_TIME, now.getTimestamp());
+        now.setLongCounter(TIME_INTERVAL_SECONDS, timeInterval);
         return now;
     }
 

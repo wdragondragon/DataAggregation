@@ -12,6 +12,9 @@ public class SystemConstants {
     public static String PLUGIN_HOME = StringUtils.join(new String[]{
             HOME, "plugin"}, File.separator);
 
+    public static String CORE_CONFIG = StringUtils.join(new String[]{
+            HOME, "conf", "core.json"}, File.separator);
+
     static {
         log.info("加载aggregation home:{}", HOME);
         log.info("加载aggregation plugin home:{}", PLUGIN_HOME);

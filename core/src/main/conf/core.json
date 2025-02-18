@@ -1,0 +1,11 @@
+{
+  "core": {
+    "plugin": {
+      "reporter": [
+        {
+          "name": "local_file"
+        }
+      ]
+    }
+  }
+}

@@ -23,16 +23,18 @@ import com.jdragon.aggregation.core.transport.exchanger.BufferedRecordTransforme
 import com.jdragon.aggregation.core.utils.*;
 import com.jdragon.aggregation.pluginloader.ClassLoaderSwapper;
 import com.jdragon.aggregation.pluginloader.PluginClassLoaderCloseable;
+import com.jdragon.aggregation.pluginloader.constant.SystemConstants;
 import com.jdragon.aggregation.pluginloader.type.IPluginType;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.text.SimpleDateFormat;
+import java.util.*;
+
+import static com.jdragon.aggregation.core.statistics.communication.CommunicationTool.RECORD_SPEED;
+import static com.jdragon.aggregation.core.statistics.communication.CommunicationTool.TIME_INTERVAL_SECONDS;
 
 
 @Getter
@@ -51,15 +53,17 @@ public class JobContainer {
 
     private long startTime;
 
+    private long endTime;
+
     public static void main(String[] args) {
         Configuration configuration = Configuration.from(new File("C:\\dev\\ideaProject\\DataAggregation\\core\\src\\main\\resources\\kafkareader.json"));
-        configuration.merge(Configuration.from(new File("C:\\dev\\ideaProject\\DataAggregation\\core\\src\\main\\resources\\core.json")), true);
         JobContainer container = new JobContainer(configuration);
         container.start();
     }
 
     public JobContainer(Configuration configuration) {
         this.configuration = configuration;
+        this.configuration.merge(Configuration.from(new File(SystemConstants.CORE_CONFIG)), true);
         this.jobPointReporter = new JobPointReporter(configuration);
     }
 
@@ -91,6 +95,12 @@ public class JobContainer {
             }
         } finally {
             //最后打印cpu的平均消耗，GC的统计
+            endTime = System.currentTimeMillis();
+            long totalCosts = (endTime - startTime) / 1000;
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            log.info("任务运行结束==>开始时间：{} | 结束时间：{} | 耗时：{}s | 任务状态：{}",
+                    dateFormat.format(new Date(startTime)), dateFormat.format(new Date()), totalCosts,
+                    jobCommunication.getState());
             VMInfo vmInfo = VMInfo.getVmInfo();
             if (vmInfo != null) {
                 vmInfo.getDelta(false);

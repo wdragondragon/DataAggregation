@@ -5,6 +5,8 @@ import com.jdragon.aggregation.commons.util.StrUtil;
 import com.jdragon.aggregation.core.plugin.spi.reporter.JobPointReporter;
 import lombok.Data;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -122,6 +124,11 @@ public class RunStatus {
             sb.append("Transformer usedTime ");
             sb.append(PerfTrace.unitTime(runStatus.getTransformerUsedTime()));
         }
+        sb.append("\n\tStartTime ").append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(communication.getLongCounter(START_TIME))));
+        sb.append(" | ");
+        sb.append("NowTime ").append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(communication.getLongCounter(END_TIME))));
+        sb.append(" | ");
+        sb.append("CostsTime ").append(communication.getLongCounter(TIME_INTERVAL_SECONDS)).append("s");
         return sb.toString();
     }
 }
