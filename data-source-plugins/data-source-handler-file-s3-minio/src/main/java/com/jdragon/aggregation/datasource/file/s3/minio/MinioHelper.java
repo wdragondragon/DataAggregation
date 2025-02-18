@@ -2,22 +2,30 @@ package com.jdragon.aggregation.datasource.file.s3.minio;
 
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.file.FileHelper;
+import com.jdragon.aggregation.pluginloader.spi.AbstractPlugin;
 import io.minio.*;
 import io.minio.messages.Item;
+import lombok.extern.slf4j.Slf4j;
+import okhttp3.OkHttpClient;
 
 import java.io.*;
 import java.util.HashSet;
 import java.util.Set;
 
-public class MinioHelper implements FileHelper {
+@Slf4j
+public class MinioHelper extends AbstractPlugin implements FileHelper {
     private MinioClient minioClient;
     private String bucketName;
     private boolean connected = false;
 
+    private OkHttpClient httpClient;
+
     @Override
     public boolean connect(Configuration configuration) {
         try {
+            this.httpClient = new OkHttpClient();
             this.minioClient = MinioClient.builder()
+                    .httpClient(httpClient)
                     .endpoint(configuration.getString("endpoint"))
                     .credentials(configuration.getString("accessKey"),
                             configuration.getString("secretKey"))
@@ -26,6 +34,7 @@ public class MinioHelper implements FileHelper {
 
             // 确保存储桶存在
             if (!minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build())) {
+                log.info("存储桶{}不存在，尝试创建", bucketName);
                 minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
             }
             connected = true;
@@ -85,17 +94,7 @@ public class MinioHelper implements FileHelper {
 
     @Override
     public void mkdir(String filePath) throws IOException {
-        // MinIO 不支持直接创建目录，只能通过空文件模拟
-        String emptyFile = processingPath(filePath, ".keep");
-        try (ByteArrayInputStream inputStream = new ByteArrayInputStream(new byte[0])) {
-            minioClient.putObject(PutObjectArgs.builder()
-                    .bucket(bucketName)
-                    .object(emptyFile)
-                    .stream(inputStream, 0, -1)
-                    .build());
-        } catch (Exception e) {
-            throw new IOException("Failed to create directory: " + filePath, e);
-        }
+        // MinIO 不支持直接创建目录
     }
 
     @Override
@@ -158,5 +157,9 @@ public class MinioHelper implements FileHelper {
     @Override
     public void close() {
         // MinIO 客户端是无状态的，不需要关闭
+        if (httpClient != null && connected) {
+            httpClient.dispatcher().executorService().shutdown();
+        }
+        connected = false;
     }
 }

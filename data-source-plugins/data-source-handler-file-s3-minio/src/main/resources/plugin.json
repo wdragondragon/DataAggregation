@@ -1,6 +1,6 @@
 {
   "name": "minio",
   "class": "com.jdragon.aggregation.datasource.file.s3.minio.MinioHelper",
-  "description": "ftp",
+  "description": "minio",
   "developer": "jdragon"
 }
