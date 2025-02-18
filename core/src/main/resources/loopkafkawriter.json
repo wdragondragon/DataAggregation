@@ -1,0 +1,43 @@
+{
+  "reader": {
+    "type": "custom",
+    "config": {
+    }
+  },
+  "writer": {
+    "type": "kafka",
+    "config": {
+      "bootstrapServers": "192.168.100.194:9092",
+      "topic": "test4",
+      "retries": "0",
+      "batchSize": "16384",
+      "fieldDelimiter": ",",
+      "autoCreateTopic": true,
+      "createTopicNumPartition": "1",
+      "createTopicReplicationFactor": "1",
+      "writeType": "json",
+      "otherProperties": {
+      },
+      "columns": [
+        {
+          "index": 0,
+          "name": "id"
+        },
+        {
+          "index": 1,
+          "name": "test_param1"
+        }
+      ]
+    }
+  },
+  "transformer": [
+    {
+      "name": "dx_groovy",
+      "parameter": {
+        "code": "Column column = record.getColumn(1);\nString string = column.asString();\nrecord.setColumn(1, new StringColumn(string + \" test\"));return record;",
+        "extraPackage": [
+        ]
+      }
+    }
+  ]
+}

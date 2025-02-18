@@ -42,7 +42,7 @@ public class LocalFileReporter extends AbstractJobReporter {
         String str = JSONObject.toJSONString(new Info(counter, otherReportInfo), SerializerFeature.PrettyFormat);
         FileUtil.mkParentDirs(reportPath);
         FileUtil.writeString(str, this.reportPath, StandardCharsets.UTF_8);
-        log.info("report file: {} \n{}", this.reportPath, str);
+        log.info("report file: {} \n{},run status: {}", this.reportPath, str, runStatus.getCommunication().getState());
     }
 
     @Override

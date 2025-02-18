@@ -12,7 +12,7 @@
         "database": "datax_test",
         "userName": "root",
         "password": "951753",
-        "other": "",
+        "other": "{\"rewriteBatchedStatements\":true}",
         "usePool": true,
         "extraParams": {}
       },
@@ -24,19 +24,9 @@
   },
   "transformer": [
     {
-      "name": "dx_substr",
-      "parameter": {
-        "columnIndex": 1,
-        "paras": [
-          "0",
-          "2"
-        ]
-      }
-    },
-    {
       "name": "dx_groovy",
       "parameter": {
-        "code": "Column column = record.getColumn(1);\nString string = column.asString();\nrecord.setColumn(1, new StringColumn(string + \"test\"));return record;",
+        "code": "Column column = record.getColumn(1);\nString string = column.asString();\nrecord.setColumn(1, new StringColumn(string + \" test\"));return record;",
         "extraPackage": [
         ]
       }

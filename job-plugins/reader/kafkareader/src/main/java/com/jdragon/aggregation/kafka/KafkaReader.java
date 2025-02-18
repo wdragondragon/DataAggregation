@@ -9,6 +9,7 @@ import com.jdragon.aggregation.core.plugin.spi.Reader;
 import com.jdragon.aggregation.datasource.queue.kafka.KafkaAuthUtil;
 import com.jdragon.aggregation.datasource.queue.kafka.KafkaQueue;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.errors.InterruptException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,6 +46,8 @@ public class KafkaReader extends Reader.Job {
 
     private long keepReadTime;
 
+    private long retryPoll;
+
     private Map<String, String> otherProperties;
 
     private final KafkaQueue kafkaQueue = new KafkaQueue();
@@ -67,7 +70,9 @@ public class KafkaReader extends Reader.Job {
         batchSize = configuration.getInt(Key.BATCH_SIZE, 500);
         otherProperties = configuration.getMap(Key.OTHER_PROPERTIES, new HashMap<>(), String.class);
         resetOffset = configuration.getBool(Key.RESET_OFFSET, false);
+
         keepReadTime = configuration.getLong(Key.KEEP_READ_TIME, 60 * 60 * 1000L);
+        retryPoll = configuration.getInt(Key.RETRY_POLL, 0);
 
         Properties properties = getProperties();
         KafkaAuthUtil.login(properties, configuration);
@@ -103,36 +108,44 @@ public class KafkaReader extends Reader.Job {
         AtomicInteger retry = new AtomicInteger(0);
         long startTime = System.currentTimeMillis();
         kafkaQueue.receiveRecords(records -> {
-            if (retry.get() > 5) {
-                return false;
-            }
-            for (ConsumerRecord<String, String> record : records) {
-                String value = record.value();
-                try {
-                    if (dataCount.incrementAndGet() < 5) {
-                        LOG.info("打印第{}条数据：{}", dataCount.get(), value);
-                    }
-                    Record oneRecord = buildOneRecord(recordSender, value);
-                    //如果返回值不等于null表示不是异常消息。
-                    if (oneRecord != null) {
-                        recordSender.sendToWriter(oneRecord);
-                    }
-                } catch (Exception e) {
-                    LOG.error("解析数据异常，数据详情：{}", value, e);
-                    super.getTaskPluginCollector().collectDirtyRecord(recordSender.createRecord(), e);
+            try {
+                if (Thread.currentThread().isInterrupted()) {
+                    return false;
                 }
-            }
-            if (records.isEmpty()) {
-                LOG.info("read records is empty, try read [{}] times", retry.incrementAndGet());
-            } else {
-                retry.set(0);
-            }
-            long endTime = System.currentTimeMillis();
-            if (endTime - startTime > keepReadTime) {
-                LOG.info("kafka read over {}s, break", keepReadTime);
+                if (retryPoll > 0 && retry.get() > retryPoll) {
+                    return false;
+                }
+                for (ConsumerRecord<String, String> record : records) {
+                    String value = record.value();
+                    try {
+                        if (dataCount.incrementAndGet() < 5) {
+                            LOG.info("打印第{}条数据：{}", dataCount.get(), value);
+                        }
+                        Record oneRecord = buildOneRecord(recordSender, value);
+                        //如果返回值不等于null表示不是异常消息。
+                        if (oneRecord != null) {
+                            recordSender.sendToWriter(oneRecord);
+                        }
+                    } catch (Exception e) {
+                        LOG.error("解析数据异常，数据详情：{}", value, e);
+                        super.getTaskPluginCollector().collectDirtyRecord(recordSender.createRecord(), e);
+                    }
+                }
+                if (records.isEmpty()) {
+                    LOG.info("read records is empty, try read [{}] times", retry.incrementAndGet());
+                    recordSender.flush();
+                } else {
+                    retry.set(0);
+                }
+                long endTime = System.currentTimeMillis();
+                if (keepReadTime > 0 && endTime - startTime > keepReadTime) {
+                    LOG.info("kafka read over {}s, break", keepReadTime);
+                    return false;
+                }
+                return true;
+            } catch (InterruptException e) {
                 return false;
             }
-            return true;
         });
     }
 

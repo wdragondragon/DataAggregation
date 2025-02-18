@@ -1,5 +1,6 @@
 package com.jdragon.aggregation.core.taskgroup.runner;
 
+import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.core.plugin.AbstractJobPlugin;
 import com.jdragon.aggregation.core.plugin.RecordReceiver;
 import com.jdragon.aggregation.core.plugin.spi.Writer;
@@ -39,7 +40,13 @@ public class WriterRunner extends AbstractRunner {
             LOG.info("job writer prepare end");
 
             LOG.info("job writer startWriter");
-            jobWriter.startWrite(recordReceiver);
+            try {
+                jobWriter.startWrite(recordReceiver);
+            } catch (AggregationException e) {
+                if (!(e.getCause() instanceof InterruptedException)) {
+                    throw e;
+                }
+            }
             LOG.info("job writer endWriter");
 
             LOG.info("job writer post start");

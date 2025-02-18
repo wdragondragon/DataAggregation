@@ -30,5 +30,6 @@ public class Key {
     public static final String OTHER_PROPERTIES = "otherProperties";
 
     public static final String KEEP_READ_TIME = "keepReadTime";
+    public static final String RETRY_POLL = "retryPoll";
 
 }

@@ -55,6 +55,10 @@ public class JobContainer {
 
     private long endTime;
 
+    private Thread readerThread;
+
+    private Thread writerThread;
+
     public static void main(String[] args) {
         Configuration configuration = Configuration.from(new File("C:\\dev\\ideaProject\\DataAggregation\\core\\src\\main\\resources\\kafkareader.json"));
         JobContainer container = new JobContainer(configuration);
@@ -93,7 +97,17 @@ public class JobContainer {
                 // 最后一次上报作业运行状态
                 jobPointReporter.openReport().report();
             }
+        } catch (AggregationException e) {
+            if (!(e.getCause() instanceof InterruptedException)) {
+                throw e;
+            }
         } finally {
+            if (readerThread.isAlive()) {
+                readerThread.interrupt();
+            }
+            if (writerThread.isAlive()) {
+                writerThread.interrupt();
+            }
             //最后打印cpu的平均消耗，GC的统计
             endTime = System.currentTimeMillis();
             long totalCosts = (endTime - startTime) / 1000;
@@ -128,8 +142,8 @@ public class JobContainer {
         readerJobPlugin = initJobPlugin(PluginType.READER, readerType, readerConfiguration, writerConfiguration);
         writerJobPlugin = initJobPlugin(PluginType.WRITER, writerType, writerConfiguration, readerConfiguration);
 
-        Thread readerThread = initExecThread(jobId, readerJobPlugin, transformerExecutions, taskCollectorClass, jobCommunication, channel, jobPointReporter);
-        Thread writerThread = initExecThread(jobId, writerJobPlugin, transformerExecutions, taskCollectorClass, jobCommunication, channel, jobPointReporter);
+        readerThread = initExecThread(jobId, readerJobPlugin, transformerExecutions, taskCollectorClass, jobCommunication, channel, jobPointReporter);
+        writerThread = initExecThread(jobId, writerJobPlugin, transformerExecutions, taskCollectorClass, jobCommunication, channel, jobPointReporter);
 
         jobCommunication.setState(State.RUNNING);
 
@@ -255,6 +269,7 @@ public class JobContainer {
                     lastTaskGroupContainerCommunication = reportTaskGroupCommunication(
                             lastTaskGroupContainerCommunication, jobCommunication);
                     lastReportTimeStamp = now;
+                    jobPointReporter.openReport().report();
                 }
 
                 Thread.sleep(sleepIntervalInMillSec);

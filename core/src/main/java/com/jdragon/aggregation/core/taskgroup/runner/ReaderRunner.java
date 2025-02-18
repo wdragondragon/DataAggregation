@@ -1,5 +1,6 @@
 package com.jdragon.aggregation.core.taskgroup.runner;
 
+import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.core.plugin.AbstractJobPlugin;
 import com.jdragon.aggregation.core.plugin.RecordSender;
 import com.jdragon.aggregation.core.plugin.spi.Reader;
@@ -42,7 +43,13 @@ public class ReaderRunner extends AbstractRunner {
             LOG.info("job reader prepare end");
 
             LOG.info("job reader startRead");
-            jobReader.startRead(recordSender);
+            try {
+                jobReader.startRead(recordSender);
+            } catch (AggregationException e) {
+                if (!(e.getCause() instanceof InterruptedException)) {
+                    throw e;
+                }
+            }
             LOG.info("job reader endRead");
             recordSender.terminate();
 

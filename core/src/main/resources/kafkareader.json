@@ -3,7 +3,7 @@
     "type": "kafka",
     "config": {
       "bootstrapServers": "192.168.100.194:9092",
-      "topic": "test",
+      "topic": "test4",
       "groupId": "test",
       "offsetReset": "earliest",
       "batchSize": 500,
@@ -11,8 +11,11 @@
       "fieldDelimiter": ",",
       "resetOffset": "true",
       "otherProperties": {
+        "max.poll.records": 1024,
+        "max.poll.interval.ms": 2000
       },
-      "keepReadTime": "360000",
+      "keepReadTime": 0,
+      "retryPoll": 0,
       "columns": [
         {
           "index": 0,
@@ -34,7 +37,7 @@
         "database": "datax_test",
         "userName": "root",
         "password": "951753",
-        "other": "",
+        "other": "{\"rewriteBatchedStatements\":true}",
         "usePool": true,
         "extraParams": {}
       },
