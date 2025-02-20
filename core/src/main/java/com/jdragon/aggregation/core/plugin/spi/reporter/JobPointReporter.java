@@ -14,6 +14,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -26,7 +27,7 @@ import java.util.concurrent.LinkedBlockingDeque;
 @Getter
 public class JobPointReporter implements Runnable {
 
-    private long jobId;
+    private Map<String, Object> runContext = new HashMap<>();
 
     private BlockingQueue<RunStatus> fileStorageQueue = new LinkedBlockingDeque<>();
 
@@ -38,13 +39,14 @@ public class JobPointReporter implements Runnable {
 
     private Map<String, Object> otherReportInfo = new ConcurrentHashMap<>();
 
-    public JobPointReporter(Configuration configuration) {
-        loadReporter(configuration);
-        this.jobId = configuration.getLong("jobId", 1L);
+    private static final List<AbstractJobReporter> globalReporters = new LinkedList<>();
+
+    public JobPointReporter(Configuration configuration, Map<String, Object> runContext) {
+        this.runContext = runContext;
         this.configuration = configuration;
     }
 
-    private void loadReporter(Configuration configuration) {
+    public void loadReporter(Configuration configuration) {
         List<Configuration> reporterInfos = configuration.getListConfiguration(Key.REPORT_CLASS);
         for (Configuration subConfig : reporterInfos) {
             ReporterInfo reporterInfo = JSONObject.parseObject(subConfig.toJSON(), ReporterInfo.class);
@@ -63,6 +65,7 @@ public class JobPointReporter implements Runnable {
             }
             reg(jobReporter);
         }
+        globalReporters.forEach(this::reg);
     }
 
     public void put(String key, Object value) {
@@ -81,7 +84,9 @@ public class JobPointReporter implements Runnable {
     }
 
     public RunStatus openReport() {
-        return new RunStatus(this);
+        RunStatus runStatus = new RunStatus(this);
+        runStatus.setRunContext(runContext);
+        return runStatus;
     }
 
     public void report() {
@@ -95,7 +100,7 @@ public class JobPointReporter implements Runnable {
         now.setTimestamp(System.currentTimeMillis());
         Communication start = new Communication();
         start.setTimestamp(communication.getTimestamp());
-        this.report(new RunStatus(CommunicationTool.getReportCommunication(now, start),this));
+        this.report(new RunStatus(CommunicationTool.getReportCommunication(now, start), this));
     }
 
     private void report(RunStatus runStatus) {
@@ -110,12 +115,17 @@ public class JobPointReporter implements Runnable {
         jobReporterExecInterfaceList.add(new JobReporterExecutor(reporter));
     }
 
+    public static void regGlobal(AbstractJobReporter reporter) {
+        globalReporters.add(reporter);
+    }
+
     @Override
     public void run() {
         try {
             log.info("任务上报线程开始执行");
             while (true) {
                 RunStatus runStatus = fileStorageQueue.take();
+                runStatus.setRunContext(runContext);
                 jobReporterExecInterfaceList.forEach(jobReporterExecInterface -> jobReporterExecInterface.exec(runStatus));
                 if (trackCommunication.isFinished()) {
                     log.info("任务上报线程结束");

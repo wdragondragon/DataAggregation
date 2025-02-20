@@ -15,7 +15,9 @@
       "table": "datax_test1",
       "columns": [
         "*"
-      ]
+      ],
+      "pkColumn": "id",
+      "pkModel": ">"
     }
   },
   "writer": {

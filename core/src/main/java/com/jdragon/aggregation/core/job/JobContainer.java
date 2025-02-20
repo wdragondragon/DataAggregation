@@ -33,10 +33,6 @@ import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
-import static com.jdragon.aggregation.core.statistics.communication.CommunicationTool.RECORD_SPEED;
-import static com.jdragon.aggregation.core.statistics.communication.CommunicationTool.TIME_INTERVAL_SECONDS;
-
-
 @Getter
 @Slf4j
 public class JobContainer {
@@ -49,7 +45,7 @@ public class JobContainer {
 
     private AbstractJobPlugin writerJobPlugin;
 
-    private final Map<IPluginType, CustomPluginCreator> customPlugins = new HashMap<>();
+    private final Map<IPluginType, CustomPluginCreator> customJobPlugins = new HashMap<>();
 
     private long startTime;
 
@@ -59,6 +55,8 @@ public class JobContainer {
 
     private Thread writerThread;
 
+    private final Map<String, Object> runContext = new HashMap<>();
+
     public static void main(String[] args) {
         Configuration configuration = Configuration.from(new File("C:\\dev\\ideaProject\\DataAggregation\\core\\src\\main\\resources\\kafkareader.json"));
         JobContainer container = new JobContainer(configuration);
@@ -66,12 +64,19 @@ public class JobContainer {
     }
 
     public JobContainer(Configuration configuration) {
-        this.configuration = configuration;
-        this.configuration.merge(Configuration.from(new File(SystemConstants.CORE_CONFIG)), true);
-        this.jobPointReporter = new JobPointReporter(configuration);
+        this.configuration = Configuration.from(new File(SystemConstants.CORE_CONFIG)).merge(configuration, true);
+        this.jobPointReporter = new JobPointReporter(this.configuration, this.runContext);
+    }
+
+    public void setRunContext(String key, Object value) {
+        this.runContext.put(key, value);
     }
 
     public void start() {
+        Long jobId = (Long) this.runContext.getOrDefault("jobId", 1L);
+        this.configuration.set("jobId", jobId);
+        this.jobPointReporter.loadReporter(this.configuration);
+
         startTime = System.currentTimeMillis();
 
         log.info("start job from configuration: {}", filterSensitiveConfiguration(configuration.clone()).beautify());
@@ -83,25 +88,22 @@ public class JobContainer {
 
         jobPointReporter.setTrackCommunication(jobCommunication);
         jobPointReporter.recovery();
-
+        // 启动上报线程
+        Thread jobPointReportThread = new Thread(jobPointReporter);
+        jobPointReportThread.start();
         try {
             // 启动作业
             this.startJob(configuration, channel, jobCommunication, jobPointReporter);
-            try {
-                // 启动上报线程
-                Thread jobPointReportThread = new Thread(jobPointReporter);
-                jobPointReportThread.start();
-                // 持续输出作业状态
-                this.holdDoStat(jobCommunication, configuration);
-            } finally {
-                // 最后一次上报作业运行状态
-                jobPointReporter.openReport().report();
-            }
+            // 持续输出作业状态
+            this.holdDoStat(jobCommunication, configuration);
         } catch (AggregationException e) {
             if (!(e.getCause() instanceof InterruptedException)) {
                 throw e;
             }
+            jobCommunication.setState(State.FAILED);
         } finally {
+            // 最后一次上报作业运行状态
+            jobPointReporter.openReport().report();
             if (readerThread.isAlive()) {
                 readerThread.interrupt();
             }
@@ -192,21 +194,22 @@ public class JobContainer {
     }
 
     public void addConsumerPlugin(IPluginType type, CustomPluginCreator customPluginCreator) {
-        customPlugins.put(type, customPluginCreator);
+        customJobPlugins.put(type, customPluginCreator);
     }
 
-    public void addConsumerPlugin(IPluginType type, AbstractJobPlugin jobPlugin) {
-        customPlugins.put(type, (configuration, peerConfig) -> jobPlugin);
+    public void addConsumerPlugin(IPluginType type, AbstractJobPlugin plugin) {
+        customJobPlugins.put(type, (configuration, peerConfig) -> plugin);
     }
 
     private AbstractJobPlugin initJobPlugin(PluginType pluginType, String pluginName,
                                             Configuration configuration, Configuration peerConfiguration) {
         AbstractJobPlugin jobPlugin;
         if ("custom".equalsIgnoreCase(pluginName)) {
-            if (!customPlugins.containsKey(pluginType)) {
+            if (!customJobPlugins.containsKey(pluginType)) {
                 throw AggregationException.asException(pluginType + "类型custom插件未注册");
             }
-            jobPlugin = customPlugins.get(pluginType).createJobPlugin(configuration, peerConfiguration);
+            jobPlugin = (AbstractJobPlugin) customJobPlugins.get(pluginType).createJobPlugin(configuration, peerConfiguration);
+
             if (jobPlugin.getClassLoader() == null) {
                 jobPlugin.setClassLoader(Thread.currentThread().getContextClassLoader());
             }

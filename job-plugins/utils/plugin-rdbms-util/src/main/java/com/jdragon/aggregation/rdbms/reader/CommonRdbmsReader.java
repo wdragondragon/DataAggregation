@@ -34,6 +34,12 @@ public class CommonRdbmsReader extends Reader.Job {
 
     private String selectSql;
 
+    private Column maxPkValue;
+
+    private String pkColumn;
+
+    private Integer pkIndex;
+
     public CommonRdbmsReader(RdbmsSourcePlugin sourcePlugin) {
         this.sourcePlugin = sourcePlugin;
     }
@@ -54,7 +60,18 @@ public class CommonRdbmsReader extends Reader.Job {
                 throw new RuntimeException(e);
             }
         }
+        String maxPk = this.getJobPointReporter().get("pkValue", null);
         selectSql = String.format("select %s from %s", String.join(",", columns), tableName);
+        pkColumn = this.getPluginJobConf().getString("pkColumn");
+        String pkModel = this.getPluginJobConf().getString("pkModel", ">");
+        if (pkColumn != null) {
+            pkIndex = columns.indexOf(pkColumn);
+        }
+
+        if (pkIndex != null && maxPk != null) {
+            maxPkValue = new StringColumn(pkColumn);
+            selectSql += String.format("where %s %s '%s'", pkColumn, pkModel, pkColumn);
+        }
         LOG.info("rdbms query sql: {}", selectSql);
         mandatoryEncoding = this.getPluginJobConf().getString("mandatoryEncoding", "utf-8");
     }
@@ -100,6 +117,14 @@ public class CommonRdbmsReader extends Reader.Job {
             //TODO 这里识别为脏数据靠谱吗？
             if (e instanceof AggregationException) {
                 throw (AggregationException) e;
+            }
+        }
+        // 更新增量值
+        if (pkIndex != null) {
+            Column column = record.getColumn(pkIndex);
+            if (maxPkValue == null || maxPkValue.compareTo(column) < 0) {
+                maxPkValue = column;
+                this.getJobPointReporter().put("pkValue", maxPkValue.asString());
             }
         }
         return record;

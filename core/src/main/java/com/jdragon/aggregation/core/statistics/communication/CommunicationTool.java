@@ -79,7 +79,7 @@ public class CommunicationTool {
         }
         now.setLongCounter(START_TIME, old.getTimestamp());
         now.setLongCounter(END_TIME, now.getTimestamp());
-        now.setLongCounter(TIME_INTERVAL_SECONDS, timeInterval);
+        now.setLongCounter(TIME_INTERVAL_SECONDS, sec);
         return now;
     }
 

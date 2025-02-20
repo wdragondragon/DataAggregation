@@ -7,7 +7,6 @@ import lombok.Data;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -16,7 +15,7 @@ import static com.jdragon.aggregation.core.statistics.communication.Communicatio
 @Data
 public class RunStatus {
 
-    private String jobId;
+    private Map<String, Object> runContext;
 
     private long total;
 

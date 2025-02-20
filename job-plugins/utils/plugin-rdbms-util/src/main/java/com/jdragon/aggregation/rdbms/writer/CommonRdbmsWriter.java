@@ -135,11 +135,13 @@ public class CommonRdbmsWriter extends Writer.Job {
                 if (writeBuffer.size() >= batchSize) {
                     connection = doInsertWithRetry(connection, writeBuffer);
                     writeBuffer.clear();
+                    this.getJobPointReporter().report();
                 }
             }
             if (!writeBuffer.isEmpty()) {
                 connection = doInsertWithRetry(connection, writeBuffer);
                 writeBuffer.clear();
+                this.getJobPointReporter().report();
             }
         } catch (Exception e) {
             throw AggregationException.asException(
