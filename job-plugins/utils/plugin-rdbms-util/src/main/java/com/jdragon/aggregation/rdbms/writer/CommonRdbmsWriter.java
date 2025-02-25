@@ -13,6 +13,7 @@ import com.jdragon.aggregation.datasource.DataSourceType;
 import com.jdragon.aggregation.datasource.rdbms.RdbmsSourcePlugin;
 import com.jdragon.aggregation.rdbms.util.DBUtil;
 import com.jdragon.aggregation.rdbms.util.DBUtilErrorCode;
+import com.jdragon.aggregation.rdbms.util.WriterUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Triple;
 import org.slf4j.Logger;
@@ -49,6 +50,12 @@ public class CommonRdbmsWriter extends Writer.Job {
 
     private DataSourceType dataSourceType;
 
+    private String writeMode;
+
+    private List<String> pks;
+
+    private static final String VALUE_HOLDER = "?";
+
     public CommonRdbmsWriter(RdbmsSourcePlugin sourcePlugin) {
         this.sourcePlugin = sourcePlugin;
     }
@@ -61,6 +68,11 @@ public class CommonRdbmsWriter extends Writer.Job {
         dataSource.setName(DataSourceType.Mysql8.getTypeName());
         tableName = this.getPluginJobConf().getString("table");
         columns = this.getPluginJobConf().getList("columns", String.class);
+        writeMode = this.getPluginJobConf().getString("writeMode", "INSERT");
+        pks = getPluginJobConf().getList("pkColumn", new ArrayList<>(), String.class);
+        batchSize = this.getPluginJobConf().getInt("batchSize", 1024);
+        emptyAsNull = this.getPluginJobConf().getBool("emptyAsNull", false);
+
         columnNumber = columns.size();
         if (columnNumber == 1 && columns.get(0).equalsIgnoreCase("*")) {
             try (Connection connection = DBUtil.getConnection(sourcePlugin, dataSource)) {
@@ -72,41 +84,29 @@ public class CommonRdbmsWriter extends Writer.Job {
                 throw new RuntimeException(e);
             }
         }
-        List<String> valueHolders = new ArrayList<>(columns.size());
-        for (int i = 0; i < columns.size(); i++) {
-            valueHolders.add("?");
-        }
-        String insertSqlTemplate = "INSERT INTO %s (" + StringUtils.join(columns, ",") +
-                ") VALUES(" + StringUtils.join(valueHolders, ",") +
-                ")" + onDuplicateKeyUpdateString(columns);
 
-        insertSql = String.format(insertSqlTemplate, tableName);
+        calcWriteRecordSql();
         LOG.info("rdbms writer template: {}", insertSql);
-        batchSize = this.getPluginJobConf().getInt("batchSize", 1024);
-        emptyAsNull = this.getPluginJobConf().getBool("emptyAsNull", false);
-
     }
 
-    public static String onDuplicateKeyUpdateString(List<String> columnHolders) {
-        if (columnHolders == null || columnHolders.isEmpty()) {
-            return "";
-        }
-        StringBuilder sb = new StringBuilder();
-        sb.append(" ON DUPLICATE KEY UPDATE ");
-        boolean first = true;
-        for (String column : columnHolders) {
-            if (!first) {
-                sb.append(",");
-            } else {
-                first = false;
+    protected void calcWriteRecordSql() {
+        if (!VALUE_HOLDER.equals(calcValueHolder("")) || dataSourceType.equals(DataSourceType.DM)) {
+            List<String> valueHolders = new ArrayList<String>(columnNumber);
+            for (int i = 0; i < columns.size(); i++) {
+                String type = resultSetMetaData.getRight().get(i);
+                valueHolders.add(calcValueHolder(type));
             }
-            sb.append(column);
-            sb.append("=VALUES(");
-            sb.append(column);
-            sb.append(")");
-        }
 
-        return sb.toString();
+            boolean forceUseUpdate = dataSourceType != null
+                    && (dataSourceType == DataSourceType.MySql || dataSourceType == DataSourceType.Mysql8);
+
+            String insertSqlTemplate = WriterUtil.getWriteTemplate(columns, valueHolders, writeMode, sourcePlugin, forceUseUpdate, pks);
+            insertSql = String.format(insertSqlTemplate, this.tableName);
+        }
+    }
+
+    protected String calcValueHolder(String columnType) {
+        return VALUE_HOLDER;
     }
 
     @Override
