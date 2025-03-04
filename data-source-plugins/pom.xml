@@ -25,6 +25,8 @@
         <module>data-source-handler-file-ftp</module>
         <module>data-source-handler-file-sftp</module>
         <module>data-source-handler-file-s3-minio</module>
+        <module>data-source-handler-dm</module>
+        <module>data-source-handler-oracle</module>
     </modules>
 
     <properties>

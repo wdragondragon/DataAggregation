@@ -64,7 +64,7 @@ public class JobContainer {
     }
 
     public JobContainer(Configuration configuration) {
-        this.configuration = Configuration.from(new File(SystemConstants.CORE_CONFIG)).merge(configuration, true);
+        this.configuration = configuration.merge(Configuration.from(new File(SystemConstants.CORE_CONFIG)), false);
         this.jobPointReporter = new JobPointReporter(this.configuration, this.runContext);
     }
 
