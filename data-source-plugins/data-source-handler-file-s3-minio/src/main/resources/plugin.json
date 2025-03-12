@@ -1,6 +1,6 @@
 {
   "name": "minio",
-  "class": "com.jdragon.aggregation.datasource.file.s3.minio.MinioHelper",
+  "class": "com.jdragon.aggregation.datasource.file.s3.minio.AliyunOssHelper",
   "description": "minio",
   "developer": "jdragon"
 }

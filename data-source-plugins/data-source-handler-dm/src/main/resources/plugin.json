@@ -1,0 +1,6 @@
+{
+  "name": "dm",
+  "class": "com.jdragon.aggregation.datasource.dm.DMSourcePlugin",
+  "description": "dm",
+  "developer": "jdragon"
+}

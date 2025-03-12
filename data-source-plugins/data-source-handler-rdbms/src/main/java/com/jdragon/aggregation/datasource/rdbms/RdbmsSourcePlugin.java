@@ -140,6 +140,22 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
     }
 
     @Override
+    public void executeBatch(BaseDataSourceDTO dataSource, List<String> sqlList) {
+        try (Connection connection = getConnection(dataSource);
+             Statement statement = connection.createStatement()) {
+            connection.setAutoCommit(false);
+            for (String sql : sqlList) {
+                statement.addBatch(sql);
+            }
+            statement.executeBatch();
+            connection.commit();
+        } catch (SQLException e) {
+            log.error("execute query sql fail at MateDataService::excuteSql()", e);
+            throw new RuntimeException(e.getMessage());
+        }
+    }
+
+    @Override
     public Table<Map<String, Object>> executeQuerySql(BaseDataSourceDTO dataSource, String sql, boolean columnLabel) {
         Table<Map<String, Object>> table = new Table<>();
         ResultSet resultSet = null;

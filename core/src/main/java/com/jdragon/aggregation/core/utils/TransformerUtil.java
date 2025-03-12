@@ -2,6 +2,7 @@ package com.jdragon.aggregation.core.utils;
 
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.util.Configuration;
+import com.jdragon.aggregation.core.plugin.Transformer;
 import com.jdragon.aggregation.core.transformer.*;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -13,10 +14,10 @@ import java.util.List;
 public class TransformerUtil {
     private static final Logger LOG = LoggerFactory.getLogger(TransformerUtil.class);
 
-    public static List<TransformerExecution> buildTransformerInfo(Configuration taskConfig) {
+    public static List<TransformerExecution> buildTransformerInfo(Configuration taskConfig, List<Transformer> extraTransformer) {
         List<Configuration> tfConfigs = taskConfig.getListConfiguration(ParamsKey.JOB_TRANSFORMER);
         if (tfConfigs == null || tfConfigs.isEmpty()) {
-            return null;
+            return new ArrayList<>();
         }
 
         List<TransformerExecution> result = new ArrayList<>();
@@ -95,6 +96,16 @@ public class TransformerUtil {
             LOG.info(String.format(" %s of transformer init success. name=%s, isNative=%s parameter = %s"
                     , i, transformerInfo.getTransformer().getTransformerName()
                     , transformerInfo.isNative(), configuration.getConfiguration("parameter")));
+        }
+
+        for (Transformer transformer : extraTransformer) {
+            TransformerInfo transformerInfo = new TransformerInfo();
+            transformerInfo.setTransformer(transformer);
+            transformerInfo.setClassLoader(Thread.currentThread().getContextClassLoader());
+            transformerInfo.setNative(false);
+            TransformerExecutionParas transformerExecutionParas = new TransformerExecutionParas();
+            TransformerExecution transformerExecution = new TransformerExecution(transformerInfo, transformerExecutionParas);
+            result.add(transformerExecution);
         }
 
         return result;

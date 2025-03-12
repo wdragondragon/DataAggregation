@@ -9,14 +9,21 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>data-source-handler-file-s3-minio</artifactId>
+    <artifactId>data-source-handler-dm</artifactId>
 
     <properties>
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
+
     <dependencies>
+        <dependency>
+            <groupId>com.jdragon.aggregation</groupId>
+            <artifactId>plugins-loader-center</artifactId>
+            <version>1.0-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>com.jdragon.aggregation</groupId>
             <artifactId>data-source-handler-abstract</artifactId>
@@ -25,21 +32,15 @@
         </dependency>
         <dependency>
             <groupId>com.jdragon.aggregation</groupId>
-            <artifactId>plugins-loader-center</artifactId>
+            <artifactId>data-source-handler-rdbms</artifactId>
             <version>1.0-SNAPSHOT</version>
-            <scope>provided</scope>
         </dependency>
-
         <dependency>
-            <groupId>io.minio</groupId>
-            <artifactId>minio</artifactId>
-            <version>8.4.6</version>
-        </dependency>
-
-        <dependency>
-            <groupId>com.aliyun.oss</groupId>
-            <artifactId>aliyun-sdk-oss</artifactId>
-            <version>3.10.2</version>
+            <groupId>com.dm</groupId>
+            <artifactId>dm</artifactId>
+            <version>18</version>
+            <scope>system</scope>
+            <systemPath>${basedir}/src/main/libs/Dm8JdbcDriver18-8.1.1.49.jar</systemPath>
         </dependency>
     </dependencies>
 

@@ -7,6 +7,7 @@ import com.jdragon.aggregation.core.enums.Key;
 import com.jdragon.aggregation.core.enums.State;
 import com.jdragon.aggregation.core.plugin.AbstractJobPlugin;
 import com.jdragon.aggregation.core.plugin.CustomPluginCreator;
+import com.jdragon.aggregation.core.plugin.Transformer;
 import com.jdragon.aggregation.core.plugin.spi.reporter.JobPointReporter;
 import com.jdragon.aggregation.core.plugin.PluginType;
 import com.jdragon.aggregation.core.plugin.spi.collector.AbstractTaskPluginCollector;
@@ -47,6 +48,8 @@ public class JobContainer {
 
     private final Map<IPluginType, CustomPluginCreator> customJobPlugins = new HashMap<>();
 
+    private final List<Transformer> customTransformers = new LinkedList<>();
+
     private long startTime;
 
     private long endTime;
@@ -79,7 +82,7 @@ public class JobContainer {
 
         startTime = System.currentTimeMillis();
 
-        log.info("start job from configuration: {}", filterSensitiveConfiguration(configuration.clone()).beautify());
+        log.info("start job from configuration: \n{}", filterSensitiveConfiguration(configuration.clone()).beautify());
         // 初始化全局channel 和 communication
         Communication jobCommunication = new Communication();
         jobCommunication.setTimestamp(startTime);
@@ -139,7 +142,7 @@ public class JobContainer {
         String taskCollectorClass = configuration.getString(Key.COLLECTOR_CLASS,
                 "com.jdragon.aggregation.core.plugin.StdoutPluginCollector");
 
-        List<TransformerExecution> transformerExecutions = TransformerUtil.buildTransformerInfo(configuration);
+        List<TransformerExecution> transformerExecutions = TransformerUtil.buildTransformerInfo(configuration, customTransformers);
 
         readerJobPlugin = initJobPlugin(PluginType.READER, readerType, readerConfiguration, writerConfiguration);
         writerJobPlugin = initJobPlugin(PluginType.WRITER, writerType, writerConfiguration, readerConfiguration);
@@ -199,6 +202,10 @@ public class JobContainer {
 
     public void addConsumerPlugin(IPluginType type, AbstractJobPlugin plugin) {
         customJobPlugins.put(type, (configuration, peerConfig) -> plugin);
+    }
+
+    public void addConsumerTransformer(Transformer transformer) {
+        customTransformers.add(transformer);
     }
 
     private AbstractJobPlugin initJobPlugin(PluginType pluginType, String pluginName,

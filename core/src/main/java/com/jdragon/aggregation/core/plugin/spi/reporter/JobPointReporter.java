@@ -14,10 +14,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingDeque;
@@ -48,6 +45,9 @@ public class JobPointReporter implements Runnable {
 
     public void loadReporter(Configuration configuration) {
         List<Configuration> reporterInfos = configuration.getListConfiguration(Key.REPORT_CLASS);
+        if (reporterInfos == null) {
+            reporterInfos = new ArrayList<>();
+        }
         for (Configuration subConfig : reporterInfos) {
             ReporterInfo reporterInfo = JSONObject.parseObject(subConfig.toJSON(), ReporterInfo.class);
             AbstractJobReporter jobReporter;
