@@ -45,7 +45,7 @@ public class ReaderRunner extends AbstractRunner {
             LOG.info("job reader startRead");
             try {
                 jobReader.startRead(recordSender);
-            } catch (AggregationException e) {
+            } catch (Exception e) {
                 if (!(e.getCause() instanceof InterruptedException)) {
                     throw e;
                 }

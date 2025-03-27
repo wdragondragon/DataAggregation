@@ -1,0 +1,55 @@
+{
+  "reader": {
+    "type": "http",
+    "config": {
+      "url": "http://127.0.0.1:8081/aggregation/httpTest",
+      "mode": "GET",
+      "contentType": "application/json;charset=utf-8",
+      "header": "{}",
+      "params": "{\"pageNum\":\"{dyn_page}\",\"pageSize\":\"{dyn_pageSize}\"}",
+      "requestBody": "",
+      "resultType": "json",
+      "totalCodePath": "data.total",
+      "pageRead": true,
+      "pageSize": 10,
+      "responseStatus": {
+        "code": "200",
+        "path": "code"
+      },
+      "columns": [
+        {
+          "parentNode": "data.table.bodies",
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "parentNode": "data.table.bodies",
+          "name": "testParam",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "writer": {
+    "type": "mysql8",
+    "config": {
+      "connect": {
+        "host": "rmHost",
+        "port": "3305",
+        "database": "datax_test",
+        "userName": "root",
+        "password": "951753",
+        "other": "",
+        "usePool": true,
+        "extraParams": {}
+      },
+      "table": "datax_test2",
+      "columns": [
+        "id",
+        "test_param1"
+      ]
+    }
+  },
+  "transformer": [
+  ]
+}

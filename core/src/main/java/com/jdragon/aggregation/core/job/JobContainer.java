@@ -107,10 +107,10 @@ public class JobContainer {
         } finally {
             // 最后一次上报作业运行状态
             jobPointReporter.openReport().report();
-            if (readerThread.isAlive()) {
+            if (readerThread != null && readerThread.isAlive()) {
                 readerThread.interrupt();
             }
-            if (writerThread.isAlive()) {
+            if (writerThread != null && writerThread.isAlive()) {
                 writerThread.interrupt();
             }
             //最后打印cpu的平均消耗，GC的统计

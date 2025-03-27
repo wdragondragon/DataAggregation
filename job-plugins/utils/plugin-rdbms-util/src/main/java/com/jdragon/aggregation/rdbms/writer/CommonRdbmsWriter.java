@@ -90,19 +90,16 @@ public class CommonRdbmsWriter extends Writer.Job {
     }
 
     protected void calcWriteRecordSql() {
-        if (!VALUE_HOLDER.equals(calcValueHolder("")) || dataSourceType.equals(DataSourceType.DM)) {
-            List<String> valueHolders = new ArrayList<String>(columnNumber);
-            for (int i = 0; i < columns.size(); i++) {
-                String type = resultSetMetaData.getRight().get(i);
-                valueHolders.add(calcValueHolder(type));
-            }
-
-            boolean forceUseUpdate = dataSourceType != null
-                    && (dataSourceType == DataSourceType.MySql || dataSourceType == DataSourceType.Mysql8);
-
-            String insertSqlTemplate = WriterUtil.getWriteTemplate(columns, valueHolders, writeMode, sourcePlugin, forceUseUpdate, pks);
-            insertSql = String.format(insertSqlTemplate, this.tableName);
+        List<String> valueHolders = new ArrayList<String>(columnNumber);
+        for (int i = 0; i < columns.size(); i++) {
+            valueHolders.add(VALUE_HOLDER);
         }
+
+        boolean forceUseUpdate = dataSourceType != null
+                && (dataSourceType == DataSourceType.MySql || dataSourceType == DataSourceType.Mysql8);
+
+        String insertSqlTemplate = WriterUtil.getWriteTemplate(columns, valueHolders, writeMode, sourcePlugin, forceUseUpdate, pks);
+        insertSql = String.format(insertSqlTemplate, this.tableName);
     }
 
     protected String calcValueHolder(String columnType) {
