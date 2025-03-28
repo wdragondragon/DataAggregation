@@ -5,7 +5,7 @@
       "url": "http://127.0.0.1:8081/aggregation/httpTest",
       "mode": "GET",
       "contentType": "application/json;charset=utf-8",
-      "header": "{}",
+      "header": "{\"token\":\"{dyn_from_http_token(get,http://127.0.0.1:8081/aggregation/login,,,msg)}\"}",
       "params": "{\"pageNum\":\"{dyn_page}\",\"pageSize\":\"{dyn_pageSize}\"}",
       "requestBody": "",
       "resultType": "json",

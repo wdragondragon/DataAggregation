@@ -1,8 +1,8 @@
-package com.jdragon.aggregation.httpreader.utils;
+package com.jdragon.aggregation.plugin.httpdyn.util;
 
 
 import com.alibaba.fastjson.JSON;
-import com.jdragon.aggregation.httpreader.HttpException;
+import com.jdragon.aggregation.plugin.httpdyn.exception.HttpException;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.Header;

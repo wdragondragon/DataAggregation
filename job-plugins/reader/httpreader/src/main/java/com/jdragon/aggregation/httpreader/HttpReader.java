@@ -10,7 +10,7 @@ import com.jdragon.aggregation.commons.util.FastJsonMemory;
 import com.jdragon.aggregation.commons.util.RetryUtil;
 import com.jdragon.aggregation.core.plugin.RecordSender;
 import com.jdragon.aggregation.core.plugin.spi.Reader;
-import com.jdragon.aggregation.httpreader.utils.HttpUtils;
+import com.jdragon.aggregation.plugin.httpdyn.util.HttpUtils;
 import com.jdragon.aggregation.plugin.httpdyn.HttpDynColumnExecuteHandler;
 import com.jdragon.aggregation.unstructuredstorage.ColumnEntry;
 import com.jdragon.aggregation.unstructuredstorage.SoapToJSON;
@@ -88,6 +88,8 @@ public class HttpReader extends Reader.Job {
 
     @Override
     public void startRead(RecordSender recordSender) {
+        HttpDynColumnExecuteHandler.replaceStaticVal(httpContent);
+
         Integer pageNum = 1;
         String resultStr = connectToGetData(new HashMap<>(httpContent), pageNum);
 
@@ -117,6 +119,8 @@ public class HttpReader extends Reader.Job {
         HttpDynColumnExecuteHandler.replacePageSize(httpContent, String.valueOf(pageSize));
         //替换offset
         HttpDynColumnExecuteHandler.replaceOffset(httpContent, String.valueOf(offset));
+        // 替换动态参数
+        HttpDynColumnExecuteHandler.replaceDynVal(httpContent);
 
         Map<String, String> headerMap = JSONObject.parseObject(httpContent.get(Key.HEADER), new TypeReference<Map<String, String>>() {
         });

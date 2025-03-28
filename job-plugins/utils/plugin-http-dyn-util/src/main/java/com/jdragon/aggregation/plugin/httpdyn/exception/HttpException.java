@@ -1,4 +1,4 @@
-package com.jdragon.aggregation.httpreader;
+package com.jdragon.aggregation.plugin.httpdyn.exception;
 
 /**
  * @Author: Jdragon
