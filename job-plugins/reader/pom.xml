@@ -17,6 +17,7 @@
         <module>mysql8reader</module>
         <module>kafkareader</module>
         <module>httpreader</module>
+        <module>tbds-hive2reader</module>
     </modules>
 
     <properties>
