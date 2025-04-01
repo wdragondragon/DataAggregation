@@ -1,0 +1,6 @@
+{
+  "name": "consolewriter",
+  "class": "com.jdragon.aggregation.writer.console.ConsoleWriter",
+  "description": "consolewriter",
+  "developer": "jdragon"
+}

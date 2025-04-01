@@ -1,0 +1,6 @@
+{
+  "name": "httpreader",
+  "class": "com.jdragon.aggregation.httpreader.HttpReader",
+  "description": "httpreader",
+  "developer": "jdragon"
+}

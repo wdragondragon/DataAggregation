@@ -1,0 +1,6 @@
+{
+  "name": "oracle",
+  "class": "com.jdragon.aggregation.datasource.oracle.OracleSourcePlugin",
+  "description": "oracle",
+  "developer": "jdragon"
+}
