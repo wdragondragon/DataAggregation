@@ -49,29 +49,34 @@ public class CommonRdbmsReader extends Reader.Job {
         Configuration connectConfig = this.getPluginJobConf().getConfiguration("connect");
         dataSource = JSONObject.parseObject(connectConfig.toString(), BaseDataSourceDTO.class);
         dataSource.setName(sourcePlugin.getType().getTypeName());
-        String tableName = this.getPluginJobConf().getString("table");
-        List<String> columns = this.getPluginJobConf().getList("columns", String.class);
-        if (columns.size() == 1 && columns.get(0).equalsIgnoreCase("*")) {
-            try (Connection connection = DBUtil.getConnection(sourcePlugin, dataSource)) {
-                Triple<List<String>, List<Integer>, List<String>> metaData = DBUtil.getColumnMetaData(connection,
-                        tableName, "*");
-                columns = metaData.getLeft();
-            } catch (SQLException e) {
-                throw new RuntimeException(e);
+
+        selectSql = this.getPluginJobConf().getString("selectSql");
+        if (StringUtils.isBlank(selectSql)) {
+            String tableName = this.getPluginJobConf().getString("table");
+            List<String> columns = this.getPluginJobConf().getList("columns", String.class);
+            if (columns.size() == 1 && columns.get(0).equalsIgnoreCase("*")) {
+                try (Connection connection = DBUtil.getConnection(sourcePlugin, dataSource)) {
+                    Triple<List<String>, List<Integer>, List<String>> metaData = DBUtil.getColumnMetaData(connection,
+                            tableName, "*");
+                    columns = metaData.getLeft();
+                } catch (SQLException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+            String maxPk = this.getJobPointReporter().get("pkValue", null);
+            selectSql = String.format("select %s from %s", String.join(",", columns), tableName);
+            pkColumn = this.getPluginJobConf().getString("incrColumn");
+            String pkModel = this.getPluginJobConf().getString("incrModel", ">");
+            if (pkColumn != null) {
+                pkIndex = columns.indexOf(pkColumn);
+            }
+
+            if (pkIndex != null && maxPk != null) {
+                maxPkValue = new StringColumn(pkColumn);
+                selectSql += String.format("where %s %s '%s'", pkColumn, pkModel, pkColumn);
             }
         }
-        String maxPk = this.getJobPointReporter().get("pkValue", null);
-        selectSql = String.format("select %s from %s", String.join(",", columns), tableName);
-        pkColumn = this.getPluginJobConf().getString("pkColumn");
-        String pkModel = this.getPluginJobConf().getString("pkModel", ">");
-        if (pkColumn != null) {
-            pkIndex = columns.indexOf(pkColumn);
-        }
 
-        if (pkIndex != null && maxPk != null) {
-            maxPkValue = new StringColumn(pkColumn);
-            selectSql += String.format("where %s %s '%s'", pkColumn, pkModel, pkColumn);
-        }
         LOG.info("rdbms query sql: {}", selectSql);
         mandatoryEncoding = this.getPluginJobConf().getString("mandatoryEncoding", "utf-8");
     }
