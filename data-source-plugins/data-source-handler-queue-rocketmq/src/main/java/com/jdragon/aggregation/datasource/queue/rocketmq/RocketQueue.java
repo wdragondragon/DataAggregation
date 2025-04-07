@@ -59,8 +59,7 @@ public class RocketQueue extends QueueAbstract {
         pullInterval = configParams.getLong("pullInterval", -1);
     }
 
-    @Override
-    public void sendMessage(String message) throws Exception {
+    public void initProducer() {
         if (producer == null) {
             if (StringUtils.isNotBlank(accessKey) && StringUtils.isNotBlank(secretKey)) {
                 AclClientRPCHook auth = new AclClientRPCHook(new SessionCredentials(accessKey, secretKey));
@@ -75,6 +74,10 @@ public class RocketQueue extends QueueAbstract {
                 throw new RuntimeException(e);
             }
         }
+    }
+
+    public void sendMessage(String topic, String tag, String message) throws Exception {
+        initProducer();
         if (StringUtils.isBlank(tag)) {
             tag = null;
         }
@@ -85,7 +88,12 @@ public class RocketQueue extends QueueAbstract {
     }
 
     @Override
-    public void receiveMessage(Function<String, Boolean> messageProcessor) throws Exception {
+    public void sendMessage(String message) throws Exception {
+        initProducer();
+        sendMessage(topic, tag, message);
+    }
+
+    public DefaultLitePullConsumer initLitePullConsumer() throws MQClientException {
         // RocketMQ 消费者实现
         // 创建消费者实例
         String subExpression = StringUtils.isBlank(tag) ? "*" : tag;
@@ -100,7 +108,12 @@ public class RocketQueue extends QueueAbstract {
         consumer.setConsumerGroup(consumerGroup);
         // 启动消费者
         consumer.start();
+        return consumer;
+    }
 
+    @Override
+    public void receiveMessage(Function<String, Boolean> messageProcessor) throws Exception {
+        DefaultLitePullConsumer consumer = initLitePullConsumer();
         while (true) {
             List<MessageExt> poll = consumer.poll(1000);
             AtomicBoolean sign = new AtomicBoolean(true);
@@ -112,7 +125,7 @@ public class RocketQueue extends QueueAbstract {
                     sign.set(false);
                     return;
                 }
-                log.debug("Kafka 消费消息: {}", message);
+                log.debug("rocket 消费消息: {}", message);
             });
             if (!poll.isEmpty()) {
                 consumer.commitSync();
@@ -121,7 +134,26 @@ public class RocketQueue extends QueueAbstract {
                 break;
             }
             if (pullBatchSize != -1) {
-                Thread.sleep(pullBatchSize);
+                Thread.sleep(pullInterval);
+            }
+        }
+        consumer.shutdown();
+    }
+
+    public void receiveRecords(Function<List<MessageExt>, Boolean> messageProcessor) throws Exception {
+        DefaultLitePullConsumer consumer = initLitePullConsumer();
+        while (true) {
+            List<MessageExt> poll = consumer.poll(1000);
+            boolean continueConsume = messageProcessor.apply(poll);
+            if (!poll.isEmpty()) {
+                consumer.commitSync();
+            }
+            if (!continueConsume) {
+                log.info("停止消费消息");
+                break;
+            }
+            if (pullBatchSize != -1) {
+                Thread.sleep(pullInterval);
             }
         }
         consumer.shutdown();

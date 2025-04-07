@@ -1,0 +1,27 @@
+{
+  "type": "rocketmq",
+  "config": {
+    "connect": {
+      "namesrvAddr": "192.168.100.194:9092",
+      "accessKey": "test",
+      "secretKey": "test",
+      "topic": "test",
+      "tag": "",
+      "producerGroup": "test"
+    },
+    "fieldDelimiter": ",",
+    "writeType": "json",
+    "otherProperties": {
+    },
+    "columns": [
+      {
+        "index": 0,
+        "name": "id"
+      },
+      {
+        "index": 1,
+        "name": "test_param1"
+      }
+    ]
+  }
+}

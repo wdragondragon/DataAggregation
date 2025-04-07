@@ -1,0 +1,6 @@
+{
+  "name": "rocketmqwriter",
+  "class": "com.jdragon.aggregation.writer.rocketmq.RocketMqWriter",
+  "description": "rocketmqwriter",
+  "developer": "jdragon"
+}

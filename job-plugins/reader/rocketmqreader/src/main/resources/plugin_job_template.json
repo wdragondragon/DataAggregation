@@ -1,0 +1,28 @@
+{
+  "type": "rocketmq",
+  "config": {
+    "connect": {
+      "namesrvAddr": "192.168.100.194:9092",
+      "accessKey": "test",
+      "secretKey": "test",
+      "topic": "test",
+      "tag": "",
+      "consumerGroup": "test",
+      "pullBatchSize": 500,
+      "pullInterval": -1
+    },
+    "parsingRules": "json",
+    "fieldDelimiter": ",",
+    "keepReadTime": "360000",
+    "columns": [
+      {
+        "index": 0,
+        "name": "id"
+      },
+      {
+        "index": 1,
+        "name": "test_param1"
+      }
+    ]
+  }
+}

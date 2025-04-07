@@ -1,0 +1,6 @@
+{
+  "name": "rocketmqreader",
+  "class": "com.jdragon.aggregation.rocketmq.RocketMqReader",
+  "description": "rocketmqreader",
+  "developer": "jdragon"
+}

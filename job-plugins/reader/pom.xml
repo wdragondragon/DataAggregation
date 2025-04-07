@@ -18,6 +18,7 @@
         <module>kafkareader</module>
         <module>httpreader</module>
         <module>tbds-hive2reader</module>
+        <module>rocketmqreader</module>
     </modules>
 
     <properties>

@@ -32,7 +32,7 @@ public class SelectSqlTest {
     public static void main(String[] args) {
         Configuration configuration = Configuration.newDefault();
         configuration.set("reader.type", "mysql8");
-        configuration.set("reader.config.connect.host", "172.20.10.2");
+        configuration.set("reader.config.connect.host", "192.168.188.128");
         configuration.set("reader.config.connect.port", "3306");
         configuration.set("reader.config.connect.userName", "root");
         configuration.set("reader.config.connect.password", "951753");
@@ -41,7 +41,7 @@ public class SelectSqlTest {
         configuration.set("reader.config.selectSql", "select test1.id,test2.test_param from agg_test1 test1 join agg_test1_1 test2 on test2.id=test1.id");
 
         configuration.set("writer.type", "mysql8");
-        configuration.set("writer.config.connect.host", "172.20.10.2");
+        configuration.set("writer.config.connect.host", "192.168.188.128");
         configuration.set("writer.config.connect.port", "3306");
         configuration.set("writer.config.connect.userName", "root");
         configuration.set("writer.config.connect.password", "951753");
