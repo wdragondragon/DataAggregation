@@ -19,6 +19,7 @@
         <module>httpreader</module>
         <module>tbds-hive2reader</module>
         <module>rocketmqreader</module>
+        <module>dmreader</module>
     </modules>
 
     <properties>

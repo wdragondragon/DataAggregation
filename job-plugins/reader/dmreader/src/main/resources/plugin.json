@@ -1,0 +1,6 @@
+{
+  "name": "dmreader",
+  "class": "com.jdragon.aggregation.dm.DmReader",
+  "description": "dmreader",
+  "developer": "jdragon"
+}

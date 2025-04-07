@@ -1,0 +1,22 @@
+{
+  "type": "dm",
+  "config": {
+    "connect": {
+      "host": "rmHost",
+      "port": "3305",
+      "database": "",
+      "userName": "root",
+      "password": "",
+      "other": "",
+      "userPool": true,
+      "extraParams": {}
+    },
+    "table": "",
+    "columns": [
+      "id",
+      "test_param1"
+    ],
+    "incrColumn": "id",
+    "incrModel": ">"
+  }
+}

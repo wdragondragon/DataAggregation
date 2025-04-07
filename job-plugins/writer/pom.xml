@@ -18,6 +18,7 @@
         <module>mysql8writer</module>
         <module>kafkawriter</module>
         <module>rocketmqwriter</module>
+        <module>dmwriter</module>
     </modules>
 
     <properties>

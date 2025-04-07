@@ -1,0 +1,6 @@
+{
+  "name": "dmwriter",
+  "class": "com.jdragon.aggregation.writer.dm.DmWriter",
+  "description": "dmwriter",
+  "developer": "jdragon"
+}
