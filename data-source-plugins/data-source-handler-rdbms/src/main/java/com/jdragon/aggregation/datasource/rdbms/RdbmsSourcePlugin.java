@@ -3,10 +3,7 @@ package com.jdragon.aggregation.datasource.rdbms;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.TypeReference;
 import com.jdragon.aggregation.commons.pagination.Table;
-import com.jdragon.aggregation.datasource.AbstractDataSourcePlugin;
-import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
-import com.jdragon.aggregation.datasource.IDataSourceSql;
-import com.jdragon.aggregation.datasource.InsertDataDTO;
+import com.jdragon.aggregation.datasource.*;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.calcite.adapter.jdbc.JdbcSchema;
@@ -248,6 +245,100 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
             } catch (Exception e) {
                 log.error(e.getMessage(), e);
             }
+        }
+    }
+
+    @Override
+    public List<TableInfo> getTableInfos(BaseDataSourceDTO dataSource, String schema, String table) {
+        try (Connection connection = getConnection(dataSource)) {
+            if (StringUtils.isBlank(schema)) {
+                schema = connection.getSchema();
+            }
+            schema = "%" + schema + "%";
+            if (StringUtils.isBlank(table)) {
+                table = "%";
+            } else {
+                table = "%" + table + "%";
+            }
+            DatabaseMetaData databaseMetaData = connection.getMetaData();
+            ResultSet rs = databaseMetaData.getTables(null, schema, table, new String[]{"TABLE"});
+            List<TableInfo> tableInfoList = new ArrayList<>();
+            while (rs.next()) {
+                TableInfo info = new TableInfo();
+                info.setTableCat(ResultSetUtils.getStringSafe(rs, "TABLE_CAT"));
+                info.setTableSchem(ResultSetUtils.getStringSafe(rs, "TABLE_SCHEM"));
+                info.setTableName(ResultSetUtils.getStringSafe(rs, "TABLE_NAME"));
+                info.setTableType(ResultSetUtils.getStringSafe(rs, "TABLE_TYPE"));
+                info.setRemarks(ResultSetUtils.getStringSafe(rs, "REMARKS"));
+                // 以下字段在 MySQL 中通常没有，可以尝试读取但不会异常
+                info.setTypeCat(ResultSetUtils.getStringSafe(rs, "TYPE_CAT"));
+                info.setTypeSchem(ResultSetUtils.getStringSafe(rs, "TYPE_SCHEM"));
+                info.setTypeName(ResultSetUtils.getStringSafe(rs, "TYPE_NAME"));
+                info.setSelfReferencingColName(ResultSetUtils.getStringSafe(rs, "SELF_REFERENCING_COL_NAME"));
+                info.setRefGeneration(ResultSetUtils.getStringSafe(rs, "REF_GENERATION"));
+                tableInfoList.add(info);
+            }
+            return tableInfoList;
+        } catch (Exception e) {
+            log.error("查询数据库下的表失败：{}", e.getMessage(), e);
+            throw new RuntimeException(e.getMessage());
+        }
+    }
+
+    @Override
+    public List<String> getTableNames(BaseDataSourceDTO dataSource, String schema, String table) {
+        List<TableInfo> tableInfos = this.getTableInfos(dataSource, schema, table);
+        List<String> tableNames = new ArrayList<>();
+        for (TableInfo tableInfo : tableInfos) {
+            String tableSchema = tableInfo.getTableSchem();
+            String tableName = tableInfo.getTableName();
+            if (StringUtils.isNotBlank(tableSchema)) {
+                tableName = tableSchema + "." + tableName;
+            }
+            tableNames.add(tableName);
+        }
+        return tableNames;
+    }
+
+    @Override
+    public List<ColumnInfo> getColumns(BaseDataSourceDTO dataSource, String schema, String table) {
+        try (Connection connection = getConnection(dataSource)) {
+            if (StringUtils.isBlank(schema)) {
+                schema = connection.getSchema();
+            }
+            if (StringUtils.isBlank(table)) {
+                table = "%";
+            } else {
+                table = "%" + table + "%";
+            }
+            DatabaseMetaData databaseMetaData = connection.getMetaData();
+            ResultSet rs = databaseMetaData.getColumns(null, schema, table, null);
+            List<ColumnInfo> columnInfoList = new ArrayList<>();
+            while (rs.next()) {
+                ColumnInfo info = new ColumnInfo();
+                info.setTableCat(ResultSetUtils.getStringSafe(rs, "TABLE_CAT"));
+                info.setTableSchem(ResultSetUtils.getStringSafe(rs, "TABLE_SCHEM"));
+                info.setTableName(ResultSetUtils.getStringSafe(rs, "TABLE_NAME"));
+                info.setColumnName(ResultSetUtils.getStringSafe(rs, "COLUMN_NAME"));
+                info.setDataType(ResultSetUtils.getIntSafe(rs, "DATA_TYPE"));
+                info.setTypeName(ResultSetUtils.getStringSafe(rs, "TYPE_NAME"));
+                info.setColumnSize(ResultSetUtils.getIntSafe(rs, "COLUMN_SIZE"));
+                info.setDecimalDigits(ResultSetUtils.getIntSafe(rs, "DECIMAL_DIGITS"));
+                info.setNumPrecRadix(ResultSetUtils.getIntSafe(rs, "NUM_PREC_RADIX"));
+                info.setNullable(ResultSetUtils.getIntSafe(rs, "NULLABLE"));
+                info.setRemarks(ResultSetUtils.getStringSafe(rs, "REMARKS"));
+                info.setColumnDef(ResultSetUtils.getStringSafe(rs, "COLUMN_DEF"));
+                info.setCharOctetLength(ResultSetUtils.getIntSafe(rs, "CHAR_OCTET_LENGTH"));
+                info.setOrdinalPosition(ResultSetUtils.getIntSafe(rs, "ORDINAL_POSITION"));
+                info.setIsNullable(ResultSetUtils.getStringSafe(rs, "IS_NULLABLE"));
+                info.setIsAutoincrement(ResultSetUtils.getStringSafe(rs, "IS_AUTOINCREMENT"));
+                info.setIsGeneratedColumn(ResultSetUtils.getStringSafe(rs, "IS_GENERATEDCOLUMN"));
+                columnInfoList.add(info);
+            }
+            return columnInfoList;
+        } catch (Exception e) {
+            log.error("查询数据库下的表的字段失败：{}", e.getMessage(), e);
+            throw new RuntimeException(e.getMessage());
         }
     }
 }

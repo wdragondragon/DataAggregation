@@ -27,6 +27,7 @@
         <module>data-source-handler-file-s3-minio</module>
         <module>data-source-handler-dm</module>
         <module>data-source-handler-oracle</module>
+        <module>data-source-handler-postgres</module>
     </modules>
 
     <properties>

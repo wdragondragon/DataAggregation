@@ -9,6 +9,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.List;
 
 public class DMTest {
     public static void main(String[] args) {
@@ -31,6 +32,11 @@ public class DMTest {
                 System.out.println(resultSet.getString(2));
             }
             connection.close();
+
+            List<String> tables = sourcePlugin.getTableNames(sourceDTO, "SYSDBA", "");
+            for (String table : tables) {
+                System.out.println(table);
+            }
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }

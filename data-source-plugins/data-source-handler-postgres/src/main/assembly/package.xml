@@ -14,28 +14,21 @@
                 <include>plugin.json</include>
                 <include>plugin_job_template.json</include>
             </includes>
-            <outputDirectory>plugin/source/dm</outputDirectory>
+            <outputDirectory>plugin/source/postgres</outputDirectory>
         </fileSet>
         <fileSet>
             <directory>target/</directory>
             <includes>
-                <include>data-source-handler-dm-1.0-SNAPSHOT.jar</include>
+                <include>data-source-handler-postgres-1.0-SNAPSHOT.jar</include>
             </includes>
-            <outputDirectory>plugin/source/dm</outputDirectory>
-        </fileSet>
-        <fileSet>
-            <directory>src/main/libs</directory>
-            <includes>
-                <include>Dm8JdbcDriver18-8.1.1.49.jar</include>
-            </includes>
-            <outputDirectory>plugin/source/dm/libs</outputDirectory>
+            <outputDirectory>plugin/source/postgres</outputDirectory>
         </fileSet>
     </fileSets>
 
     <dependencySets>
         <dependencySet>
             <useProjectArtifact>false</useProjectArtifact>
-            <outputDirectory>plugin/source/dm/libs</outputDirectory>
+            <outputDirectory>plugin/source/postgres/libs</outputDirectory>
             <scope>runtime</scope>
         </dependencySet>
     </dependencySets>

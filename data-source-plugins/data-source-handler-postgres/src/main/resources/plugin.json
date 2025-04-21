@@ -1,0 +1,6 @@
+{
+  "name": "postgres",
+  "class": "com.jdragon.aggregation.datasource.postgres.PGSourcePlugin",
+  "description": "postgres",
+  "developer": "jdragon"
+}

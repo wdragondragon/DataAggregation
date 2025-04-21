@@ -21,4 +21,9 @@ public abstract class AbstractDataSourcePlugin extends AbstractPlugin {
 
     public abstract void insertData(InsertDataDTO insertDataDTO);
 
+    public abstract List<TableInfo> getTableInfos(BaseDataSourceDTO dataSource, String schema, String table);
+
+    public abstract List<String> getTableNames(BaseDataSourceDTO dataSource, String schema, String table);
+
+    public abstract List<ColumnInfo> getColumns(BaseDataSourceDTO dataSource, String schema, String table);
 }
