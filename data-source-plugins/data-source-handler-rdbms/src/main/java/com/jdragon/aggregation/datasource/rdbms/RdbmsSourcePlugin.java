@@ -298,7 +298,7 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
                 tableNamePattern = "%" + table + "%";
             }
             DatabaseMetaData databaseMetaData = connection.getMetaData();
-            ResultSet rs = databaseMetaData.getTables(null, schemaPattern, tableNamePattern, new String[]{"TABLE"});
+            ResultSet rs = databaseMetaData.getTables(dataSource.getDatabase(), schemaPattern, tableNamePattern, new String[]{"TABLE"});
             List<TableInfo> tableInfoList = new ArrayList<>();
             while (rs.next()) {
                 String tableCat = ResultSetUtils.getStringSafe(rs, "TABLE_CAT");
@@ -354,16 +354,8 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
             if (StringUtils.isBlank(schema)) {
                 schema = connection.getSchema();
             }
-            String schemaPattern = "%";
-            if (StringUtils.isNotBlank(schema)) {
-                schemaPattern = "%" + schema + "%";
-            }
-            String tableNamePattern = "%";
-            if (StringUtils.isNotBlank(table)) {
-                tableNamePattern = "%" + table + "%";
-            }
             DatabaseMetaData databaseMetaData = connection.getMetaData();
-            ResultSet rs = databaseMetaData.getColumns(null, schemaPattern, tableNamePattern, null);
+            ResultSet rs = databaseMetaData.getColumns(dataSource.getDatabase(), schema, table, null);
             List<ColumnInfo> columnInfoList = new ArrayList<>();
             while (rs.next()) {
                 ColumnInfo info = new ColumnInfo();
