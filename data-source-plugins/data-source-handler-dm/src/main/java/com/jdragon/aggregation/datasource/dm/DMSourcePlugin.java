@@ -4,7 +4,6 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.TypeReference;
 import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
 import com.jdragon.aggregation.datasource.DataSourceType;
-import com.jdragon.aggregation.datasource.rdbms.DefaultSourceSql;
 import com.jdragon.aggregation.datasource.rdbms.RdbmsSourcePlugin;
 import lombok.Getter;
 import org.apache.commons.lang3.StringUtils;
@@ -30,7 +29,7 @@ public class DMSourcePlugin extends RdbmsSourcePlugin {
     private final String extraParameterStart = "?";
 
     public DMSourcePlugin() {
-        super(new DefaultSourceSql());
+        super(new DMSourceSql());
     }
 
     @Override

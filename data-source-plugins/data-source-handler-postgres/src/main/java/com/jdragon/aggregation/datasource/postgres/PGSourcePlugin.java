@@ -1,10 +1,11 @@
 package com.jdragon.aggregation.datasource.postgres;
 
 import com.jdragon.aggregation.datasource.DataSourceType;
-import com.jdragon.aggregation.datasource.rdbms.DefaultSourceSql;
 import com.jdragon.aggregation.datasource.rdbms.RdbmsSourcePlugin;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Getter
 public class PGSourcePlugin extends RdbmsSourcePlugin {
 
@@ -23,6 +24,6 @@ public class PGSourcePlugin extends RdbmsSourcePlugin {
     private final String extraParameterStart = "?";
 
     public PGSourcePlugin() {
-        super(new DefaultSourceSql());
+        super(new PGSourceSql());
     }
 }

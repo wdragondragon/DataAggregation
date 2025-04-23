@@ -33,9 +33,13 @@ public class DMTest {
             }
             connection.close();
 
-            List<String> tables = sourcePlugin.getTableNames(sourceDTO, "SYSDBA", "");
+            List<String> tables = sourcePlugin.getTableNames(sourceDTO, "");
             for (String table : tables) {
                 System.out.println(table);
+                String tableSize = sourcePlugin.getTableSize(sourceDTO, table);
+                System.out.println("tableSize:" + tableSize);
+                Long tableCount = sourcePlugin.getTableCount(sourceDTO, table);
+                System.out.println("tableCount:" + tableCount);
             }
         } catch (SQLException e) {
             throw new RuntimeException(e);

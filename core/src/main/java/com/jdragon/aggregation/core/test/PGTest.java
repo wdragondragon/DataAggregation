@@ -19,9 +19,13 @@ public class PGTest {
         try (PluginClassLoaderCloseable loaderSwapper =
                      PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(SourcePluginType.SOURCE, "postgres")) {
             AbstractDataSourcePlugin sourcePlugin = loaderSwapper.loadPlugin();
-            List<String> tables = sourcePlugin.getTableNames(sourceDTO, "public", "");
+            List<String> tables = sourcePlugin.getTableNames(sourceDTO, "");
             for (String table : tables) {
                 System.out.println(table);
+                String tableSize = sourcePlugin.getTableSize(sourceDTO, table);
+                System.out.println("tableSize:" + tableSize);
+                Long tableCount = sourcePlugin.getTableCount(sourceDTO, table);
+                System.out.println("tableCount:" + tableCount);
             }
         }
     }

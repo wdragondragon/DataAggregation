@@ -20,13 +20,17 @@ public class MysqlTest {
         try (PluginClassLoaderCloseable loaderSwapper =
                      PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(SourcePluginType.SOURCE, "mysql8")) {
             AbstractDataSourcePlugin sourcePlugin = loaderSwapper.loadPlugin();
-            List<String> tables = sourcePlugin.getTableNames(sourceDTO, sourceDTO.getDatabase(), "");
+            List<String> tables = sourcePlugin.getTableNames(sourceDTO, "");
             for (String table : tables) {
                 System.out.println(table);
-                List<ColumnInfo> columns = sourcePlugin.getColumns(sourceDTO, sourceDTO.getDatabase(), table);
+                List<ColumnInfo> columns = sourcePlugin.getColumns(sourceDTO, table);
                 for (ColumnInfo column : columns) {
-                    System.out.println(column);
+                    System.out.println("column:" + column.getColumnName());
                 }
+                String tableSize = sourcePlugin.getTableSize(sourceDTO, table);
+                System.out.println("tableSize:" + tableSize);
+                Long tableCount = sourcePlugin.getTableCount(sourceDTO, table);
+                System.out.println("tableCount:" + tableCount);
             }
         }
     }

@@ -21,9 +21,16 @@ public abstract class AbstractDataSourcePlugin extends AbstractPlugin {
 
     public abstract void insertData(InsertDataDTO insertDataDTO);
 
-    public abstract List<TableInfo> getTableInfos(BaseDataSourceDTO dataSource, String schema, String table);
+    public abstract List<TableInfo> getTableInfos(BaseDataSourceDTO dataSource, String table);
 
-    public abstract List<String> getTableNames(BaseDataSourceDTO dataSource, String schema, String table);
+    public abstract List<String> getTableNames(BaseDataSourceDTO dataSource, String table);
 
-    public abstract List<ColumnInfo> getColumns(BaseDataSourceDTO dataSource, String schema, String table);
+    public abstract List<ColumnInfo> getColumns(BaseDataSourceDTO dataSource, String table);
+
+    /**
+     * 获取表大小，单位为mb
+     */
+    public abstract String getTableSize(BaseDataSourceDTO dataSource, String table);
+
+    public abstract Long getTableCount(BaseDataSourceDTO dataSource, String table);
 }

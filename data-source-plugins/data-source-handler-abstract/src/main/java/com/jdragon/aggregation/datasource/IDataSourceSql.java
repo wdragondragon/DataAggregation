@@ -8,6 +8,10 @@ public interface IDataSourceSql {
 
     String INSERT_DATA = "insert into {0}({1}) values {2}";
 
+    String MYSQL_QUERY_TABLE_SIZE = "SELECT ROUND((DATA_LENGTH + INDEX_LENGTH) / 1024 / 1024, 2) AS data FROM information_schema.TABLES WHERE table_schema =''{0}'' and table_name = ''{1}''";
+
+    String TABLE_COUNT = "SELECT COUNT(*) AS table_count FROM {0}";
+
     default String getDataPreview() {
         return DATA_PREVIEW;
     }
@@ -20,4 +24,11 @@ public interface IDataSourceSql {
         return INSERT_DATA;
     }
 
+    default String getTableSize() {
+        return MYSQL_QUERY_TABLE_SIZE;
+    }
+
+    default String getTableCount() {
+        return TABLE_COUNT;
+    }
 }

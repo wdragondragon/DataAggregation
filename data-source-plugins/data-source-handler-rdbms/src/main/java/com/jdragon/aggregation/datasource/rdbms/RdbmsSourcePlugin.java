@@ -26,6 +26,36 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
         this.dataSourceSql = dataSourceSql;
     }
 
+    public String mergeTableAndSchema(String schema, String table) {
+        if (StringUtils.isBlank(schema)) {
+            return quotationMarks(table);
+        }
+        return quotationMarks(schema) + "." + quotationMarks(table);
+    }
+
+    protected String quotationMarks(String value) {
+        String quotationMarks = getQuotationMarks();
+        if (!value.startsWith(quotationMarks)) {
+            value = quotationMarks + value;
+        }
+        if (!value.endsWith(quotationMarks)) {
+            value = value + quotationMarks;
+        }
+        return value;
+    }
+
+    public String getDefaultSchema(BaseDataSourceDTO dataSource) {
+        try (Connection connection = getConnection(dataSource)) {
+            String schema = connection.getSchema();
+            if (StringUtils.isBlank(schema)) {
+                return connection.getCatalog();
+            }
+            return schema;
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     @Override
     public Connection getConnection(BaseDataSourceDTO dataSource) {
         Connection connection;
@@ -249,23 +279,36 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
     }
 
     @Override
-    public List<TableInfo> getTableInfos(BaseDataSourceDTO dataSource, String schema, String table) {
+    public List<TableInfo> getTableInfos(BaseDataSourceDTO dataSource, String table) {
         try (Connection connection = getConnection(dataSource)) {
+            String schema = "";
+            if (table.contains(".") && table.split("\\.").length == 2) {
+                schema = table.split("\\.")[0];
+                table = table.split("\\.")[1];
+            }
             if (StringUtils.isBlank(schema)) {
                 schema = connection.getSchema();
             }
-            schema = "%" + schema + "%";
-            if (StringUtils.isBlank(table)) {
-                table = "%";
-            } else {
-                table = "%" + table + "%";
+            String schemaPattern = "%";
+            if (StringUtils.isNotBlank(schema)) {
+                schemaPattern = "%" + schema + "%";
+            }
+            String tableNamePattern = "%";
+            if (StringUtils.isNotBlank(table)) {
+                tableNamePattern = "%" + table + "%";
             }
             DatabaseMetaData databaseMetaData = connection.getMetaData();
-            ResultSet rs = databaseMetaData.getTables(null, schema, table, new String[]{"TABLE"});
+            ResultSet rs = databaseMetaData.getTables(null, schemaPattern, tableNamePattern, new String[]{"TABLE"});
             List<TableInfo> tableInfoList = new ArrayList<>();
             while (rs.next()) {
+                String tableCat = ResultSetUtils.getStringSafe(rs, "TABLE_CAT");
+                if (StringUtils.isNotBlank(tableCat)) {
+                    if (!Objects.equals(tableCat, dataSource.getDatabase())) {
+                        continue;
+                    }
+                }
                 TableInfo info = new TableInfo();
-                info.setTableCat(ResultSetUtils.getStringSafe(rs, "TABLE_CAT"));
+                info.setTableCat(tableCat);
                 info.setTableSchem(ResultSetUtils.getStringSafe(rs, "TABLE_SCHEM"));
                 info.setTableName(ResultSetUtils.getStringSafe(rs, "TABLE_NAME"));
                 info.setTableType(ResultSetUtils.getStringSafe(rs, "TABLE_TYPE"));
@@ -286,8 +329,8 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
     }
 
     @Override
-    public List<String> getTableNames(BaseDataSourceDTO dataSource, String schema, String table) {
-        List<TableInfo> tableInfos = this.getTableInfos(dataSource, schema, table);
+    public List<String> getTableNames(BaseDataSourceDTO dataSource, String table) {
+        List<TableInfo> tableInfos = this.getTableInfos(dataSource, table);
         List<String> tableNames = new ArrayList<>();
         for (TableInfo tableInfo : tableInfos) {
             String tableSchema = tableInfo.getTableSchem();
@@ -301,18 +344,26 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
     }
 
     @Override
-    public List<ColumnInfo> getColumns(BaseDataSourceDTO dataSource, String schema, String table) {
+    public List<ColumnInfo> getColumns(BaseDataSourceDTO dataSource, String table) {
         try (Connection connection = getConnection(dataSource)) {
+            String schema = dataSource.getDatabase();
+            if (table.contains(".") && table.split("\\.").length == 2) {
+                schema = table.split("\\.")[0];
+                table = table.split("\\.")[1];
+            }
             if (StringUtils.isBlank(schema)) {
                 schema = connection.getSchema();
             }
-            if (StringUtils.isBlank(table)) {
-                table = "%";
-            } else {
-                table = "%" + table + "%";
+            String schemaPattern = "%";
+            if (StringUtils.isNotBlank(schema)) {
+                schemaPattern = "%" + schema + "%";
+            }
+            String tableNamePattern = "%";
+            if (StringUtils.isNotBlank(table)) {
+                tableNamePattern = "%" + table + "%";
             }
             DatabaseMetaData databaseMetaData = connection.getMetaData();
-            ResultSet rs = databaseMetaData.getColumns(null, schema, table, null);
+            ResultSet rs = databaseMetaData.getColumns(null, schemaPattern, tableNamePattern, null);
             List<ColumnInfo> columnInfoList = new ArrayList<>();
             while (rs.next()) {
                 ColumnInfo info = new ColumnInfo();
@@ -340,5 +391,42 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
             log.error("查询数据库下的表的字段失败：{}", e.getMessage(), e);
             throw new RuntimeException(e.getMessage());
         }
+    }
+
+    @Override
+    public String getTableSize(BaseDataSourceDTO dataSource, String table) {
+        String schema = "";
+        if (table.contains(".") && table.split("\\.").length == 2) {
+            schema = table.split("\\.")[0];
+            table = table.split("\\.")[1];
+        }
+        if (StringUtils.isBlank(schema)) {
+            schema = getDefaultSchema(dataSource);
+        }
+        String getTableSizeSql = MessageFormat.format(this.getDataSourceSql().getTableSize(), schema, table);
+        log.info("type: {}, query table size sql: {}", dataSource.getType(), getTableSizeSql);
+        Table<Map<String, Object>> queryResult = executeQuerySql(dataSource, getTableSizeSql, true);
+        String data = "0";
+        if (queryResult.getBodies() != null && !queryResult.getBodies().isEmpty()) {
+            data = queryResult.getBodies().get(0).get("data").toString();
+        }
+        log.info("type: {}, query table size is: {}", dataSource.getType(), data);
+        return data;
+    }
+
+
+    @Override
+    public Long getTableCount(BaseDataSourceDTO dataSource, String table) {
+        String schema = "";
+        if (table.contains(".") && table.split("\\.").length == 2) {
+            schema = table.split("\\.")[0];
+            table = table.split("\\.")[1];
+        }
+        table = mergeTableAndSchema(schema, table);
+        String getTableCountSql = MessageFormat.format(this.getDataSourceSql().getTableCount(), table);
+        log.info("type: {}, query table count sql: {}", dataSource.getType(), getTableCountSql);
+        Table<Map<String, Object>> executed = executeQuerySql(dataSource, getTableCountSql, false);
+        String tableCount = executed.getBodies().get(0).get("table_count").toString();
+        return Long.parseLong(tableCount);
     }
 }
