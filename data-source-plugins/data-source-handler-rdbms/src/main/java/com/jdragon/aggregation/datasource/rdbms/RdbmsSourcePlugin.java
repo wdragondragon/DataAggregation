@@ -355,6 +355,15 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
                 schema = connection.getSchema();
             }
             DatabaseMetaData databaseMetaData = connection.getMetaData();
+            // 查询主键信息
+            Set<String> primaryKeys = new HashSet<>();
+            ResultSet primaryKeysResultSet = databaseMetaData.getPrimaryKeys(dataSource.getDatabase(), schema, table);
+            while (primaryKeysResultSet.next()) {
+                String pkColumnName = primaryKeysResultSet.getString("COLUMN_NAME");
+                primaryKeys.add(pkColumnName);
+            }
+            primaryKeysResultSet.close();
+
             ResultSet rs = databaseMetaData.getColumns(dataSource.getDatabase(), schema, table, null);
             List<ColumnInfo> columnInfoList = new ArrayList<>();
             while (rs.next()) {
@@ -376,6 +385,8 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
                 info.setIsNullable(ResultSetUtils.getStringSafe(rs, "IS_NULLABLE"));
                 info.setIsAutoincrement(ResultSetUtils.getStringSafe(rs, "IS_AUTOINCREMENT"));
                 info.setIsGeneratedColumn(ResultSetUtils.getStringSafe(rs, "IS_GENERATEDCOLUMN"));
+                // 设置是否为主键
+                info.setIsPrimaryKey(primaryKeys.contains(info.getColumnName()) ? "YES" : "NO");
                 columnInfoList.add(info);
             }
             return columnInfoList;

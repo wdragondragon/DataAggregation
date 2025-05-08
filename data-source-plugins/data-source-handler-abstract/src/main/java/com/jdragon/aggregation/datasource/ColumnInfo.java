@@ -88,4 +88,9 @@ public class ColumnInfo {
      * 是否是计算生成的字段（"YES" 或 "NO"）
      */
     private String isGeneratedColumn;
+
+    /**
+     * 是否为主键（"YES" 或 "NO"）
+     */
+    private String isPrimaryKey;
 }
