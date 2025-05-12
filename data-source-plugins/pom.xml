@@ -28,6 +28,7 @@
         <module>data-source-handler-dm</module>
         <module>data-source-handler-oracle</module>
         <module>data-source-handler-postgres</module>
+        <module>data-source-handler-odps</module>
     </modules>
 
     <properties>

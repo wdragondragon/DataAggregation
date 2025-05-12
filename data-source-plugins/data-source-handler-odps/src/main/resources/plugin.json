@@ -1,0 +1,6 @@
+{
+  "name": "odps",
+  "class": "com.jdragon.aggregation.datasource.odps.OdpsSourcePlugin",
+  "description": "mysql5",
+  "developer": "jdragon"
+}
