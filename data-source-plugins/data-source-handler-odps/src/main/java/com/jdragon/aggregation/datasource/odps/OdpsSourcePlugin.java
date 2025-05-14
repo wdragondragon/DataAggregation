@@ -4,10 +4,12 @@ import com.aliyun.odps.*;
 import com.aliyun.odps.data.Record;
 import com.aliyun.odps.task.SQLTask;
 import com.jdragon.aggregation.datasource.*;
+import lombok.extern.slf4j.Slf4j;
 
 import java.sql.Connection;
 import java.util.*;
 
+@Slf4j
 public class OdpsSourcePlugin extends AbstractDataSourcePlugin {
 
     @Override
@@ -15,6 +17,7 @@ public class OdpsSourcePlugin extends AbstractDataSourcePlugin {
         Odps odps = OdpsUtils.createOdps(dataSource);
         List<String> tableNames = new ArrayList<>();
         TableFilter filter = new TableFilter();
+        filter.setName(keyword);
         for (Iterator<Table> it = odps.tables().iterator(filter); it.hasNext(); ) {
             Table t = it.next();
             tableNames.add(t.getName());
@@ -31,6 +34,7 @@ public class OdpsSourcePlugin extends AbstractDataSourcePlugin {
                 if (tb.getName().contains(table)) {
                     TableInfo info = new TableInfo();
                     info.setTableName(tb.getName());
+                    info.setExternalTable(tb.isExternalTable());
                     info.setRemarks(tb.getComment());
                     list.add(info);
                 }
@@ -49,6 +53,9 @@ public class OdpsSourcePlugin extends AbstractDataSourcePlugin {
         for (Column col : schema.getColumns()) {
             ColumnInfo info = new ColumnInfo();
             info.setColumnName(col.getName());
+            info.setNullable(col.isNullable() ? 1 : 0);
+            info.setIsNullable(col.isNullable() ? "YES" : "NO");
+            info.setColumnDef(col.getDefaultValue());
             info.setTableName(col.getTypeInfo().getTypeName());
             info.setRemarks(col.getComment());
             columnInfos.add(info);
@@ -58,7 +65,7 @@ public class OdpsSourcePlugin extends AbstractDataSourcePlugin {
 
     @Override
     public com.jdragon.aggregation.commons.pagination.Table<Map<String, Object>> dataModelPreview(BaseDataSourceDTO dataSource, String tableName, String limitSize) {
-        String sql = "SELECT * FROM " + tableName + " LIMIT " + limitSize;
+        String sql = "SELECT * FROM " + tableName + " LIMIT 0, " + limitSize;
         return executeQuerySql(dataSource, sql, false);
     }
 
@@ -108,11 +115,18 @@ public class OdpsSourcePlugin extends AbstractDataSourcePlugin {
     public String getTableSize(BaseDataSourceDTO dataSource, String table) {
         // ODPS 没有传统意义上的“表大小”，可以返回 null 或者实现估算逻辑
         Odps odps = OdpsUtils.createOdps(dataSource);
-        Table odpsTable = odps.tables().get(table);
-        if (odpsTable == null) {
-            return "0";
+        try {
+            if (odps.tables().exists(table)) {
+                Table odpsTable = odps.tables().get(table);
+                odpsTable.reload();
+                return String.valueOf(odpsTable.getSize());
+            } else {
+                return "0";
+            }
+        } catch (OdpsException e) {
+            log.error("获取odps表信息异常", e);
+            throw new RuntimeException(e);
         }
-        return String.valueOf(odpsTable.getSize());
     }
 
     @Override
@@ -130,6 +144,7 @@ public class OdpsSourcePlugin extends AbstractDataSourcePlugin {
             String sql = generateInsertSql(insertDataDTO);
             executeUpdate(insertDataDTO.getBaseDataSourceDTO(), sql);
         } catch (Exception e) {
+            log.error("数据插入失败: {}", e.getMessage(), e);
             throw new RuntimeException("数据插入失败: " + e.getMessage(), e);
         }
     }
@@ -145,6 +160,9 @@ public class OdpsSourcePlugin extends AbstractDataSourcePlugin {
         Odps odps = OdpsUtils.createOdps(dataSource);
         Instance instance;
         try {
+            if (!sql.endsWith(";")) {
+                sql += ";";
+            }
             instance = SQLTask.run(odps, sql);
             instance.waitForSuccess();
             // 封装返回结果
@@ -162,6 +180,7 @@ public class OdpsSourcePlugin extends AbstractDataSourcePlugin {
             Instance instance = SQLTask.run(odps, sql);
             instance.waitForSuccess();
         } catch (Exception e) {
+            log.error("执行更新失败: {}", e.getMessage(), e);
             throw new RuntimeException("执行更新失败: " + e.getMessage(), e);
         }
     }
@@ -175,6 +194,7 @@ public class OdpsSourcePlugin extends AbstractDataSourcePlugin {
                 instance.waitForSuccess();
             }
         } catch (Exception e) {
+            log.error("批量执行失败: {}", e.getMessage(), e);
             throw new RuntimeException("批量执行失败: " + e.getMessage(), e);
         }
     }

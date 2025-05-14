@@ -53,4 +53,9 @@ public class TableInfo {
      * 引用生成方式（如 SYSTEM）
      */
     private String refGeneration;
+
+    /**
+     * 是否外部表
+     */
+    private boolean externalTable;
 }
