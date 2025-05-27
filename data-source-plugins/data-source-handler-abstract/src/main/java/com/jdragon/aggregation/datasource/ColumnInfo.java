@@ -93,4 +93,9 @@ public class ColumnInfo {
      * 是否为主键（"YES" 或 "NO"）
      */
     private String isPrimaryKey;
+
+    /**
+     * 暂时给influxdb使用，标记tag或field
+     */
+    private String indexType;
 }

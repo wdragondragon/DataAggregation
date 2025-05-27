@@ -1,0 +1,6 @@
+{
+  "name": "influxdb",
+  "class": "com.jdragon.aggregation.datasource.influxdb.InfluxDBSourcePlugin",
+  "description": "mysql5",
+  "developer": "jdragon"
+}

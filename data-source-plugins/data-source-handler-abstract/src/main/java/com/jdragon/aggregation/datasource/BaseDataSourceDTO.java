@@ -52,4 +52,8 @@ public class BaseDataSourceDTO {
      */
     private Map<String, String> extraParams = new HashMap<>();
 
+    /**
+     * 主要用于 influxdb，类似schema
+     */
+    private String bucket;
 }

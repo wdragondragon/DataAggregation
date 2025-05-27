@@ -29,6 +29,7 @@
         <module>data-source-handler-oracle</module>
         <module>data-source-handler-postgres</module>
         <module>data-source-handler-odps</module>
+        <module>data-source-handler-influxdb</module>
     </modules>
 
     <properties>
