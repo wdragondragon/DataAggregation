@@ -165,6 +165,7 @@ public class InfluxDBV1SourcePlugin extends AbstractDataSourcePlugin {
                         columnInfo.setColumnName(row.get(0).toString());
                         columnInfo.setTypeName(row.get(1).toString());
                         columnInfo.setIndexType("field");
+                        columns.add(columnInfo);
                     });
                 }
             }
