@@ -13,20 +13,23 @@ import java.util.Map;
 public class InfluxTest {
     public static void main(String[] args) {
         BaseDataSourceDTO sourceDTO = new BaseDataSourceDTO();
-        sourceDTO.setHost("http://172.20.10.2:8086");
-        sourceDTO.setDatabase("jdragon_org");
-        sourceDTO.setBucket("test");
-        sourceDTO.setPassword("8FtG2nRdBqxxOtQaQfIHFCmNpsxClb9yvaqs3XbHmMlEbeSZdNlz69MSK7rORbKYEguGE82pBgHJlkQeRi4CJw==");
-        sourceDTO.setType("influxdb");
+        sourceDTO.setHost("http://172.20.10.2:8087");
+//        sourceDTO.setDatabase("jdragon_org");
+        sourceDTO.setDatabase("mydb");
+//        sourceDTO.setBucket("test");
+        sourceDTO.setUserName("admin");
+        sourceDTO.setPassword("zhjl951753");
+//        sourceDTO.setPassword("8FtG2nRdBqxxOtQaQfIHFCmNpsxClb9yvaqs3XbHmMlEbeSZdNlz69MSK7rORbKYEguGE82pBgHJlkQeRi4CJw==");
+        sourceDTO.setType("influxdbv1");
         try (PluginClassLoaderCloseable loaderSwapper =
-                     PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(SourcePluginType.SOURCE, "influxdb")) {
+                     PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(SourcePluginType.SOURCE, "influxdbv1")) {
             AbstractDataSourcePlugin sourcePlugin = loaderSwapper.loadPlugin();
             List<String> tables = sourcePlugin.getTableNames(sourceDTO, "");
             for (String table : tables) {
                 System.out.println(table);
                 List<ColumnInfo> columns = sourcePlugin.getColumns(sourceDTO, table);
                 for (ColumnInfo column : columns) {
-                    System.out.println("column:" + column.getColumnName());
+                    System.out.println("column:" + column.getColumnName() + " type:" + column.getTypeName());
                 }
                 Long tableCount = sourcePlugin.getTableCount(sourceDTO, table);
                 System.out.println("tableCount:" + tableCount);

@@ -1,0 +1,6 @@
+{
+  "name": "influxdbv1",
+  "class": "com.jdragon.aggregation.datasource.influxdbv1.InfluxDBV1SourcePlugin",
+  "description": "influxdbv1",
+  "developer": "jdragon"
+}
