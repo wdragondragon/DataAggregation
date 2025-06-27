@@ -4,12 +4,14 @@ import com.jdragon.aggregation.commons.pagination.Table;
 import com.jdragon.aggregation.datasource.*;
 import org.influxdb.InfluxDB;
 import org.influxdb.InfluxDBFactory;
+import org.influxdb.dto.Point;
 import org.influxdb.dto.Pong;
 import org.influxdb.dto.Query;
 import org.influxdb.dto.QueryResult;
 
 import java.sql.Connection;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 public class InfluxDBV1SourcePlugin extends AbstractDataSourcePlugin {
@@ -27,14 +29,14 @@ public class InfluxDBV1SourcePlugin extends AbstractDataSourcePlugin {
     public static void main(String[] args) {
         try (InfluxDB influxDB = connect(URL, USERNAME, PASSWORD)) {
             influxDB.setDatabase(DATABASE);
-//            Point point = Point.measurement("cpu_load_v2")
-//                    .time(System.currentTimeMillis(), TimeUnit.MILLISECONDS)
-//                    .addField("value", 0.64)
-//                    .tag("host", "server02")
-//                    .tag("address", "cn-north")
-//                    .build();
-//
-//            influxDB.write(point);
+            Point point = Point.measurement("cpu_load_v2")
+                    .time(System.currentTimeMillis(), TimeUnit.MILLISECONDS)
+                    .addField("value", 0.64)
+                    .tag("host", "server02")
+                    .tag("address", "cn-north")
+                    .build();
+
+            influxDB.write(point);
 
 //            Query query = new Query("SHOW TAG KEYS FROM cpu_load_v2");
             Query query = new Query("SHOW FIELD KEYS FROM cpu_load_v2");

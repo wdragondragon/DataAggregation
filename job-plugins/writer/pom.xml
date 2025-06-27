@@ -19,6 +19,7 @@
         <module>kafkawriter</module>
         <module>rocketmqwriter</module>
         <module>dmwriter</module>
+        <module>influxdbv1writer</module>
     </modules>
 
     <properties>

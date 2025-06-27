@@ -1,0 +1,20 @@
+{
+  "type": "influxdbv1",
+  "config": {
+    "connect": {
+      "type": "influxdbv1",
+      "host": "http://172.20.10.2:8087",
+      "database": "mydb",
+      "userName": "admin",
+      "password": "zhjl951753"
+    },
+    "table": "cpu_load_v2",
+    "columns": [
+      "host",
+      "server01",
+      "region",
+      "time"
+    ],
+    "selectSql": ""
+  }
+}

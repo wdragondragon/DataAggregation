@@ -20,6 +20,7 @@
         <module>tbds-hive2reader</module>
         <module>rocketmqreader</module>
         <module>dmreader</module>
+        <module>influxdbv1reader</module>
     </modules>
 
     <properties>

@@ -1,0 +1,6 @@
+{
+  "name": "influxdbv1writer",
+  "class": "com.jdragon.aggregation.writer.influxdbv1.InfluxDBV1Writer",
+  "description": "influxdbv1",
+  "developer": "jdragon"
+}

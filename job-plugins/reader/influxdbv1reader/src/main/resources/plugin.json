@@ -1,0 +1,6 @@
+{
+  "name": "influxdbv1reader",
+  "class": "com.jdragon.aggregation.influxdbv1.InfluxDBV1Reader",
+  "description": "influxdbv1",
+  "developer": "jdragon"
+}

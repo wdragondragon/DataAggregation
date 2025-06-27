@@ -1,0 +1,62 @@
+{
+  "reader": {
+    "type": "mysql8",
+    "config": {
+      "connect": {
+        "host": "172.20.10.2",
+        "port": "3306",
+        "database": "agg_test",
+        "userName": "root",
+        "password": "951753",
+        "other": "{\"rewriteBatchedStatements\":true}",
+        "usePool": true,
+        "extraParams": {}
+      },
+      "table": "influx_test",
+      "columns": [
+        "host",
+        "address",
+        "region",
+        "time",
+        "value"
+      ]
+    }
+  },
+  "writer": {
+    "type": "influxdbv1",
+    "config": {
+      "connect": {
+        "type": "influxdbv1",
+        "host": "http://172.20.10.2:8087",
+        "database": "mydb",
+        "userName": "admin",
+        "password": "zhjl951753"
+      },
+      "measurement": "cpu_load_v3",
+      "columns": [
+        {
+          "name": "host",
+          "type": "tag"
+        },
+        {
+          "name": "address",
+          "type": "tag"
+        },
+        {
+          "name": "region",
+          "type": "tag"
+        },
+        {
+          "name": "time",
+          "type": "time"
+        },
+        {
+          "name": "value",
+          "type": "field"
+        }
+      ]
+    }
+  },
+  "transformer": [
+  ]
+}

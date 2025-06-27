@@ -1,5 +1,7 @@
 package test;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.jdragon.aggregation.commons.pagination.Table;
 import com.jdragon.aggregation.datasource.AbstractDataSourcePlugin;
 import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
@@ -29,13 +31,13 @@ public class InfluxTest {
                 System.out.println(table);
                 List<ColumnInfo> columns = sourcePlugin.getColumns(sourceDTO, table);
                 for (ColumnInfo column : columns) {
-                    System.out.println("column:" + column.getColumnName() + " type:" + column.getTypeName());
+                    System.out.println("column:" + column.getColumnName() + " type:" + column.getTypeName() + " index type" + column.getIndexType());
                 }
                 Long tableCount = sourcePlugin.getTableCount(sourceDTO, table);
                 System.out.println("tableCount:" + tableCount);
 
                 Table<Map<String, Object>> table1 = sourcePlugin.dataModelPreview(sourceDTO, table, "10");
-                System.out.println(table1);
+                System.out.println(JSONObject.toJSONString(table1));
             }
         }
     }
