@@ -4,58 +4,17 @@ import com.jdragon.aggregation.commons.pagination.Table;
 import com.jdragon.aggregation.datasource.*;
 import org.influxdb.InfluxDB;
 import org.influxdb.InfluxDBFactory;
-import org.influxdb.dto.Point;
 import org.influxdb.dto.Pong;
 import org.influxdb.dto.Query;
 import org.influxdb.dto.QueryResult;
 
 import java.sql.Connection;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 public class InfluxDBV1SourcePlugin extends AbstractDataSourcePlugin {
 
     private static final String UNSUPPORTED = "该操作不支持 InfluxDB 数据源";
-
-    static String URL = "http://172.20.10.2:8087";
-
-    static String USERNAME = "admin";
-
-    static String PASSWORD = "zhjl951753";
-
-    static String DATABASE = "mydb";
-
-    public static void main(String[] args) {
-        try (InfluxDB influxDB = connect(URL, USERNAME, PASSWORD)) {
-            influxDB.setDatabase(DATABASE);
-            Point point = Point.measurement("cpu_load_v2")
-                    .time(System.currentTimeMillis(), TimeUnit.MILLISECONDS)
-                    .addField("value", 0.64)
-                    .tag("host", "server02")
-                    .tag("address", "cn-north")
-                    .build();
-
-            influxDB.write(point);
-
-//            Query query = new Query("SHOW TAG KEYS FROM cpu_load_v2");
-            Query query = new Query("SHOW FIELD KEYS FROM cpu_load_v2");
-            QueryResult results = influxDB.query(query);
-
-            for (QueryResult.Result result : results.getResults()) {
-                for (QueryResult.Series series : result.getSeries()) {
-                    List<List<Object>> values = series.getValues();
-                    List<String> columns = series.getColumns();
-                    for (List<Object> row : values) {
-                        for (int i = 0; i < columns.size(); i++) {
-                            System.out.println(columns.get(i) + ": " + row.get(i));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
 
     public static InfluxDB connect(String url, String username, String password) {
         InfluxDB influxDB = InfluxDBFactory.connect(url, username, password);

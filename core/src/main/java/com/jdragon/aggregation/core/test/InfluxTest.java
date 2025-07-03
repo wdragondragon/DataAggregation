@@ -13,7 +13,7 @@ public class InfluxTest {
     private final static Logger log = LoggerFactory.getLogger(InfluxTest.class);
 
     public static void main(String[] args) {
-        Configuration configuration = Configuration.from(new File("C:\\dev\\ideaProject\\DataAggregation\\core\\src\\main\\resources\\toinflux.json"));
+        Configuration configuration = Configuration.from(new File("C:\\dev\\ideaProject\\DataAggregation\\core\\src\\main\\resources\\influx.json"));
         JobContainer container = new JobContainer(configuration);
         container.start();
     }

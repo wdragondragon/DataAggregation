@@ -1,7 +1,7 @@
 package test;
 
-import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.jdragon.aggregation.commons.pagination.Table;
 import com.jdragon.aggregation.datasource.AbstractDataSourcePlugin;
 import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
@@ -15,7 +15,7 @@ import java.util.Map;
 public class InfluxTest {
     public static void main(String[] args) {
         BaseDataSourceDTO sourceDTO = new BaseDataSourceDTO();
-        sourceDTO.setHost("http://172.20.10.2:8087");
+        sourceDTO.setHost("http://192.168.43.161:8087");
 //        sourceDTO.setDatabase("jdragon_org");
         sourceDTO.setDatabase("mydb");
 //        sourceDTO.setBucket("test");
@@ -36,9 +36,11 @@ public class InfluxTest {
                 Long tableCount = sourcePlugin.getTableCount(sourceDTO, table);
                 System.out.println("tableCount:" + tableCount);
 
-                Table<Map<String, Object>> table1 = sourcePlugin.dataModelPreview(sourceDTO, table, "10");
-                System.out.println(JSONObject.toJSONString(table1));
+//                Table<Map<String, Object>> table1 = sourcePlugin.dataModelPreview(sourceDTO, table, "10");
+//                System.out.println(JSONObject.toJSONString(table1));
             }
+            Table<Map<String, Object>> executed = sourcePlugin.executeQuerySql(sourceDTO, "select mean(\"value\") from cpu_load_v2 group by address;", true);
+            System.out.println(JSONObject.toJSONString(executed, SerializerFeature.PrettyFormat));
         }
     }
 }

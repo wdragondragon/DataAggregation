@@ -9,17 +9,11 @@
         "userName": "admin",
         "password": "zhjl951753"
       },
-      "measurement": "cpu_load_v2",
       "columns": [
-        "host",
         "address",
-        "region",
-        "time",
-        "value"
+        "mean"
       ],
-      "selectSql": "",
-      "startTime": "2025-05-30 14:12:00",
-      "endTime": "2025-05-30 14:23:00"
+      "selectSql": "select mean(\"value\") from cpu_load_v2 group by address;"
     }
   },
   "writer": {
@@ -35,13 +29,10 @@
         "usePool": true,
         "extraParams": {}
       },
-      "table": "influx_test",
+      "table": "influx_agg",
       "columns": [
-        "host",
         "address",
-        "region",
-        "time",
-        "value"
+        "mean"
       ]
     }
   },
