@@ -298,7 +298,7 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
                 tableNamePattern = "%" + table + "%";
             }
             DatabaseMetaData databaseMetaData = connection.getMetaData();
-            ResultSet rs = databaseMetaData.getTables(dataSource.getDatabase(), schemaPattern, tableNamePattern, new String[]{"TABLE"});
+            ResultSet rs = databaseMetaData.getTables(dataSource.getDatabase(), schemaPattern, tableNamePattern, new String[]{"TABLE", "FOREIGN TABLE"});
             List<TableInfo> tableInfoList = new ArrayList<>();
             while (rs.next()) {
                 String tableCat = ResultSetUtils.getStringSafe(rs, "TABLE_CAT");
