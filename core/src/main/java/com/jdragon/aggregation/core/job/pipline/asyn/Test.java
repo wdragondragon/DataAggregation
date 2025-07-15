@@ -1,5 +1,9 @@
 package com.jdragon.aggregation.core.job.pipline.asyn;
 
+import com.jdragon.aggregation.commons.element.Column;
+import com.jdragon.aggregation.commons.element.StringColumn;
+import com.jdragon.aggregation.core.transport.record.DefaultRecord;
+
 public class Test {
     public static void main(String[] args) throws InterruptedException {
 //        serial();
@@ -10,10 +14,15 @@ public class Test {
         // 串行流
         Pipeline all = new Pipeline(
                 new Pipeline(
-                        new Producer(() -> "hello world"),
+                        new Producer(() -> {
+                            DefaultRecord defaultRecord = new DefaultRecord();
+                            defaultRecord.setColumn(0, new StringColumn("Hello world"));
+                            return defaultRecord;
+                        }),
                         new TransformerExec(
                                 message -> {
-                                    message.setContent(message.getContent() + " !");  // 转换成大写
+                                    Column column = message.getColumn(0);
+                                    message.setColumn(0, new StringColumn(column.asString() + " !"));
                                     return message;
                                 }
                         )
@@ -21,11 +30,12 @@ public class Test {
                 new Pipeline(
                         new TransformerExec(
                                 message -> {
-                                    message.setContent(message.getContent().toUpperCase());
+                                    Column column = message.getColumn(0);
+                                    message.setColumn(0, new StringColumn(column.asString().toUpperCase()));
                                     return message;
                                 }
                         ),
-                        new Consumer(message -> System.out.println("Consumed: " + message.getContent()))
+                        new Consumer(message -> System.out.println("Consumed: " + message.getColumn(0).asString()))
                 )
         );
 
@@ -41,25 +51,34 @@ public class Test {
         Pipeline all = new Pipeline(
                 new MergePipeline(
                         new Pipeline(
-                                new Producer(() -> "hello world"),
+                                new Producer(() -> {
+                                    DefaultRecord defaultRecord = new DefaultRecord();
+                                    defaultRecord.setColumn(0, new StringColumn("Hello world"));
+                                    return defaultRecord;
+                                }),
                                 new TransformerExec(
                                         message -> {
-                                            message.setContent(message.getContent() + " !");  // 转换成大写
+                                            message.setColumn(0, new StringColumn("1"));
                                             return message;
                                         }
                                 )
                         ),
                         new Pipeline(
-                                new Producer(() -> "你好"),
+                                new Producer(() -> {
+                                    DefaultRecord defaultRecord = new DefaultRecord();
+                                    defaultRecord.setColumn(0, new StringColumn("你好"));
+                                    return defaultRecord;
+                                }),
                                 new TransformerExec(
                                         message -> {
-                                            message.setContent(message.getContent() + " ！");
+                                            Column column = message.getColumn(0);
+                                            message.setColumn(0, new StringColumn(column.asString() + " !"));
                                             return message;
                                         }
                                 )
                         )
                 ),
-                new Consumer(message -> System.out.println("Consumed: " + message.getContent()))
+                new Consumer(message -> System.out.println("Consumed: " + message.getColumn(0).asString()))
         );
 
         // 启动流处理

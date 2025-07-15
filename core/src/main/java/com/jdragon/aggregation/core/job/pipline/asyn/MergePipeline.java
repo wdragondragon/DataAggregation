@@ -1,14 +1,15 @@
 package com.jdragon.aggregation.core.job.pipline.asyn;
 
-import com.jdragon.aggregation.core.job.Message;
 
-import java.util.concurrent.LinkedBlockingQueue;
+import com.jdragon.aggregation.commons.element.Record;
+import com.jdragon.aggregation.core.transport.channel.memory.MemoryChannel;
+import com.jdragon.aggregation.core.transport.exchanger.BufferedRecordExchanger;
 
 public class MergePipeline extends PipelineAbstract {
 
     public MergePipeline(StreamHandler... nodes) {
         super(nodes);
-        setOutputQueue(new LinkedBlockingQueue<>());
+        setOutputQueue(new MemoryChannel());
     }
 
     @Override
@@ -18,8 +19,8 @@ public class MergePipeline extends PipelineAbstract {
             getExecutorService().submit(() -> {
                 try {
                     while (true) {
-                        Message take = node.getOutputQueue().take();
-                        put(take);
+                        Record record = node.getOutputQueue().pull();
+                        put(record);
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();

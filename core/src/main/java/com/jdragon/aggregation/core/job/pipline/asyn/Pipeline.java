@@ -1,6 +1,9 @@
 package com.jdragon.aggregation.core.job.pipline.asyn;
 
-import com.jdragon.aggregation.core.job.Message;
+
+import com.jdragon.aggregation.core.transport.channel.Channel;
+import com.jdragon.aggregation.core.transport.channel.memory.MemoryChannel;
+import com.jdragon.aggregation.core.transport.exchanger.BufferedRecordExchanger;
 
 import java.util.concurrent.*;
 
@@ -10,7 +13,7 @@ public class Pipeline extends PipelineAbstract {
         StreamHandler pre = null;
         for (StreamHandler node : this.getNodes()) {
             if (node.getOutputQueue() == null) {
-                node.setOutputQueue(new LinkedBlockingQueue<>());
+                node.setOutputQueue(new MemoryChannel());
             }
             if (pre != null) {
                 node.setInputQueue(pre.getOutputQueue());
@@ -34,22 +37,22 @@ public class Pipeline extends PipelineAbstract {
     }
 
     @Override
-    public void setInputQueue(BlockingQueue<Message> inputQueue) {
+    public void setInputQueue(Channel inputQueue) {
         getNodes()[0].setInputQueue(inputQueue);
     }
 
     @Override
-    public void setOutputQueue(BlockingQueue<Message> outputQueue) {
+    public void setOutputQueue(Channel outputQueue) {
         getNodes()[getNodes().length - 1].setOutputQueue(outputQueue);
     }
 
     @Override
-    public BlockingQueue<Message> getInputQueue() {
+    public Channel getInputQueue() {
         return getNodes()[0].getInputQueue();
     }
 
     @Override
-    public BlockingQueue<Message> getOutputQueue() {
+    public Channel getOutputQueue() {
         return getNodes()[getNodes().length - 1].getOutputQueue();
     }
 }

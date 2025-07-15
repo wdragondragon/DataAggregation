@@ -1,28 +1,27 @@
 package com.jdragon.aggregation.core.job.pipline.asyn;
 
-import com.jdragon.aggregation.core.job.Message;
+import com.jdragon.aggregation.commons.element.Record;
+import com.jdragon.aggregation.core.transport.channel.Channel;
+import com.jdragon.aggregation.core.transport.exchanger.BufferedRecordExchanger;
 import lombok.Data;
-import lombok.Getter;
-
-import java.util.concurrent.BlockingQueue;
 
 
 @Data
 public abstract class StreamHandler {
 
-    private BlockingQueue<Message> inputQueue;
+    private Channel inputQueue;
 
-    private BlockingQueue<Message> outputQueue;
+    private Channel outputQueue;
 
     public StreamHandler() {
     }
 
-    public void put(final Message message) throws InterruptedException {
-        getOutputQueue().put(message);
+    public void put(final Record message) throws InterruptedException {
+        getOutputQueue().push(message);
     }
 
-    public Message take() throws InterruptedException {
-        return getInputQueue().take();
+    public Record take() throws InterruptedException {
+        return getInputQueue().pull();
     }
 
     public abstract void process() throws InterruptedException;
