@@ -3,7 +3,9 @@ package com.jdragon.aggregation.core.job.pipline.asyn;
 
 import com.jdragon.aggregation.commons.element.Record;
 import com.jdragon.aggregation.core.transport.record.TerminateRecord;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 public class TransformerExec extends StreamHandler {
     private final TransformerFunction[] functionArray;
 
@@ -15,7 +17,7 @@ public class TransformerExec extends StreamHandler {
     public void process() throws InterruptedException {
         while (true) {
             Record message = super.take();  // 从前一个节点获取消息
-            if (message instanceof TerminateRecord) {
+            if (message == null || message instanceof TerminateRecord) {
                 super.put(message);  // 将处理后的消息推送到下一个节点
                 break;
             }
@@ -24,6 +26,8 @@ public class TransformerExec extends StreamHandler {
             }
             super.put(message);  // 将处理后的消息推送到下一个节点
         }
+        end();
+        log.info("transformer close run status:{}", isRunning());
     }
 
     @FunctionalInterface

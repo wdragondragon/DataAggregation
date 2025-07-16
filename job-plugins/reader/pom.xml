@@ -21,6 +21,7 @@
         <module>rocketmqreader</module>
         <module>dmreader</module>
         <module>influxdbv1reader</module>
+        <module>consolereader</module>
     </modules>
 
     <properties>

@@ -3,13 +3,12 @@ package com.jdragon.aggregation.core.job.pipline.asyn;
 
 import com.jdragon.aggregation.core.transport.channel.Channel;
 import com.jdragon.aggregation.core.transport.channel.memory.MemoryChannel;
-import com.jdragon.aggregation.core.transport.exchanger.BufferedRecordExchanger;
 
-import java.util.concurrent.*;
+import java.util.Arrays;
 
 public class Pipeline extends PipelineAbstract {
-    public Pipeline(StreamHandler... nodes) {
-        super(nodes);
+    public Pipeline(String name, StreamHandler... nodes) {
+        super(name, nodes);
         StreamHandler pre = null;
         for (StreamHandler node : this.getNodes()) {
             if (node.getOutputQueue() == null) {
