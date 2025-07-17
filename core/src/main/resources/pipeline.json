@@ -1,0 +1,83 @@
+{
+  "pipeline": {
+    "type": "Pipeline",
+    "steps": [
+      {
+        "name": "merge-pipeline",
+        "type": "MergePipeline",
+        "steps": [
+          {
+            "type": "Producer",
+            "config": {
+              "type": "consolereader",
+              "config": {}
+            }
+          }
+        ]
+      },
+      {
+        "name": "broadcast-pipeline",
+        "type": "BroadcastPipeline",
+        "steps": [
+          {
+            "name": "consumer-custom",
+            "type": "Pipeline",
+            "steps": [
+              {
+                "type": "TransformerExec",
+                "steps": [
+                  {
+                    "name": "dx_groovy",
+                    "parameter": {}
+                  }
+                ]
+              },
+              {
+                "type": "Consumer",
+                "config": {
+                  "type": "consolewriter",
+                  "config": {}
+                }
+              }
+            ]
+          },
+          {
+            "name": "sub-pipe",
+            "type": "Pipeline",
+            "steps": [
+              {
+                "type": "TransformerExec",
+                "steps": [
+                  {
+                    "name": "dx_groovy",
+                    "parameter": {}
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "sub-pipe-broadcast",
+            "type": "BroadcastPipeline",
+            "steps": [
+              {
+                "type": "Consumer",
+                "config": {
+                  "type": "consolewriter",
+                  "config": {}
+                }
+              },
+              {
+                "type": "Consumer",
+                "config": {
+                  "type": "consolewriter",
+                  "config": {}
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

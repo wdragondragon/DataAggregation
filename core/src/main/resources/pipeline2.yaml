@@ -1,0 +1,31 @@
+type: Pipeline
+name: pipeline-all
+steps:
+  - name: merge-pipeline
+    type: MergePipeline
+    steps:
+      - type: Producer
+        config:
+          type: consolereader
+          config:
+            rowCount: 10
+      - type: Producer
+        config:
+          type: consolereader
+          config:
+            rowCount: 10
+  - name: broadcast-pipeline
+    type: BroadcastPipeline
+    steps:
+      - type: Pipeline
+        name: consumer-custom
+        steps:
+          - type: Consumer
+            config:
+              type: consolewriter
+      - type: Pipeline
+        name: consumer-custom
+        steps:
+          - type: Consumer
+            config:
+              type: consolewriter

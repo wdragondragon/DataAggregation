@@ -2,12 +2,14 @@ package com.jdragon.aggregation.core.job.pipline.asyn;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.concurrent.BasicThreadFactory;
 
 import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+@Slf4j
 @EqualsAndHashCode(callSuper = true)
 @Data
 public class PipelineAbstract extends StreamHandler {
@@ -24,6 +26,12 @@ public class PipelineAbstract extends StreamHandler {
 
     public void start() throws InterruptedException {
         process();
+        while (isRunning()) {
+            Thread.sleep(500);
+            log.info("pipeline [{}] running...", pipelineName);
+        }
+        log.info("pipeline [{}] finished.", pipelineName);
+        stop();
     }
 
     @Override

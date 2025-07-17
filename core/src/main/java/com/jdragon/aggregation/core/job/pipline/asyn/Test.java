@@ -1,9 +1,15 @@
 package com.jdragon.aggregation.core.job.pipline.asyn;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.jdragon.aggregation.commons.element.Column;
+import com.jdragon.aggregation.commons.element.Record;
 import com.jdragon.aggregation.commons.element.StringColumn;
 import com.jdragon.aggregation.commons.util.Configuration;
+import com.jdragon.aggregation.core.job.pipline.asyn.config.PipelineBuilder;
+import com.jdragon.aggregation.core.job.pipline.asyn.config.PipelineConfig;
 import com.jdragon.aggregation.core.plugin.PluginType;
+import com.jdragon.aggregation.core.plugin.RecordReceiver;
 import com.jdragon.aggregation.core.plugin.RecordSender;
 import com.jdragon.aggregation.core.plugin.spi.Reader;
 import com.jdragon.aggregation.core.plugin.spi.Writer;
@@ -11,14 +17,17 @@ import com.jdragon.aggregation.core.transport.record.DefaultRecord;
 import com.jdragon.aggregation.pluginloader.PluginClassLoaderCloseable;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 public class Test {
-    public static void main(String[] args) throws InterruptedException {
+    public static void main(String[] args) throws InterruptedException, IOException {
 //        serial();
 //        merge();
         broadcast();
+//        test();
     }
 
     private static void serial() throws InterruptedException {
@@ -55,14 +64,6 @@ public class Test {
 
         // 启动流处理
         all.start();
-
-        while (all.isRunning()) {
-            Thread.sleep(100);
-        }
-        log.info("pipeline end...");
-        // 模拟运行一段时间
-        Thread.sleep(1000);
-        all.stop();
     }
 
     private static void merge() throws InterruptedException {
@@ -110,15 +111,6 @@ public class Test {
 
         // 启动流处理
         all.start();
-
-        while (all.isRunning()) {
-            Thread.sleep(1000);
-            log.info("pipeline running...");
-        }
-        log.info("pipeline end...");
-        // 模拟运行一段时间
-        Thread.sleep(1000);
-        all.stop();
     }
 
 
@@ -171,14 +163,32 @@ public class Test {
                                 new TransformerExec(
                                         message -> {
                                             Column column = message.getColumn(0);
-                                            message.setColumn(0, new StringColumn(column.asString() + " !"));
+                                            message.setColumn(0, new StringColumn(column.asString() + " @"));
                                             return message;
                                         }
                                 ),
                                 new Consumer(writer1)
+                        ),
+                        new Pipeline("sub-pipe",
+                                new TransformerExec(
+                                        message -> {
+                                            Column column = message.getColumn(0);
+                                            message.setColumn(0, new StringColumn(column.asString() + " ？"));
+                                            return message;
+                                        }
+                                ),
+                                new BroadcastPipeline("sub-pipe-broadcast",
+                                        new Consumer(writer2),
+                                        new Consumer(new Writer.Job() {
+                                            @Override
+                                            public void startWrite(RecordReceiver lineReceiver) {
+                                                Record record;
+                                                while ((record = lineReceiver.getFromReader()) != null) {
+                                                    log.info("consumer-custom:[{}]", record);
+                                                }
+                                            }
+                                        }))
                         )
-                        ,
-                        new Consumer(writer2)
                 )
         );
 
@@ -192,5 +202,13 @@ public class Test {
         log.info("broadcast pipeline finished.");
 
         pipeline.stop();
+    }
+
+    public static void test() throws InterruptedException, IOException {
+        ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
+        PipelineConfig config = mapper.readValue(new File("C:\\dev\\ideaProject\\DataAggregation\\core\\src\\main\\resources\\pipeline2.yaml"), PipelineConfig.class);
+
+        PipelineAbstract handler = PipelineBuilder.buildPipeline(config);
+        handler.start();
     }
 }

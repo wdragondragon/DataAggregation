@@ -1,0 +1,50 @@
+pipeline:
+  name: pipeline
+  type: Pipeline
+  steps:
+    - name: merge-pipeline
+      type: MergePipeline
+      steps:
+        - type: Producer
+          config:
+            type: consolereader
+            config:
+              rowCount: 10
+        - type: Pipeline
+          name: producer-custom
+          steps:
+            - type: Producer
+              config:
+                type: consolereader
+                config:
+                  rowCount: 10
+            - type: TransformerExec
+              steps:
+                - name: dx_groovy
+    - name: broadcast-pipeline
+      type: BroadcastPipeline
+      steps:
+        - type: Pipeline
+          name: consumer-custom
+          steps:
+            - type: TransformerExec
+              steps:
+                - name: dx_groovy
+            - type: Consumer
+              config:
+                type: consolewriter
+        - type: Pipeline
+          name: sub-pipe
+          steps:
+            - type: TransformerExec
+              steps:
+                - name: dx_groovy
+            - type: BroadcastPipeline
+              name: sub-pipe-broadcast
+              steps:
+                - type: Consumer
+                  config:
+                    type: consolewriter
+                - type: Consumer
+                  config:
+                    type: consolerwriter
