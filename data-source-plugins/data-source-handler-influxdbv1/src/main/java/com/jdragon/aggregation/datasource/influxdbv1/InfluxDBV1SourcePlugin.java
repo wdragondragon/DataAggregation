@@ -201,4 +201,12 @@ public class InfluxDBV1SourcePlugin extends AbstractDataSourcePlugin {
     public Connection getConnection(BaseDataSourceDTO dataSource) {
         throw new UnsupportedOperationException(UNSUPPORTED);
     }
+
+    @Override
+    public boolean connectTest(BaseDataSourceDTO dataSource) {
+        try (InfluxDB connect = connect(dataSource)) {
+            Pong pong = connect.ping();
+            return pong.isGood();
+        }
+    }
 }

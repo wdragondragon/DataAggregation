@@ -33,4 +33,8 @@ public abstract class AbstractDataSourcePlugin extends AbstractPlugin {
     public abstract String getTableSize(BaseDataSourceDTO dataSource, String table);
 
     public abstract Long getTableCount(BaseDataSourceDTO dataSource, String table);
+
+    public boolean connectTest(BaseDataSourceDTO dataSource) {
+        throw new UnsupportedOperationException("该数据源不支持连接测试");
+    }
 }

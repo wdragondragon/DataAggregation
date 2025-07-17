@@ -432,4 +432,14 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
         String tableCount = executed.getBodies().get(0).get("table_count").toString();
         return Long.parseLong(tableCount);
     }
+
+    @Override
+    public boolean connectTest(BaseDataSourceDTO dataSource) {
+        try (Connection connection = getConnection(dataSource)) {
+            return connection != null && !connection.isClosed();
+        } catch (Exception e) {
+            log.error("连接数据库失败：{}，参数：{}", e.getMessage(), JSONObject.toJSONString(dataSource), e);
+            throw new RuntimeException(e);
+        }
+    }
 }
