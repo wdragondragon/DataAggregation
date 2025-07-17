@@ -4,8 +4,6 @@ package com.jdragon.aggregation.core.job.pipline.asyn;
 import com.jdragon.aggregation.core.transport.channel.Channel;
 import com.jdragon.aggregation.core.transport.channel.memory.MemoryChannel;
 
-import java.util.Arrays;
-
 public class Pipeline extends PipelineAbstract {
     public Pipeline(String name, StreamHandler... nodes) {
         super(name, nodes);

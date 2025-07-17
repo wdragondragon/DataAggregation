@@ -23,4 +23,9 @@ public class TimestampColumn extends DateColumn {
     public Timestamp asTimestamp() {
         return timestamp;
     }
+
+    @Override
+    public Column clone() throws CloneNotSupportedException {
+        return new TimestampColumn(timestamp);
+    }
 }

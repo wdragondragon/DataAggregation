@@ -158,4 +158,8 @@ public class DoubleColumn extends Column {
 		}
 	}
 
+	@Override
+	public Column clone() throws CloneNotSupportedException {
+		return new DoubleColumn(asDouble());
+	}
 }

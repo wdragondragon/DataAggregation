@@ -81,4 +81,9 @@ public class BytesColumn extends Column {
 		throw AggregationException.asException(
 				CommonErrorCode.CONVERT_NOT_SUPPORT, "Bytes类型不能转为Boolean .");
 	}
+
+	@Override
+	public Column clone() throws CloneNotSupportedException {
+		return new BytesColumn(asBytes());
+	}
 }

@@ -148,13 +148,13 @@ public class DefaultRecord implements Record, Cloneable {
 
     @Override
     public DefaultRecord clone() throws CloneNotSupportedException {
-        DefaultRecord clone = (DefaultRecord) super.clone();
+        DefaultRecord clone = new DefaultRecord();
         List<Column> list = new ArrayList<Column>();
         for (Column column : columns) {
             list.add(column.clone());
         }
         clone.columns = list;
-        return (DefaultRecord) super.clone();
+        return clone;
     }
 
     public static int getRecordAvergaeColumnNumber() {

@@ -132,4 +132,8 @@ public class LongColumn extends Column {
 				CommonErrorCode.CONVERT_NOT_SUPPORT, "Long类型不能转为Bytes .");
 	}
 
+	@Override
+	public Column clone() throws CloneNotSupportedException {
+		return new LongColumn(this.asBigInteger());
+	}
 }

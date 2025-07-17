@@ -112,4 +112,9 @@ public class BoolColumn extends Column {
                 CommonErrorCode.CONVERT_NOT_SUPPORT,
                 String.format("String[%s]不能转为Bool .", data));
     }
+
+    @Override
+    public Column clone() throws CloneNotSupportedException {
+        return new BoolColumn(this.asBoolean());
+    }
 }

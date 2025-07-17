@@ -144,4 +144,9 @@ public class DateColumn extends Column {
     public int getScale() {
         return scale;
     }
+
+	@Override
+	public Column clone() throws CloneNotSupportedException {
+		return new DateColumn(asDate());
+	}
 }

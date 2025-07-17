@@ -116,4 +116,9 @@ public class ObjectColumn extends Column {
                     String.format("String[\"%s\"]属于Double特殊类型，不能转为其他类型 .", data));
         }
     }
+
+    @Override
+    public Column clone() throws CloneNotSupportedException {
+        return new ObjectColumn(this.getRawData());
+    }
 }

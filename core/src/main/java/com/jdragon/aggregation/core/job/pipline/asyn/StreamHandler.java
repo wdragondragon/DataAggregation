@@ -2,7 +2,6 @@ package com.jdragon.aggregation.core.job.pipline.asyn;
 
 import com.jdragon.aggregation.commons.element.Record;
 import com.jdragon.aggregation.core.transport.channel.Channel;
-import com.jdragon.aggregation.core.transport.record.TerminateRecord;
 import lombok.Data;
 
 import java.util.concurrent.atomic.AtomicBoolean;
