@@ -198,4 +198,30 @@ public class OdpsSourcePlugin extends AbstractDataSourcePlugin {
             throw new RuntimeException("批量执行失败: " + e.getMessage(), e);
         }
     }
+
+    @Override
+    public List<PartitionInfo> getPartitionInfo(BaseDataSourceDTO dataSource, String table) {
+        List<PartitionInfo> partitionInfos = new ArrayList<>();
+        Odps odps = OdpsUtils.createOdps(dataSource);
+        Table odpsTable = odps.tables().get(table);
+        try {
+            if (odpsTable.isPartitioned()) {
+                for (Partition partition : odpsTable.getPartitions()) {
+                    PartitionSpec partitionSpec = partition.getPartitionSpec();
+                    Map<String, String> partitionKv = new HashMap<>();
+                    for (String key : partitionSpec.keys()) {
+                        partitionKv.put(key, partitionSpec.get(key));
+                    }
+                    PartitionInfo partitionInfo = new PartitionInfo(partitionKv);
+                    partitionInfo.setSize(partition.getSize());
+                    partitionInfo.setLastMetaModifiedTime(partition.getLastMetaModifiedTime());
+                    partitionInfo.setLastDataModifiedTime(partition.getLastDataModifiedTime());
+                    partitionInfos.add(partitionInfo);
+                }
+            }
+        } catch (OdpsException e) {
+            throw new RuntimeException(e);
+        }
+        return partitionInfos;
+    }
 }

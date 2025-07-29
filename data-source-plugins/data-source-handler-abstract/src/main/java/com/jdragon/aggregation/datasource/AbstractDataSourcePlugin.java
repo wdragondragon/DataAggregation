@@ -4,6 +4,7 @@ import com.jdragon.aggregation.commons.pagination.Table;
 import com.jdragon.aggregation.pluginloader.spi.AbstractPlugin;
 
 import java.sql.Connection;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -36,5 +37,9 @@ public abstract class AbstractDataSourcePlugin extends AbstractPlugin {
 
     public boolean connectTest(BaseDataSourceDTO dataSource) {
         throw new UnsupportedOperationException("该数据源不支持连接测试");
+    }
+
+    public List<PartitionInfo> getPartitionInfo(BaseDataSourceDTO dataSource, String table) {
+        return new ArrayList<>();
     }
 }
