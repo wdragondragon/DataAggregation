@@ -5,7 +5,10 @@ import com.jdragon.aggregation.commons.util.Configuration;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * @Author JDragon
@@ -57,5 +60,9 @@ public interface FileHelper extends AutoCloseable {
     OutputStream getOutputStream(String path, String name) throws IOException;
 
     default void fresh() {
+    }
+
+    default void readFile(String absPath, String fileType, Consumer<Map<String, Object>> row) throws IOException {
+        throw new UnsupportedOperationException("Not implemented yet");
     }
 }

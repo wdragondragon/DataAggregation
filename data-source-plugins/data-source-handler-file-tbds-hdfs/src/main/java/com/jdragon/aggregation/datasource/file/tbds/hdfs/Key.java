@@ -15,4 +15,10 @@ public class Key {
     public static final String HDFS_SITE_FILE_PATH = "hdfsSiteFilePath";
 
     public static final String CORE_SITE_FILE_PATH = "coreSiteFilePath";
+
+    public static final String SPARK_SESSION_CONFIG = "sparkSessionConfig";
+
+    public static final String SPARK_SESSION_MASTER = "sparkSessionConfigMaster";
+
+    public static final String SPARK_READ_OPTION = "sparkReadOption";
 }

@@ -3,7 +3,6 @@ package com.jdragon.aggregation.datasource.file.tbds.hdfs;
 import cn.hutool.http.HttpUtil;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
-import com.alibaba.fastjson.TypeReference;
 import com.jdragon.aggregation.auth.hdfs.GetKerberosObject;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.file.FileHelper;
@@ -13,15 +12,15 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.spark.sql.SparkSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
+import java.util.function.Consumer;
 
 
 public class HdfsHelper extends AbstractPlugin implements FileHelper {
@@ -50,13 +49,11 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
             }
             return fileSystem = kerberosObject.doAs(() -> FileSystem.get(hadoopConf));
         } catch (IOException e) {
-            String message = String.format("获取FileSystem时发生网络IO异常,请检查您的网络是否正常!HDFS地址：[%s]",
-                    "message");
+            String message = String.format("获取FileSystem时发生网络IO异常,请检查您的网络是否正常!HDFS地址：[%s]", "message");
             LOG.error(message, e);
             throw new RuntimeException(e);
         } catch (Exception e) {
-            String message = String.format("获取FileSystem失败,请检查HDFS地址是否正确: [%s]",
-                    "message:defaultFS");
+            String message = String.format("获取FileSystem失败,请检查HDFS地址是否正确: [%s]", "message:defaultFS");
             LOG.error(message, e);
             throw new RuntimeException(e);
         }
@@ -101,6 +98,7 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
 
     @Override
     public boolean connect(Configuration configuration) {
+        this.configuration = configuration;
         hadoopConf = new org.apache.hadoop.conf.Configuration();
 //        hadoopConf.set("fs.hdfs.impl", "org.apache.hadoop.hdfs.DistributedFileSystem");
         String hdfsSiteFile = configuration.getString(Key.HDFS_SITE_FILE_PATH);
@@ -146,8 +144,13 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
 
         String authenticationType = null;
         if (hadoopConfig != null) {
-            Map<String, String> hadoopConfigMap = JSONObject.parseObject(hadoopConfig.toJSON(), new TypeReference<Map<String, String>>() {
-            });
+            Set<String> keys = hadoopConfig.getKeys();
+            Map<String, String> hadoopConfigMap = new HashMap<>();
+            for (String key : keys) {
+                hadoopConfigMap.put(key, hadoopConfig.getString(key));
+            }
+//            Map<String, String> hadoopConfigMap = JSONObject.parseObject(hadoopConfig.toJSON(), new TypeReference<Map<String, String>>() {
+//            });
             LOG.info("覆盖配置：{}", JSONObject.toJSON(hadoopConfigMap));
             hadoopConfigMap.forEach(this.hadoopConf::set);
             authenticationType = hadoopConfigMap.get(HADOOP_SECURITY_AUTHENTICATION_KEY);
@@ -162,6 +165,29 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
         this.kerberosObject = new GetKerberosObject(kerberosPrincipal, kerberosKeytabFilePath, krb5Conf, hadoopConf, authenticationType);
         LOG.info("hadoopConfig details:{}", JSON.toJSONString(this.hadoopConf));
         return true;
+    }
+
+    @Override
+    public void readFile(String absPath, String fileType, Consumer<Map<String, Object>> row) throws IOException {
+        if (Objects.equals("parquet", fileType)) {
+            try {
+                String master = this.configuration.getString(Key.SPARK_SESSION_MASTER);
+                Map<String, String> sparkSessionConfig = this.configuration.getMap(Key.SPARK_SESSION_CONFIG, String.class);
+                Map<String, String> sparkReadOption = this.configuration.getMap(Key.SPARK_READ_OPTION, String.class);
+                this.kerberosObject.doAs(() -> {
+                    try (SparkSession sparkSession = SparkParquetReader.createSparkSession(master, sparkSessionConfig)) {
+                        SparkParquetReader.readParquetDistributed(sparkSession, absPath, sparkReadOption, row);
+                    } catch (Exception e) {
+                        LOG.error("获取获取SparkSession失败", e);
+                        throw new RuntimeException(e);
+                    }
+                });
+            } catch (Exception e) {
+                String message = String.format("获取获取SparkSession失败,请检查HDFS地址是否正确: [%s]", "message:defaultFS");
+                LOG.error(message, e);
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     @Override
