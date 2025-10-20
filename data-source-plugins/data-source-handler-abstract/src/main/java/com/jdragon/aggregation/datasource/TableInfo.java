@@ -57,5 +57,10 @@ public class TableInfo {
     /**
      * 是否外部表
      */
-    private boolean externalTable;
+    private Boolean externalTable;
+
+    /**
+     * 是否分区表
+     */
+    private boolean partitioned;
 }
