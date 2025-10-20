@@ -35,6 +35,7 @@ public class OdpsSourcePlugin extends AbstractDataSourcePlugin {
                     TableInfo info = new TableInfo();
                     info.setTableName(tb.getName());
                     info.setExternalTable(tb.isExternalTable());
+                    info.setPartitioned(tb.isPartitioned());
                     info.setRemarks(tb.getComment());
                     list.add(info);
                 }
