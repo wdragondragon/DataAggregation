@@ -2,6 +2,7 @@ package com.jdragon.aggregation.datasource.file.tbds.hdfs;
 
 import com.alibaba.fastjson.JSONObject;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.spark.api.java.function.ForeachPartitionFunction;
 import org.apache.spark.sql.*;
 import org.apache.spark.sql.types.StructField;
@@ -20,13 +21,15 @@ import java.util.function.Consumer;
 public class SparkParquetReader {
 
 
-    public static SparkSession createSparkSession(String master, Map<String, String> config) {
+    public static SparkSession createSparkSession(String master, Map<String, String> config, Configuration hadoopConf) {
         log.info("创建spark session:[{}], config:[{}]", master, JSONObject.toJSONString(config));
         SparkSession.Builder builder = SparkSession.builder()
                 .appName("SparkParquetReader");
         builder.master(master);
         config.forEach(builder::config);
-        return builder.getOrCreate();
+        SparkSession spark = builder.getOrCreate();
+        spark.sparkContext().hadoopConfiguration().addResource(hadoopConf);
+        return spark;
     }
 
 
@@ -38,17 +41,21 @@ public class SparkParquetReader {
      * @param rowHandler 插件回调（分布式执行）
      */
     public static void readParquetDistributed(SparkSession spark, String hdfsPath, Map<String, String> option, Consumer<Map<String, Object>> rowHandler) {
-        log.info("正在读取Parquet文件: {}, option：{}", hdfsPath, JSONObject.toJSONString(option));
-        DataFrameReader sparkRead = spark.read();
-        option.forEach(sparkRead::option);
-        Dataset<Row> df = sparkRead.parquet(hdfsPath);
-
-        displayDataInfo(df);
+        Dataset<Row> df = readDs(spark, hdfsPath, option);
 
         StructType schema = df.schema();
 
         df.foreachPartition((ForeachPartitionFunction<Row>) iterator ->
                 processPartition(iterator, schema, rowHandler));
+    }
+
+    public static Dataset<Row> readDs(SparkSession spark, String hdfsPath, Map<String, String> option) {
+        log.info("正在读取Parquet文件: {}, option：{}", hdfsPath, JSONObject.toJSONString(option));
+        DataFrameReader sparkRead = spark.read();
+        option.forEach(sparkRead::option);
+        Dataset<Row> df = sparkRead.parquet(hdfsPath);
+        displayDataInfo(df);
+        return df;
     }
 
     /**
