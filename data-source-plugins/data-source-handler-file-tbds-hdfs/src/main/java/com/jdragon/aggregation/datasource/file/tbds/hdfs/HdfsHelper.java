@@ -8,18 +8,21 @@ import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.file.FileHelper;
 
 import com.jdragon.aggregation.pluginloader.spi.AbstractPlugin;
+import org.apache.avro.generic.GenericRecord;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.hadoop.fs.FileStatus;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
-import org.apache.spark.sql.Dataset;
-import org.apache.spark.sql.Row;
-import org.apache.spark.sql.SparkSession;
+import org.apache.hadoop.fs.*;
+//import org.apache.spark.sql.Dataset;
+//import org.apache.spark.sql.Row;
+//import org.apache.spark.sql.SparkSession;
+import org.apache.parquet.avro.AvroParquetReader;
+import org.apache.parquet.hadoop.ParquetReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.parquet.hadoop.ParquetReader.Builder;
 
 import java.io.*;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.Consumer;
@@ -172,16 +175,19 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
     @Override
     public void readFile(String absPath, String fileType, Consumer<Map<String, Object>> row) throws IOException {
         if (Objects.equals("parquet", fileType)) {
+            Path path = new Path(absPath);
             try {
-                String master = this.configuration.getString(Key.SPARK_SESSION_MASTER);
-                Map<String, String> sparkSessionConfig = this.configuration.getMap(Key.SPARK_SESSION_CONFIG, String.class);
-                Map<String, String> sparkReadOption = this.configuration.getMap(Key.SPARK_READ_OPTION, String.class);
                 this.kerberosObject.doAs(() -> {
-                    try (SparkSession sparkSession = SparkParquetReader.createSparkSession(master, sparkSessionConfig, hadoopConf)) {
-                        SparkParquetReader.readParquetDistributed(sparkSession, absPath, sparkReadOption, row);
-                    } catch (Exception e) {
-                        LOG.error("获取SparkSession失败", e);
-                        throw new RuntimeException(e);
+                    try (ParquetReader<GenericRecord> reader = AvroParquetReader.<GenericRecord>builder(path)
+                            .withConf(hadoopConf)
+                            .build()) {
+                        GenericRecord record;
+                        while ((record = reader.read()) != null) {
+                            Map<String, Object> map = new HashMap<>();
+                            GenericRecord finalRecord = record;
+                            record.getSchema().getFields().forEach(f -> map.put(f.name(), finalRecord.get(f.name())));
+                            row.accept(map);
+                        }
                     }
                 });
             } catch (Exception e) {
@@ -190,28 +196,48 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
                 throw new RuntimeException(e);
             }
         }
+
+//        if (Objects.equals("parquet", fileType)) {
+//            try {
+//                String master = this.configuration.getString(Key.SPARK_SESSION_MASTER);
+//                Map<String, String> sparkSessionConfig = this.configuration.getMap(Key.SPARK_SESSION_CONFIG, String.class);
+//                Map<String, String> sparkReadOption = this.configuration.getMap(Key.SPARK_READ_OPTION, String.class);
+//                this.kerberosObject.doAs(() -> {
+//                    try (SparkSession sparkSession = SparkParquetReader.createSparkSession(master, sparkSessionConfig, hadoopConf)) {
+//                        SparkParquetReader.readParquetDistributed(sparkSession, absPath, sparkReadOption, row);
+//                    } catch (Exception e) {
+//                        LOG.error("获取SparkSession失败", e);
+//                        throw new RuntimeException(e);
+//                    }
+//                });
+//            } catch (Exception e) {
+//                String message = String.format("获取获取SparkSession失败,请检查HDFS地址是否正确: [%s]", "message:defaultFS");
+//                LOG.error(message, e);
+//                throw new RuntimeException(e);
+//            }
+//        }
     }
 
     @Override
     public void testWrite(String absPath, String jdbcUrl, String table, Properties connectionProperties, Map<String, String> option) {
-        try {
-            String master = this.configuration.getString(Key.SPARK_SESSION_MASTER);
-            Map<String, String> sparkSessionConfig = this.configuration.getMap(Key.SPARK_SESSION_CONFIG, String.class);
-            Map<String, String> sparkReadOption = this.configuration.getMap(Key.SPARK_READ_OPTION, String.class);
-            this.kerberosObject.doAs(() -> {
-                try (SparkSession sparkSession = SparkParquetReader.createSparkSession(master, sparkSessionConfig, hadoopConf)) {
-                    Dataset<Row> rowDataset = SparkParquetReader.readDs(sparkSession, absPath, sparkReadOption);
-                    SparkJdbcWriter.writeToJdbc(rowDataset, jdbcUrl, table, connectionProperties, option);
-                } catch (Exception e) {
-                    LOG.error("获取SparkSession失败", e);
-                    throw new RuntimeException(e);
-                }
-            });
-        } catch (Exception e) {
-            String message = String.format("获取获取SparkSession失败,请检查HDFS地址是否正确: [%s]", "message:defaultFS");
-            LOG.error(message, e);
-            throw new RuntimeException(e);
-        }
+//        try {
+//            String master = this.configuration.getString(Key.SPARK_SESSION_MASTER);
+//            Map<String, String> sparkSessionConfig = this.configuration.getMap(Key.SPARK_SESSION_CONFIG, String.class);
+//            Map<String, String> sparkReadOption = this.configuration.getMap(Key.SPARK_READ_OPTION, String.class);
+//            this.kerberosObject.doAs(() -> {
+//                try (SparkSession sparkSession = SparkParquetReader.createSparkSession(master, sparkSessionConfig, hadoopConf)) {
+//                    Dataset<Row> rowDataset = SparkParquetReader.readDs(sparkSession, absPath, sparkReadOption);
+//                    SparkJdbcWriter.writeToJdbc(rowDataset, jdbcUrl, table, connectionProperties, option);
+//                } catch (Exception e) {
+//                    LOG.error("获取SparkSession失败", e);
+//                    throw new RuntimeException(e);
+//                }
+//            });
+//        } catch (Exception e) {
+//            String message = String.format("获取获取SparkSession失败,请检查HDFS地址是否正确: [%s]", "message:defaultFS");
+//            LOG.error(message, e);
+//            throw new RuntimeException(e);
+//        }
     }
 
     @Override
