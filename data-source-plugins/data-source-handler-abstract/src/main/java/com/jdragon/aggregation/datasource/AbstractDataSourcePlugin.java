@@ -1,6 +1,8 @@
 package com.jdragon.aggregation.datasource;
 
+import com.alibaba.fastjson.JSONObject;
 import com.jdragon.aggregation.commons.pagination.Table;
+import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.pluginloader.spi.AbstractPlugin;
 
 import java.sql.Connection;
@@ -9,6 +11,11 @@ import java.util.List;
 import java.util.Map;
 
 public abstract class AbstractDataSourcePlugin extends AbstractPlugin {
+
+    public Connection getConnection(Configuration configuration) {
+        String json = configuration.toJSON();
+        return getConnection(JSONObject.parseObject(json, BaseDataSourceDTO.class));
+    }
 
     public abstract Connection getConnection(BaseDataSourceDTO dataSource);
 

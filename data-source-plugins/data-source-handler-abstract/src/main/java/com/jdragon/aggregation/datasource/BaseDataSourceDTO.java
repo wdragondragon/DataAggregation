@@ -56,4 +56,14 @@ public class BaseDataSourceDTO {
      * 主要用于 influxdb，类似schema
      */
     private String bucket;
+
+    private String principal;
+
+    private String keytabPath;
+
+    private String krb5File;
+
+    private String jdbcUrl;
+
+    private String driverClassName;
 }

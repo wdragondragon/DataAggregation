@@ -17,7 +17,9 @@
         <module>data-source-handler-mysql5</module>
         <module>data-source-handler-mysql8</module>
         <module>data-source-handler-tbds-hive2</module>
+        <module>data-source-handler-tbds-hive3</module>
         <module>data-source-handler-file-tbds-hdfs</module>
+        <module>data-source-handler-file-tbds-hdfs3</module>
         <module>data-source-handler-queue-kafka</module>
         <module>data-source-handler-queue-rabbitmq</module>
         <module>data-source-handler-queue-rocketmq</module>

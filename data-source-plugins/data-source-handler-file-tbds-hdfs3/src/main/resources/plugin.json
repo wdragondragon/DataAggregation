@@ -1,0 +1,6 @@
+{
+  "name": "tbds-hdfs3",
+  "class": "com.jdragon.aggregation.datasource.file.tbds.hdfs3.HdfsHelper",
+  "description": "hdfs3",
+  "developer": "jdragon"
+}

@@ -1,0 +1,6 @@
+{
+  "name": "tbds-hive3",
+  "class": "com.jdragon.aggregation.datasource.tbds.hive3.Hive3SourcePlugin",
+  "description": "hive3",
+  "developer": "jdragon"
+}
