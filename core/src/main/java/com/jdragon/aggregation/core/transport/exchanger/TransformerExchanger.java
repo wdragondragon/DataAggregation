@@ -49,7 +49,7 @@ public abstract class TransformerExchanger {
         }
 
         DefaultRecord orignal = (DefaultRecord) record;
-        DefaultRecord result = null;
+        DefaultRecord result = orignal;
         long diffExaustedTime = 0;
         String errorMsg = null;
         boolean failed = false;
@@ -75,7 +75,7 @@ public abstract class TransformerExchanger {
             }
 
             try {
-                result = (DefaultRecord) transformerInfoExec.getTransformer().evaluate(orignal.clone(), transformerInfoExec.getTContext(), transformerInfoExec.getFinalParas());
+                result = (DefaultRecord) transformerInfoExec.getTransformer().evaluate(result.clone(), transformerInfoExec.getTContext(), transformerInfoExec.getFinalParas());
             } catch (Exception e) {
                 errorMsg = String.format("transformer(%s) has Exception(%s)", transformerInfoExec.getTransformerName(),
                         e.getMessage());

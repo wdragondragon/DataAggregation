@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 public class TransformerUtil {
     private static final Logger LOG = LoggerFactory.getLogger(TransformerUtil.class);
@@ -52,7 +53,16 @@ public class TransformerUtil {
             String functionName = configuration.getString("name");
             TransformerInfo transformerInfo = TransformerRegistry.getTransformer(functionName);
             if (transformerInfo == null) {
-                throw AggregationException.asException(TransformerErrorCode.TRANSFORMER_NOTFOUND_ERROR, "name=" + functionName);
+                Optional<Transformer> first = extraTransformer.stream().filter(e -> e.getTransformerName().equals(functionName)).findFirst();
+                if (first.isPresent()) {
+                    Transformer transformer = first.get();
+                    transformerInfo = new TransformerInfo();
+                    transformerInfo.setTransformer(transformer);
+                    transformerInfo.setClassLoader(Thread.currentThread().getContextClassLoader());
+                    transformerInfo.setNative(false);
+                } else {
+                    throw AggregationException.asException(TransformerErrorCode.TRANSFORMER_NOTFOUND_ERROR, "name=" + functionName);
+                }
             }
 
             /**
@@ -98,15 +108,6 @@ public class TransformerUtil {
                     , transformerInfo.isNative(), configuration.getConfiguration("parameter")));
         }
 
-        for (Transformer transformer : extraTransformer) {
-            TransformerInfo transformerInfo = new TransformerInfo();
-            transformerInfo.setTransformer(transformer);
-            transformerInfo.setClassLoader(Thread.currentThread().getContextClassLoader());
-            transformerInfo.setNative(false);
-            TransformerExecutionParas transformerExecutionParas = new TransformerExecutionParas();
-            TransformerExecution transformerExecution = new TransformerExecution(transformerInfo, transformerExecutionParas);
-            result.add(transformerExecution);
-        }
 
         return result;
     }

@@ -101,6 +101,7 @@ public class JobContainer {
             this.holdDoStat(jobCommunication, configuration);
         } catch (AggregationException e) {
             if (!(e.getCause() instanceof InterruptedException)) {
+                jobCommunication.setState(State.FAILED);
                 throw e;
             }
             jobCommunication.setState(State.FAILED);
