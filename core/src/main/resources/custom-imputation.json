@@ -1,0 +1,61 @@
+{
+  "reader": {
+    "type": "custom",
+    "config": {}
+  },
+  "writer": {
+    "type": "mysql8",
+    "config": {
+      "connect": {
+        "host": "192.168.188.128",
+        "port": "3306",
+        "database": "agg_test",
+        "userName": "root",
+        "password": "951753",
+        "other": "{\"rewriteBatchedStatements\":true}",
+        "usePool": true,
+        "extraParams": {}
+      },
+      "table": "test_imputation",
+      "columns": [
+        "id",
+        "name",
+        "age",
+        "salary",
+        "department"
+      ],
+      "pkColumn": ["id"],
+      "writeMode": "update"
+    }
+  },
+  "transformer": [
+    {
+      "name": "custom_imputation",
+      "parameter": {
+        "columnIndex": 1,
+        "paras": ["constant", "Unknown"]
+      }
+    },
+    {
+      "name": "custom_imputation",
+      "parameter": {
+        "columnIndex": 2,
+        "paras": ["constant", "25"]
+      }
+    },
+    {
+      "name": "custom_imputation",
+      "parameter": {
+        "columnIndex": 3,
+        "paras": ["mean", "5500.0"]
+      }
+    },
+    {
+      "name": "custom_imputation",
+      "parameter": {
+        "columnIndex": 4,
+        "paras": ["constant", "DefaultDept"]
+      }
+    }
+  ]
+}
