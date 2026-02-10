@@ -18,7 +18,7 @@ public class ResolutionResult {
 
     private Date resolutionTime;
 
-    private boolean manuallyReviewed = false;
+    private Boolean manuallyReviewed = false;
 
     public ResolutionResult() {
         this.resolutionTime = new Date();

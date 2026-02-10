@@ -90,11 +90,6 @@ public class ConsistencyExample {
         outputConfig.setReportLanguage(OutputConfig.ReportLanguage.CHINESE);
         rule.setOutputConfig(outputConfig);
 
-        ScheduleConfig schedule = new ScheduleConfig();
-        schedule.setScheduleType(ScheduleConfig.ScheduleType.MANUAL);
-        schedule.setEnabled(false);
-        rule.setSchedule(schedule);
-
         return rule;
     }
 

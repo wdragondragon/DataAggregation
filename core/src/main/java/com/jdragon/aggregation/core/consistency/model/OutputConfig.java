@@ -13,11 +13,11 @@ public class OutputConfig {
     
     private String databaseConnection;
     
-    private boolean storeDifferences = true;
+    private Boolean storeDifferences = true;
     
-    private boolean storeResolutionResults = true;
+    private Boolean storeResolutionResults = true;
     
-    private boolean generateReport = true;
+    private Boolean generateReport = true;
     
     private ReportFormat reportFormat = ReportFormat.JSON;
     

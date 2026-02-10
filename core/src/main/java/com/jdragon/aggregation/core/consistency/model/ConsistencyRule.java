@@ -30,15 +30,15 @@ public class ConsistencyRule {
 
     private OutputConfig outputConfig;
 
-    private boolean enabled = true;
+    private Boolean enabled = true;
 
-    private boolean parallelFetch = true;
+    private Boolean parallelFetch = true;
 
     private String updateTargetSourceId;
 
-    private boolean autoApplyResolutions = false;
+    private Boolean autoApplyResolutions = false;
 
-    private boolean validateBeforeUpdate = false;
+    private Boolean validateBeforeUpdate = false;
 
     private Integer updateBufferSize = 100;
 
@@ -48,13 +48,11 @@ public class ConsistencyRule {
     
     private Double updateRetryBackoffMultiplier = 1.5;
 
-    private boolean allowInsert = true;
+    private Boolean allowInsert = true;
     
-    private boolean allowDelete = true;
+    private Boolean allowDelete = true;
     
-    private boolean skipUnchangedUpdates = true;
-
-    private ScheduleConfig schedule;
+    private Boolean skipUnchangedUpdates = true;
 
     public static ConsistencyRule fromConfig(Configuration config) {
         ConsistencyRule rule = new ConsistencyRule();
