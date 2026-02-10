@@ -69,6 +69,14 @@ List<DataSourceConfig> dataSources = Arrays.asList(
 );
 rule.setDataSources(dataSources);
 
+// 配置自动更新（可选）
+rule.setUpdateTargetSourceId("source-1"); // 更新到主数据库
+rule.setAutoApplyResolutions(true); // 自动应用解决结果
+rule.setUpdateBufferSize(50); // 批量更新大小
+rule.setUpdateRetryAttempts(3); // 更新失败时重试3次
+rule.setUpdateRetryDelayMs(2000L); // 初始重试延迟2秒
+rule.setUpdateRetryBackoffMultiplier(2.0); // 退避乘数
+
 // 添加规则
 service.addRule(rule);
 ```
@@ -146,6 +154,27 @@ config.setPriority(1);
 - 标记需要人工处理的冲突
 - 生成待审核清单
 
+## 自动更新与重试
+
+系统支持将冲突解决结果自动更新到目标数据源，并包含智能重试机制：
+
+### 1. 自动更新配置
+- **目标数据源**：指定需要更新的数据源ID（`updateTargetSourceId`）
+- **自动应用**：启用/禁用自动更新（`autoApplyResolutions`）
+- **批量大小**：控制批量更新的缓冲区大小（`updateBufferSize`）
+
+### 2. 重试机制
+- **重试次数**：配置更新失败时的重试次数（`updateRetryAttempts`）
+- **初始延迟**：第一次重试前的等待时间（`updateRetryDelayMs`）
+- **退避乘数**：每次重试后延迟时间的增长倍数（`updateRetryBackoffMultiplier`）
+
+### 3. 执行流程
+1. 冲突解决完成后，系统检查是否启用自动更新
+2. 构建针对目标数据源的UPDATE语句（使用匹配键作为WHERE条件）
+3. 尝试批量更新，失败时回退到单条更新
+4. 单条更新失败时，根据配置进行重试
+5. 记录更新结果（成功/失败统计）并包含在报告中
+
 ## 配置参数
 
 ### 一致性规则配置
@@ -173,6 +202,16 @@ config.setPriority(1);
 | priority | int | 优先级(数字越大优先级越低) |
 | fieldMappings | Map<String,String> | 字段映射关系 |
 
+### 更新配置
+| 参数 | 类型 | 说明 | 默认值 |
+|------|------|------|--------|
+| updateTargetSourceId | String | 目标数据源ID（用于自动更新） | 无 |
+| autoApplyResolutions | boolean | 是否自动应用解决结果到目标数据源 | false |
+| updateBufferSize | Integer | 批量更新缓冲区大小 | 100 |
+| updateRetryAttempts | Integer | 更新重试次数 | 0 |
+| updateRetryDelayMs | Long | 重试初始延迟毫秒数 | 1000 |
+| updateRetryBackoffMultiplier | Double | 重试退避乘数 | 1.5 |
+
 ### 输出配置
 | 参数 | 类型 | 说明 | 默认值 |
 |------|------|------|--------|
@@ -183,6 +222,7 @@ config.setPriority(1);
 | generateReport | boolean | 是否生成报告 | true |
 | reportFormat | enum | 报告格式 (JSON, HTML, CSV) | JSON |
 | reportLanguage | enum | 报告语言 (ENGLISH, CHINESE, BILINGUAL) | ENGLISH |
+| maxDifferencesToDisplay | Integer | HTML报告中最大显示差异数量 | 100 |
 
 ## 多语言报告
 
@@ -207,10 +247,12 @@ config.setPriority(1);
 系统使用 Freemarker 模板引擎生成 HTML 报告，提供更灵活的样式和布局控制。模板位于 `src/main/resources/templates/consistency_report.ftl`。
 
 #### 新特性
-1. **字段差异详细显示**：每个字段的差异现在显示所有数据源的具体值，格式为 `字段名: {数据源1: 值1, 数据源2: 值2, ...}`
-2. **解决后数据行**：冲突解决后的完整数据行现在以 JSON 格式显示在报告中，便于下游系统使用
-3. **改进的样式**：新增 `.resolved-row` 和 `.field-diff` CSS 类，提供更好的视觉区分
-4. **模板回退机制**：如果 Freemarker 模板不可用，系统会自动回退到字符串拼接方式生成报告
+1. **表格化字段差异显示**：每个差异记录现在以表格形式显示，包含匹配键和所有字段的值，差异字段高亮显示
+2. **字段差异高亮**：差异字段在表格中使用黄色背景突出显示，表头也相应高亮
+3. **解决后数据行**：冲突解决后的完整数据行现在以 JSON 格式显示在报告中，便于下游系统使用
+4. **改进的样式**：新增 `.resolved-row`、`.field-diff`、`.field-with-diff`、`.field-with-diff-header` CSS 类，提供更好的视觉区分
+5. **可配置的显示限制**：通过 `maxDifferencesToDisplay` 参数控制HTML报告中显示的最大差异数量，避免页面过大
+6. **模板回退机制**：如果 Freemarker 模板不可用，系统会自动回退到字符串拼接方式生成报告
 
 #### 自定义模板
 您可以通过修改 `consistency_report.ftl` 文件来自定义报告样式和布局。模板支持所有标准 Freemarker 语法和数据模型。
@@ -223,6 +265,7 @@ outputConfig.setOutputPath("./consistency-results");
 outputConfig.setGenerateReport(true);
 outputConfig.setReportFormat(OutputConfig.ReportFormat.HTML);
 outputConfig.setReportLanguage(OutputConfig.ReportLanguage.CHINESE); // 设置为中文报告
+outputConfig.setMaxDifferencesToDisplay(50); // 限制HTML报告中最多显示50条差异
 ```
 
 ## 扩展开发

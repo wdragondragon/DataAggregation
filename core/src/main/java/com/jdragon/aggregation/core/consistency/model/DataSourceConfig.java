@@ -24,6 +24,8 @@ public class DataSourceConfig {
 
     private int priority = 0;
 
+    private Integer maxRecords;
+
     private Map<String, String> fieldMappings;
 
     private Boolean updateTarget = false;
@@ -38,6 +40,9 @@ public class DataSourceConfig {
         dsConfig.setTableName(config.getString("tableName"));
         dsConfig.setConfidenceWeight(config.getDouble("confidenceWeight", 1.0));
         dsConfig.setPriority(config.getInt("priority", 0));
+        if (config.get("maxRecords") != null) {
+            dsConfig.setMaxRecords(config.getInt("maxRecords"));
+        }
         dsConfig.setFieldMappings(config.getMap("fieldMappings", String.class));
         dsConfig.setUpdateTarget(config.getBool("updateTarget", false));
         return dsConfig;

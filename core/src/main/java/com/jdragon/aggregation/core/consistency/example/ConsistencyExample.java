@@ -51,11 +51,11 @@ public class ConsistencyExample {
         rule.setEnabled(true);
         rule.setParallelFetch(true);
         rule.setToleranceThreshold(0.01);
-        rule.setConflictResolutionStrategy(ConflictResolutionStrategy.WEIGHTED_AVERAGE);
+        rule.setConflictResolutionStrategy(ConflictResolutionStrategy.HIGH_CONFIDENCE);
         rule.setUpdateTargetSourceId("source-1");
         rule.setAutoApplyResolutions(true);
 
-        rule.setCompareFields(Arrays.asList("age", "salary", "department"));
+        rule.setCompareFields(Arrays.asList("age", "salary", "department", "email"));
         rule.setMatchKeys(Arrays.asList("user_id", "username"));
 
         rule.setDataSources(Arrays.asList(
@@ -67,7 +67,7 @@ public class ConsistencyExample {
                 createDataSourceConfig("source-2", "备份数据库", "mysql8",
                         createConnectionConfig("192.168.188.128", "3306", "agg_test", "root", "951753"),
                         "SELECT user_id, username, age, salary, department, email FROM users_2",
-                        0.8, 2),
+                        1.8, 2),
 
                 createDataSourceConfig("source-3", "数据仓库", "mysql8",
                         createConnectionConfig("192.168.188.128", "3306", "agg_test", "root", "951753"),

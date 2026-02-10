@@ -86,11 +86,7 @@ public class HighConfidenceResolver extends BaseConflictResolver {
     
     private Set<String> getConflictFields(DifferenceRecord differenceRecord) {
         Set<String> conflictFields = new HashSet<>();
-        for (String field : differenceRecord.getDifferences().keySet()) {
-            if (!field.equals("missing_data")) {
-                conflictFields.add(field);
-            }
-        }
+        conflictFields.addAll(differenceRecord.getDifferences().keySet());
         return conflictFields;
     }
 }

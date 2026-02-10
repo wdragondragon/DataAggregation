@@ -5,6 +5,7 @@ import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.jdragon.aggregation.core.consistency.i18n.MessageResource;
 import com.jdragon.aggregation.core.consistency.model.DifferenceRecord;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.ObjectUtils;
 
 import java.util.*;
 
@@ -33,7 +34,7 @@ public class DataComparator {
 
         List<DifferenceRecord> differences = new ArrayList<>();
 
-        Set<String> allMatchKeys = collectAllMatchKeys(groupedData);
+        LinkedHashSet<String> allMatchKeys = collectAllMatchKeys(groupedData);
 
         for (String matchKey : allMatchKeys) {
             DifferenceRecord diffRecord = compareRecordsForMatchKey(groupedData, matchKey, matchKeys);
@@ -46,11 +47,48 @@ public class DataComparator {
         return differences;
     }
 
-    private Set<String> collectAllMatchKeys(Map<String, Map<String, List<Map<String, Object>>>> groupedData) {
-        Set<String> allMatchKeys = new HashSet<>();
-        for (Map<String, List<Map<String, Object>>> sourceGroup : groupedData.values()) {
-            allMatchKeys.addAll(sourceGroup.keySet());
+    private LinkedHashSet<String> collectAllMatchKeys(Map<String, Map<String, List<Map<String, Object>>>> groupedData) {
+        LinkedHashSet<String> allMatchKeys = new LinkedHashSet<>();
+
+        if (groupedData.isEmpty()) {
+            return allMatchKeys;
         }
+
+        // Find the first data source with data to use as ordering reference
+        String orderingSourceId = null;
+        Map<String, List<Map<String, Object>>> orderingSourceGroup = null;
+
+        for (Map.Entry<String, Map<String, List<Map<String, Object>>>> entry : groupedData.entrySet()) {
+            Map<String, List<Map<String, Object>>> sourceGroup = entry.getValue();
+            if (sourceGroup != null && !sourceGroup.isEmpty()) {
+                orderingSourceId = entry.getKey();
+                orderingSourceGroup = sourceGroup;
+                break;
+            }
+        }
+
+        // If we found a data source with data, use its match key order as primary ordering
+        if (orderingSourceGroup != null) {
+            allMatchKeys.addAll(orderingSourceGroup.keySet());
+        }
+
+        // Add any additional match keys from other data sources (in source order)
+        for (Map.Entry<String, Map<String, List<Map<String, Object>>>> entry : groupedData.entrySet()) {
+            String sourceId = entry.getKey();
+            if (orderingSourceId != null && sourceId.equals(orderingSourceId)) {
+                continue; // Already processed
+            }
+            Map<String, List<Map<String, Object>>> sourceGroup = entry.getValue();
+            if (sourceGroup != null) {
+                // Add keys from this source in their natural order (preserving insertion order)
+                for (String matchKey : sourceGroup.keySet()) {
+                    if (!allMatchKeys.contains(matchKey)) {
+                        allMatchKeys.add(matchKey);
+                    }
+                }
+            }
+        }
+
         return allMatchKeys;
     }
 
@@ -97,8 +135,7 @@ public class DataComparator {
         boolean hasDifferences = false;
 
         if (!missingSources.isEmpty()) {
-            String missingDescription = messages.getMessage("comparison.missing.data", missingSources);
-            diffRecord.addDifference("missing_data", missingDescription);
+            diffRecord.setMissingSources(missingSources);
             hasDifferences = true;
         }
 
@@ -141,7 +178,7 @@ public class DataComparator {
         Set<String> sourcesWithNull = new HashSet<>();
         Map<String, Object> sourceValue = new LinkedHashMap<>();
         boolean allSame = true;
-        Object firstNotNull = null;
+        Object firstNotNull = ObjectUtils.NULL;
         for (Map.Entry<String, Map<String, Object>> entry : sourceValues.entrySet()) {
             String sourceId = entry.getKey();
             Map<String, Object> record = entry.getValue();
@@ -150,9 +187,10 @@ public class DataComparator {
             if (value == null) {
                 sourcesWithNull.add(sourceId);
             }
-            if (firstNotNull == null) {
+            if (firstNotNull == ObjectUtils.NULL) {
                 firstNotNull = value;
-            } else if (!Objects.equals(firstNotNull, value)) {
+            }
+            if (!Objects.equals(firstNotNull, value)) {
                 allSame = false;
             }
         }
@@ -166,7 +204,7 @@ public class DataComparator {
         }
 
 
-        return messages.getMessage("comparison.different.values", field, JSONObject.toJSONString(sourceValue, SerializerFeature.WriteMapNullValue));
+        return messages.getMessage("comparison.different.values", field);
 
     }
 

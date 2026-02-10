@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
 
 @Slf4j
 public class DataConsistencyService {
@@ -137,7 +139,14 @@ public class DataConsistencyService {
                                 resolvedDifferences,
                                 rule.getMatchKeys(),
                                 targetDataSource.getFieldMappings(),
-                                rule.getUpdateBufferSize() != null ? rule.getUpdateBufferSize() : 100
+                                rule.getUpdateBufferSize() != null ? rule.getUpdateBufferSize() : 100,
+                                rule.getUpdateRetryAttempts() != null ? rule.getUpdateRetryAttempts() : 0,
+                                rule.getUpdateRetryDelayMs() != null ? rule.getUpdateRetryDelayMs() : 1000L,
+                                rule.getUpdateRetryBackoffMultiplier() != null ? rule.getUpdateRetryBackoffMultiplier() : 1.5,
+                                rule.isValidateBeforeUpdate(),
+                                rule.isAllowInsert(),
+                                rule.isAllowDelete(),
+                                rule.isSkipUnchangedUpdates()
                         );
                         result.setUpdateResult(updateResult);
                         
@@ -167,19 +176,32 @@ public class DataConsistencyService {
     }
     
     private int calculateTotalRecords(Map<String, Map<String, List<Map<String, Object>>>> groupedData) {
-        int total = 0;
+        // Calculate unique match keys across all data sources
+        Set<String> uniqueMatchKeys = new HashSet<>();
         for (Map<String, List<Map<String, Object>>> sourceGroup : groupedData.values()) {
-            for (List<Map<String, Object>> records : sourceGroup.values()) {
-                total += records.size();
+            for (String matchKey : sourceGroup.keySet()) {
+                if (matchKey != null && !matchKey.trim().isEmpty()) {
+                    uniqueMatchKeys.add(matchKey);
+                }
             }
         }
-        return total;
+        return uniqueMatchKeys.size();
     }
     
     private void recordResults(ComparisonResult result, 
                               List<DifferenceRecord> allDifferences,
                               List<DifferenceRecord> resolvedDifferences,
                               ConsistencyRule rule) {
+        
+        // Add rule information to metadata for report generation
+        if (rule != null) {
+            if (rule.getCompareFields() != null) {
+                result.getMetadata().put("compareFields", rule.getCompareFields());
+            }
+            if (rule.getMatchKeys() != null) {
+                result.getMetadata().put("matchKeys", rule.getMatchKeys());
+            }
+        }
         
         resultRecorder.recordComparisonResult(result);
         
@@ -188,7 +210,7 @@ public class DataConsistencyService {
         }
         
         if (!resolvedDifferences.isEmpty()) {
-            resultRecorder.recordResolutionResults(resolvedDifferences);
+            resultRecorder.recordResolutionResults(result, resolvedDifferences);
         }
         
         OutputConfig outputConfig = rule != null ? rule.getOutputConfig() : null;

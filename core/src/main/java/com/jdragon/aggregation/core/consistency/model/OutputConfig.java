@@ -23,6 +23,8 @@ public class OutputConfig {
     
     private ReportLanguage reportLanguage = ReportLanguage.ENGLISH;
     
+    private Integer maxDifferencesToDisplay = 100;
+    
     public enum OutputType {
         FILE,
         DATABASE,

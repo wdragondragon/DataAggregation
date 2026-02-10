@@ -12,7 +12,7 @@ public interface ResultRecorder {
     
     void recordDifferences(List<DifferenceRecord> differences);
     
-    void recordResolutionResults(List<DifferenceRecord> resolvedDifferences);
+    void recordResolutionResults(ComparisonResult result, List<DifferenceRecord> resolvedDifferences);
     
     String generateReport(ComparisonResult result, List<DifferenceRecord> differences);
     

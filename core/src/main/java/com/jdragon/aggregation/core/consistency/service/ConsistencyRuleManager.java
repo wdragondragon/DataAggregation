@@ -4,6 +4,9 @@ import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.consistency.model.ConsistencyRule;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -87,8 +90,29 @@ public class ConsistencyRuleManager {
             return;
         }
         
-        // TODO: Implement loading rules from file system or database
         log.info("Loading rules from storage: {}", ruleStoragePath);
+        File storageDir = new File(ruleStoragePath);
+        if (!storageDir.exists() || !storageDir.isDirectory()) {
+            log.warn("Rule storage directory does not exist: {}", ruleStoragePath);
+            return;
+        }
+        
+        File[] ruleFiles = storageDir.listFiles((dir, name) -> name.endsWith(".json"));
+        if (ruleFiles == null) {
+            return;
+        }
+        
+        for (File ruleFile : ruleFiles) {
+            try {
+                String json = new String(Files.readAllBytes(ruleFile.toPath()), StandardCharsets.UTF_8);
+                ConsistencyRule rule = ConsistencyRule.fromJson(json);
+                ruleStore.put(rule.getRuleId(), rule);
+                log.debug("Loaded rule from file: {} -> {}", ruleFile.getName(), rule.getRuleId());
+            } catch (Exception e) {
+                log.error("Failed to load rule from file: {}", ruleFile.getName(), e);
+            }
+        }
+        log.info("Loaded {} rules from storage", ruleStore.size());
     }
     
     private void saveRuleToStorage(ConsistencyRule rule) {
@@ -96,8 +120,20 @@ public class ConsistencyRuleManager {
             return;
         }
         
-        // TODO: Implement saving rule to file system or database
         log.debug("Saving rule to storage: {}", rule.getRuleId());
+        try {
+            File storageDir = new File(ruleStoragePath);
+            if (!storageDir.exists()) {
+                storageDir.mkdirs();
+            }
+            
+            File ruleFile = new File(storageDir, rule.getRuleId() + ".json");
+            String json = rule.toJson().toJSONString();
+            Files.write(ruleFile.toPath(), json.getBytes(StandardCharsets.UTF_8));
+            log.debug("Rule saved to file: {}", ruleFile.getAbsolutePath());
+        } catch (Exception e) {
+            log.error("Failed to save rule to storage: {}", rule.getRuleId(), e);
+        }
     }
     
     private void deleteRuleFromStorage(String ruleId) {
@@ -105,8 +141,17 @@ public class ConsistencyRuleManager {
             return;
         }
         
-        // TODO: Implement deleting rule from storage
         log.debug("Deleting rule from storage: {}", ruleId);
+        try {
+            File storageDir = new File(ruleStoragePath);
+            File ruleFile = new File(storageDir, ruleId + ".json");
+            if (ruleFile.exists()) {
+                Files.delete(ruleFile.toPath());
+                log.debug("Rule file deleted: {}", ruleFile.getAbsolutePath());
+            }
+        } catch (Exception e) {
+            log.error("Failed to delete rule from storage: {}", ruleId, e);
+        }
     }
     
     public ConsistencyRule createRuleFromConfig(Configuration config) {

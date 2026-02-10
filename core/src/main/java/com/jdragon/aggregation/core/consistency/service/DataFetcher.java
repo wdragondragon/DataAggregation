@@ -120,6 +120,7 @@ public class DataFetcher {
         BaseDataSourceDTO dto = DataSourcePluginManager.createDataSourceDTO(config);
         
         String query = buildQuery(config);
+        query = applyLimitClause(query, config.getMaxRecords());
         log.debug("Executing query for source {}: {}", config.getSourceId(), query);
         
         Table<Map<String, Object>> table = plugin.executeQuerySql(dto, query, true);
@@ -146,6 +147,26 @@ public class DataFetcher {
         }
         
         throw new IllegalArgumentException("Either querySql or tableName must be provided for source: " + config.getSourceId());
+    }
+    
+    private String applyLimitClause(String query, Integer maxRecords) {
+        if (maxRecords == null || maxRecords <= 0) {
+            return query;
+        }
+        
+        String upperQuery = query.toUpperCase();
+        // Check if query already contains LIMIT or FETCH FIRST clause
+        if (upperQuery.contains(" LIMIT ") || upperQuery.contains(" FETCH ") || upperQuery.contains(" ROWNUM ")) {
+            return query;
+        }
+        
+        // Remove trailing semicolon if present
+        String trimmed = query.trim();
+        if (trimmed.endsWith(";")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        
+        return trimmed + " LIMIT " + maxRecords;
     }
     
     private Map<String, Object> applyFieldMappings(Map<String, Object> row, Map<String, String> fieldMappings) {
