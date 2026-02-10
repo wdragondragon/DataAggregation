@@ -11,33 +11,33 @@ import java.util.Map;
 @Data
 public class UpdateResult {
 
-    private String resultId;
+    private String resultId; // 结果ID，唯一标识符
 
-    private String ruleId;
+    private String ruleId; // 规则ID
 
-    private Date executionTime;
+    private Date executionTime; // 执行时间
 
-    private String targetSourceId;
+    private String targetSourceId; // 目标数据源ID
 
-    private int totalUpdates;
+    private int totalUpdates; // 总更新操作数
 
-    private int successfulUpdates;
+    private int successfulUpdates; // 成功更新数
 
-    private int failedUpdates;
+    private int failedUpdates; // 失败更新数
 
-    private int insertCount;
+    private int insertCount; // 插入操作数
     
-    private int updateCount;
+    private int updateCount; // 更新操作数
     
-    private int deleteCount;
+    private int deleteCount; // 删除操作数
     
-    private int skipCount;
+    private int skipCount; // 跳过操作数
     
-    private Map<String, String> operationTypes; // recordId -> operation type
+    private Map<String, String> operationTypes; // 记录ID -> 操作类型映射
 
-    private List<UpdateFailure> failures;
+    private List<UpdateFailure> failures; // 失败详情列表
 
-    private Map<String, Object> summary;
+    private Map<String, Object> summary; // 摘要信息
 
     public UpdateResult() {
         this.executionTime = new Date();
@@ -111,10 +111,10 @@ public class UpdateResult {
 
     @Data
     public static class UpdateFailure {
-        private String recordId;
-        private Map<String, Object> matchKeys;
-        private String reason;
-        private Date failureTime;
+        private String recordId; // 记录ID
+        private Map<String, Object> matchKeys; // 匹配键值对
+        private String reason; // 失败原因
+        private Date failureTime; // 失败时间
 
         public UpdateFailure(String recordId, String reason) {
             this.recordId = recordId;

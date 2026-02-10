@@ -11,33 +11,33 @@ import java.util.Map;
 @Data
 public class ComparisonResult {
     
-    private String resultId;
+    private String resultId; // 结果ID，唯一标识符
     
-    private String ruleId;
+    private String ruleId; // 规则ID
     
-    private Date executionTime;
+    private Date executionTime; // 执行时间
     
-    private Status status;
+    private Status status; // 执行状态
     
-    private int totalRecords;
+    private int totalRecords; // 总记录数
     
-    private int consistentRecords;
+    private int consistentRecords; // 一致记录数
     
-    private int inconsistentRecords;
+    private int inconsistentRecords; // 不一致记录数
     
-    private int resolvedRecords;
+    private int resolvedRecords; // 已解决记录数
     
-    private Map<String, Integer> fieldDiscrepancies;
+    private Map<String, Integer> fieldDiscrepancies; // 字段差异统计
     
-    private Map<String, Object> summary;
+    private Map<String, Object> summary; // 摘要信息
     
-    private String reportPath;
+    private String reportPath; // 报告文件路径
     
-    private Map<String, Object> metadata;
+    private Map<String, Object> metadata; // 元数据
     
-    private List<Map<String, Object>> resolvedRows;
+    private List<Map<String, Object>> resolvedRows; // 已解决行数据
     
-    private UpdateResult updateResult;
+    private UpdateResult updateResult; // 更新结果
     
     public ComparisonResult() {
         this.executionTime = new Date();
@@ -64,9 +64,9 @@ public class ComparisonResult {
     }
     
     public enum Status {
-        SUCCESS,
-        PARTIAL_SUCCESS,
-        FAILED,
-        RUNNING
+        SUCCESS, // 完全成功
+        PARTIAL_SUCCESS, // 部分成功（有差异但已解决）
+        FAILED, // 失败
+        RUNNING // 运行中
     }
 }
