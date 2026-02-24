@@ -1,0 +1,9 @@
+# 冲突解决器提供者SPI配置
+# 外部模块可以通过在此文件中添加实现类名来注册自定义冲突解决器
+# 格式：完整类名
+#
+# 示例：
+# com.example.myapp.resolver.MyCustomResolverProvider
+
+# 内置示例提供者（用于演示）
+com.jdragon.aggregation.core.consistency.service.plugin.example.ExampleConflictResolverProvider

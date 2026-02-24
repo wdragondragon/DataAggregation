@@ -148,7 +148,10 @@ config.setPriority(1);
 
 ### 4. 自定义规则 (CUSTOM_RULE)
 - 通过实现ConflictResolver接口自定义逻辑
-- 在resolutionParams中指定自定义类名
+- 支持三种注册方式：SPI自动发现、编程式注册、配置式注册（向后兼容）
+- 在resolutionParams中指定customClass参数（配置式注册）
+- 可通过 `strategyName` 参数使用插件注册的自定义策略名
+- 详情参见"插件化冲突解决架构"章节
 
 ### 5. 人工审核 (MANUAL_REVIEW)
 - 标记需要人工处理的冲突
@@ -186,7 +189,7 @@ config.setPriority(1);
 | enabled | boolean | 是否启用 | true |
 | parallelFetch | boolean | 是否并行获取数据 | true |
 | toleranceThreshold | double | 数值字段容错阈值 | 0.0 |
-| conflictResolutionStrategy | enum | 冲突解决策略 | HIGH_CONFIDENCE |
+| conflictResolutionStrategy | String | 冲突解决策略（支持内置枚举或插件注册的自定义策略名） | HIGH_CONFIDENCE |
 | compareFields | List<String> | 需要比较的字段 | 必填 |
 | matchKeys | List<String> | 数据匹配键 | 必填 |
 
@@ -270,10 +273,71 @@ outputConfig.setMaxDifferencesToDisplay(50); // 限制HTML报告中最多显示5
 
 ## 扩展开发
 
+### 插件化冲突解决架构
+
+系统支持插件化冲突解决架构，允许从外部注册自定义冲突解决器而无需修改核心代码。提供三种注册方式：
+
+1. **SPI自动发现**：实现`ConflictResolverProvider`接口，通过Java ServiceLoader自动发现
+2. **编程式注册**：运行时调用`ConflictResolverRegistry.registerResolverClass()`或`registerResolverInstance()`
+3. **配置式注册**：使用`CUSTOM_RULE`策略并在`resolutionParams`中指定`customClass`参数（向后兼容）
+
+#### 核心组件
+- **ConflictResolverRegistry**：冲突解决器注册中心，管理所有已注册的解决器
+- **ConflictResolverProvider**：SPI接口，用于外部模块提供自定义解决器
+- **ConflictResolverFactory**：工厂类，提供向后兼容的API
+
 ### 添加新的冲突解决策略
+
+#### 方法一：SPI自动发现（推荐）
+1. 实现`ConflictResolverProvider`接口
+2. 在`META-INF/services/com.jdragon.aggregation.core.consistency.service.plugin.ConflictResolverProvider`文件中注册实现类
+3. 系统启动时自动加载
+
+```java
+public class MyResolverProvider implements ConflictResolverProvider {
+    @Override
+    public String getStrategyName() {
+        return "MY_STRATEGY";  // 自定义策略名称
+    }
+    
+    @Override
+    public String getDescription() {
+        return "我的自定义解决策略";
+    }
+    
+    @Override
+    public ConflictResolver createResolver(List<DataSourceConfig> dataSourceConfigs,
+                                          Map<String, Object> resolutionParams) {
+        return new MyCustomResolver(dataSourceConfigs, resolutionParams);
+    }
+}
+
+// 在 META-INF/services 文件中添加：
+// com.example.MyResolverProvider
+```
+
+#### 方法二：编程式注册
 1. 实现`ConflictResolver`接口
-2. 在`ConflictResolverFactory`中注册
-3. 通过`resolutionParams`传递自定义参数
+2. 在应用程序启动时注册到`ConflictResolverRegistry`
+
+```java
+// 注册类（延迟初始化）
+ConflictResolverRegistry.getInstance().registerResolverClass(
+    "MY_STRATEGY", 
+    "com.example.MyCustomResolver"
+);
+
+// 或注册实例（立即初始化）
+ConflictResolver resolver = new MyCustomResolver();
+ConflictResolverRegistry.getInstance().registerResolverInstance(
+    "MY_STRATEGY", 
+    resolver
+);
+```
+
+#### 方法三：配置式注册（向后兼容）
+1. 实现`ConflictResolver`接口
+2. 在规则配置中使用`CUSTOM_RULE`策略，并在`resolutionParams`中指定`customClass`参数
 
 ```java
 public class CustomResolver extends BaseConflictResolver {
@@ -287,7 +351,20 @@ public class CustomResolver extends BaseConflictResolver {
         return ConflictResolutionStrategy.CUSTOM_RULE;
     }
 }
+
+// 在规则配置中：
+rule.setConflictResolutionStrategy(ConflictResolutionStrategy.CUSTOM_RULE);
+Map<String, Object> params = new HashMap<>();
+params.put("customClass", "com.example.CustomResolver");
+rule.setResolutionParams(params);
 ```
+
+#### 内置策略
+系统已内置以下策略，无需额外注册：
+- `HIGH_CONFIDENCE`：高可信度源策略
+- `WEIGHTED_AVERAGE`：加权平均值策略  
+- `MAJORITY_VOTE`：多数投票策略
+- `MANUAL_REVIEW`：人工审核策略
 
 ### 自定义结果记录器
 1. 实现`ResultRecorder`接口
