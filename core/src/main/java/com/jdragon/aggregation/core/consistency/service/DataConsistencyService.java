@@ -1,12 +1,7 @@
 package com.jdragon.aggregation.core.consistency.service;
 
 import com.jdragon.aggregation.core.consistency.i18n.MessageResource;
-import com.jdragon.aggregation.core.consistency.model.ComparisonResult;
-import com.jdragon.aggregation.core.consistency.model.ConsistencyRule;
-import com.jdragon.aggregation.core.consistency.model.DifferenceRecord;
-import com.jdragon.aggregation.core.consistency.model.OutputConfig;
-import com.jdragon.aggregation.core.consistency.model.UpdateResult;
-import com.jdragon.aggregation.core.consistency.model.DataSourceConfig;
+import com.jdragon.aggregation.core.consistency.model.*;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
@@ -70,6 +65,7 @@ public class DataConsistencyService {
         log.info("Executing consistency rule: {} - {}", rule.getRuleId(), rule.getRuleName());
 
         ComparisonResult result = new ComparisonResult();
+        result.setResultId("result-" + System.currentTimeMillis());
         result.setRuleId(rule.getRuleId());
         result.setStatus(ComparisonResult.Status.RUNNING);
 
@@ -149,6 +145,7 @@ public class DataConsistencyService {
                                 rule.getSkipUnchangedUpdates()
                         );
                         result.setUpdateResult(updateResult);
+                        updateResult.setResultId(result.getResultId());
 
                         log.info("Updates executed: {} successful, {} failed",
                                 updateResult.getSuccessfulUpdates(), updateResult.getFailedUpdates());
@@ -206,11 +203,14 @@ public class DataConsistencyService {
         resultRecorder.recordComparisonResult(result);
 
         if (!allDifferences.isEmpty()) {
-            resultRecorder.recordDifferences(allDifferences);
+            String differencesRecordPath = resultRecorder.recordDifferences(allDifferences);
+            result.setDifferenceRecords(allDifferences);
+            result.setDifferenceOutputAbsPath(differencesRecordPath);
         }
 
         if (!resolvedDifferences.isEmpty()) {
-            resultRecorder.recordResolutionResults(result, resolvedDifferences);
+            List<ResolutionResult> resolutionResults = resultRecorder.recordResolutionResults(result, resolvedDifferences);
+            result.setResolutionResults(resolutionResults);
         }
 
         OutputConfig outputConfig = rule != null ? rule.getOutputConfig() : null;

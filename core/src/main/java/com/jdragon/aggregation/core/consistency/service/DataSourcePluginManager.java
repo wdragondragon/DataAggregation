@@ -66,9 +66,9 @@ public class DataSourcePluginManager {
             dto.setDatabase(config.getConnectionConfig().getString("database"));
             dto.setUserName(config.getConnectionConfig().getString("username"));
             dto.setPassword(config.getConnectionConfig().getString("password"));
-            Map<String, String> other = config.getConnectionConfig().getMap("other", String.class);
+            String other = config.getConnectionConfig().getString("other");
             if (other != null) {
-                dto.setOther(JSONObject.toJSONString(other));
+                dto.setOther(other);
             }
 
             String pluginName = config.getPluginName();

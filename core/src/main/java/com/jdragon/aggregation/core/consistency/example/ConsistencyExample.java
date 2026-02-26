@@ -1,5 +1,6 @@
 package com.jdragon.aggregation.core.consistency.example;
 
+import com.alibaba.fastjson.JSONObject;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.consistency.model.*;
 import com.jdragon.aggregation.core.consistency.service.DataConsistencyService;
@@ -132,7 +133,7 @@ public class ConsistencyExample {
         Map<String, String> otherParams = new HashMap<>();
         otherParams.put("useSSL", "false");
         otherParams.put("serverTimezone", "UTC");
-        config.set("other", otherParams);
+        config.set("other", JSONObject.toJSONString(otherParams));
 
         return config;
     }

@@ -13,7 +13,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @Slf4j
 public class UpdateExecutor {
@@ -37,7 +36,7 @@ public class UpdateExecutor {
     public UpdateResult executeUpdates(DataSourceConfig targetDataSource, List<DifferenceRecord> resolvedDifferences, List<String> matchKeys, Map<String, String> fieldMappings, int bufferSize, int retryAttempts, long retryDelayMs, double retryBackoffMultiplier, boolean validateBeforeUpdate, boolean allowInsert, boolean allowDelete, boolean skipUnchangedUpdates) {
         UpdateResult result = new UpdateResult();
         result.setTargetSourceId(targetDataSource.getSourceId());
-        result.setRuleId("update-" + System.currentTimeMillis());
+        result.setId("update-" + System.currentTimeMillis());
 
         if (resolvedDifferences == null || resolvedDifferences.isEmpty()) {
             log.info("No resolved differences to update");

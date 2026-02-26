@@ -38,6 +38,17 @@ public class ComparisonResult {
     private List<Map<String, Object>> resolvedRows; // 已解决行数据
     
     private UpdateResult updateResult; // 更新结果
+
+    // 以下属性为后置填充
+    private List<ResolutionResult> resolutionResults;
+
+    private List<DifferenceRecord> differenceRecords;
+
+    private String compareResultOutputAbsPath;
+
+    private String differenceOutputAbsPath;
+
+    private String resolutionOutputAbsPath;
     
     public ComparisonResult() {
         this.executionTime = new Date();

@@ -60,7 +60,7 @@ public class FileResultRecorder implements ResultRecorder {
                     result.getRuleId(), timestamp);
 
             Path filePath = Paths.get(outputDirectory, filename);
-            
+
             // Create simplified comparison result without resolvedRows to save space
             Map<String, Object> simplifiedResult = new HashMap<>();
             simplifiedResult.put("resultId", result.getResultId());
@@ -75,28 +75,28 @@ public class FileResultRecorder implements ResultRecorder {
             simplifiedResult.put("summary", result.getSummary());
             simplifiedResult.put("reportPath", result.getReportPath());
             simplifiedResult.put("metadata", result.getMetadata());
-            
+
             // Include update result if available
             if (result.getUpdateResult() != null) {
                 simplifiedResult.put("updateResult", result.getUpdateResult());
             }
-            
+
             // Skip resolvedRows to save space - they're available in resolutions.json
 
             String json = JSON.toJSONString(simplifiedResult, SerializerFeature.PrettyFormat);
             Files.write(filePath, json.getBytes());
             log.info("Comparison result recorded to: {}", filePath);
 
-            result.setReportPath(filePath.toString());
+            result.setCompareResultOutputAbsPath(filePath.toAbsolutePath().normalize().toString());
         } catch (IOException e) {
             log.error("Failed to record comparison result", e);
         }
     }
 
     @Override
-    public void recordDifferences(List<DifferenceRecord> differences) {
+    public String recordDifferences(List<DifferenceRecord> differences) {
         if (differences == null || differences.isEmpty()) {
-            return;
+            return null;
         }
 
         try {
@@ -104,7 +104,7 @@ public class FileResultRecorder implements ResultRecorder {
             String filename = String.format("differences_%s.json", timestamp);
 
             Path filePath = Paths.get(outputDirectory, filename);
-            
+
             // Create simplified differences for smaller file size
             List<Map<String, Object>> simplifiedDifferences = differences.stream()
                     .map(diff -> {
@@ -115,53 +115,55 @@ public class FileResultRecorder implements ResultRecorder {
                         simplified.put("differences", diff.getDifferences());
                         simplified.put("discrepancyScore", diff.getDiscrepancyScore());
                         simplified.put("missingSources", diff.getMissingSources());
-                        
+
                         // Include only inconsistent fields from source values to save space
                         if (diff.getSourceValues() != null && !diff.getSourceValues().isEmpty()) {
                             Map<String, Map<String, Object>> inconsistentFields = new HashMap<>();
                             Set<String> inconsistentFieldNames = diff.getDifferences().keySet();
-                            
+
                             for (Map.Entry<String, Map<String, Object>> sourceEntry : diff.getSourceValues().entrySet()) {
                                 String sourceId = sourceEntry.getKey();
                                 Map<String, Object> sourceVals = sourceEntry.getValue();
                                 Map<String, Object> filteredValues = new HashMap<>();
-                                
+
                                 for (String field : inconsistentFieldNames) {
                                     if (sourceVals.containsKey(field)) {
                                         filteredValues.put(field, sourceVals.get(field));
                                     }
                                 }
-                                
+
                                 // Also include match key values for context
                                 if (diff.getMatchKeyValues() != null) {
                                     filteredValues.putAll(diff.getMatchKeyValues());
                                 }
-                                
+
                                 if (!filteredValues.isEmpty()) {
                                     inconsistentFields.put(sourceId, filteredValues);
                                 }
                             }
-                            
+
                             if (!inconsistentFields.isEmpty()) {
                                 simplified.put("sourceValues", inconsistentFields);
+                                diff.setSourceValues(inconsistentFields);
                             }
                         }
-                        
                         return simplified;
                     }).collect(Collectors.toList());
 
             String json = JSON.toJSONString(simplifiedDifferences, SerializerFeature.PrettyFormat);
             Files.write(filePath, json.getBytes());
             log.info("Differences recorded to: {}", filePath);
+            return filePath.toAbsolutePath().normalize().toString();
         } catch (IOException e) {
             log.error("Failed to record differences", e);
+            return null;
         }
     }
 
     @Override
-    public void recordResolutionResults(ComparisonResult result, List<DifferenceRecord> resolvedDifferences) {
-        if (resolvedDifferences == null || resolvedDifferences.isEmpty()) {
-            return;
+    public List<ResolutionResult> recordResolutionResults(ComparisonResult result, List<DifferenceRecord> resolvedDifferences) {
+        if (result == null || resolvedDifferences == null || resolvedDifferences.isEmpty()) {
+            return new ArrayList<>();
         }
 
         try {
@@ -171,42 +173,36 @@ public class FileResultRecorder implements ResultRecorder {
             Path filePath = Paths.get(outputDirectory, filename);
 
             // Get operation types from update result if available
-            final Map<String, String> operationTypes = 
-                (result != null && result.getUpdateResult() != null) 
-                    ? result.getUpdateResult().getOperationTypes() 
-                    : null;
+            final Map<String, String> operationTypes =
+                    result.getUpdateResult() != null
+                            ? result.getUpdateResult().getOperationTypes()
+                            : null;
 
-            List<Object> resolutions = resolvedDifferences.stream()
+            List<ResolutionResult> resolutions = resolvedDifferences.stream()
                     .map(diff -> {
-                        Map<String, Object> resolution = new HashMap<>();
                         ResolutionResult resolutionResult = diff.getResolutionResult();
                         if (resolutionResult != null) {
-                            // Convert ResolutionResult to Map using JSON.toJSON
-                            Object jsonObj = JSON.toJSON(resolutionResult);
-                            if (jsonObj instanceof Map) {
-                                resolution.putAll((Map<String, Object>) jsonObj);
-                            }
-                            
                             // Add operation type if available
                             if (operationTypes != null) {
                                 String operationType = operationTypes.get(diff.getRecordId());
                                 if (operationType != null) {
-                                    resolution.put("operationType", operationType);
+                                    resolutionResult.setOperationType(operationType);
                                 }
                             }
-                            
-                            // Add match keys for reference
-                            resolution.put("matchKeyValues", diff.getMatchKeyValues());
-                            resolution.put("recordId", diff.getRecordId());
-                        }
-                        return resolution;
-                    }).collect(Collectors.toList());
 
+                            resolutionResult.setMatchKeyValues(diff.getMatchKeyValues());
+                            resolutionResult.setRecordId(diff.getRecordId());
+                        }
+                        return resolutionResult;
+                    }).collect(Collectors.toList());
             String json = JSON.toJSONString(resolutions, SerializerFeature.PrettyFormat);
             Files.write(filePath, json.getBytes());
             log.info("Resolution results recorded to: {}", filePath);
+            result.setResolutionOutputAbsPath(filePath.toAbsolutePath().normalize().toString());
+            return resolutions;
         } catch (IOException e) {
             log.error("Failed to record resolution results", e);
+            return new ArrayList<>();
         }
     }
 
@@ -228,7 +224,7 @@ public class FileResultRecorder implements ResultRecorder {
             Files.write(filePath, htmlReport.getBytes(StandardCharsets.UTF_8));
             log.info("HTML report generated: {}", filePath);
 
-            return filePath.toString();
+            return filePath.toAbsolutePath().normalize().toString();
         } catch (IOException e) {
             log.error("Failed to generate report", e);
             return null;
@@ -303,7 +299,7 @@ public class FileResultRecorder implements ResultRecorder {
         html.append("<div class=\"metric\"><strong>").append(messages.getMessage("metric.consistent.records")).append(":</strong> ").append(result.getConsistentRecords()).append("</div>\n");
         html.append("<div class=\"metric\"><strong>").append(messages.getMessage("metric.inconsistent.records")).append(":</strong> ").append(result.getInconsistentRecords()).append("</div>\n");
         html.append("<div class=\"metric\"><strong>").append(messages.getMessage("metric.resolved.records")).append(":</strong> ").append(result.getResolvedRecords()).append("</div>\n");
-        
+
         // Add consistency rate
         if (result.getTotalRecords() > 0) {
             double consistencyRate = (double) result.getConsistentRecords() / result.getTotalRecords() * 100;
@@ -311,7 +307,7 @@ public class FileResultRecorder implements ResultRecorder {
         } else {
             html.append("<div class=\"metric\"><strong>").append(messages.getMessage("metric.consistency.rate")).append(":</strong> N/A</div>\n");
         }
-        
+
         // Add update operation statistics if updates were executed
         if (result.getUpdateResult() != null) {
             UpdateResult updateResult = result.getUpdateResult();
@@ -324,15 +320,14 @@ public class FileResultRecorder implements ResultRecorder {
             html.append("<div class=\"metric\"><strong>").append(messages.getMessage("update.delete.count")).append(":</strong> ").append(updateResult.getDeleteCount()).append("</div>\n");
             html.append("<div class=\"metric\"><strong>").append(messages.getMessage("update.skip.count")).append(":</strong> ").append(updateResult.getSkipCount()).append("</div>\n");
         }
-        
-        html.append("</div>\n");
 
+        html.append("</div>\n");
 
 
         if (!differences.isEmpty()) {
             // Differences header
             html.append("<h2>").append(messages.getMessage("report.differences.found", differences.size())).append("</h2>\n");
-            
+
             int maxDisplay = outputConfig != null && outputConfig.getMaxDifferencesToDisplay() != null ? outputConfig.getMaxDifferencesToDisplay() : 100;
             for (int i = 0; i < Math.min(differences.size(), maxDisplay); i++) {
                 DifferenceRecord diff = differences.get(i);
@@ -346,10 +341,10 @@ public class FileResultRecorder implements ResultRecorder {
                 html.append("<p><strong>").append(messages.getMessage("difference.discrepancy.score")).append(":</strong> ").append(String.format("%.2f", diff.getDiscrepancyScore())).append("</p>\n");
 
                 html.append("<h4>").append(messages.getMessage("difference.differences.field")).append("</h4>\n");
-                
+
                 // Build field list: match keys first, then other fields
                 List<String> allFields = new ArrayList<>();
-                
+
                 // Add match keys
                 if (diff.getMatchKeyValues() != null) {
                     for (String key : diff.getMatchKeyValues().keySet()) {
@@ -358,7 +353,7 @@ public class FileResultRecorder implements ResultRecorder {
                         }
                     }
                 }
-                
+
                 // Add all other fields from first source
                 if (diff.getSourceValues() != null && !diff.getSourceValues().isEmpty()) {
                     Map<String, Object> firstSourceValues = diff.getSourceValues().values().iterator().next();
@@ -370,72 +365,72 @@ public class FileResultRecorder implements ResultRecorder {
                         }
                     }
                 }
-                
+
                 if (diff.getSourceValues() != null && !diff.getSourceValues().isEmpty()) {
                     html.append("<table class=\"data-table\">\n");
                     html.append("<thead>\n");
                     html.append("<tr>\n");
-                     html.append("<th>").append(messages.getMessage("difference.data.source")).append("</th>\n");
-                     for (String field : allFields) {
-                         boolean hasDiff = diff.getDifferences() != null && diff.getDifferences().containsKey(field);
-                         html.append("<th");
-                         if (hasDiff) {
-                             html.append(" class=\"field-with-diff-header\"");
-                         }
-                         html.append(">").append(field).append("</th>\n");
-                     }
+                    html.append("<th>").append(messages.getMessage("difference.data.source")).append("</th>\n");
+                    for (String field : allFields) {
+                        boolean hasDiff = diff.getDifferences() != null && diff.getDifferences().containsKey(field);
+                        html.append("<th");
+                        if (hasDiff) {
+                            html.append(" class=\"field-with-diff-header\"");
+                        }
+                        html.append(">").append(field).append("</th>\n");
+                    }
                     html.append("</tr>\n");
                     html.append("</thead>\n");
                     html.append("<tbody>\n");
-                    
+
                     // Data source rows
                     for (Map.Entry<String, Map<String, Object>> entry : diff.getSourceValues().entrySet()) {
                         String sourceId = entry.getKey();
                         Map<String, Object> sourceData = entry.getValue();
-                        
+
                         html.append("<tr>\n");
                         html.append("<td>").append(sourceId).append("</td>\n");
-                        
-                         for (String field : allFields) {
-                             boolean hasDiff = diff.getDifferences() != null && diff.getDifferences().containsKey(field);
-                             html.append("<td");
-                             if (hasDiff) {
-                                 html.append(" class=\"field-with-diff\"");
-                             }
-                             html.append(">");
-                             if (sourceData != null && sourceData.containsKey(field) && sourceData.get(field) != null) {
-                                 html.append(sourceData.get(field).toString());
-                             } else {
-                                 html.append("<em>null</em>");
-                             }
-                             html.append("</td>\n");
-                         }
+
+                        for (String field : allFields) {
+                            boolean hasDiff = diff.getDifferences() != null && diff.getDifferences().containsKey(field);
+                            html.append("<td");
+                            if (hasDiff) {
+                                html.append(" class=\"field-with-diff\"");
+                            }
+                            html.append(">");
+                            if (sourceData != null && sourceData.containsKey(field) && sourceData.get(field) != null) {
+                                html.append(sourceData.get(field).toString());
+                            } else {
+                                html.append("<em>null</em>");
+                            }
+                            html.append("</td>\n");
+                        }
                         html.append("</tr>\n");
                     }
-                    
+
                     // Resolution result row
                     if (diff.getResolutionResult() != null && diff.getResolutionResult().getResolvedValues() != null) {
                         Map<String, Object> resolvedValues = diff.getResolutionResult().getResolvedValues();
                         html.append("<tr class=\"resolution-row\">\n");
                         html.append("<td><strong>").append(messages.getMessage("difference.result.values")).append("</strong></td>\n");
-                        
-                         for (String field : allFields) {
-                             boolean hasDiff = diff.getDifferences() != null && diff.getDifferences().containsKey(field);
-                             html.append("<td");
-                             if (hasDiff) {
-                                 html.append(" class=\"field-with-diff\"");
-                             }
-                             html.append(">");
-                             if (resolvedValues.containsKey(field) && resolvedValues.get(field) != null) {
-                                 html.append("<strong>").append(resolvedValues.get(field).toString()).append("</strong>");
-                             } else {
-                                 html.append("<em>null</em>");
-                             }
-                             html.append("</td>\n");
-                         }
+
+                        for (String field : allFields) {
+                            boolean hasDiff = diff.getDifferences() != null && diff.getDifferences().containsKey(field);
+                            html.append("<td");
+                            if (hasDiff) {
+                                html.append(" class=\"field-with-diff\"");
+                            }
+                            html.append(">");
+                            if (resolvedValues.containsKey(field) && resolvedValues.get(field) != null) {
+                                html.append("<strong>").append(resolvedValues.get(field).toString()).append("</strong>");
+                            } else {
+                                html.append("<em>null</em>");
+                            }
+                            html.append("</td>\n");
+                        }
                         html.append("</tr>\n");
                     }
-                    
+
                     html.append("</tbody>\n");
                     html.append("</table>\n");
                 }
@@ -467,7 +462,7 @@ public class FileResultRecorder implements ResultRecorder {
             UpdateResult updateResult = result.getUpdateResult();
             html.append("<div class=\"update-stats\">\n");
             html.append("<h2>").append(messages.getMessage("update.failure.details")).append(" (").append(updateResult.getFailedUpdates()).append(")</h2>\n");
-            
+
             for (UpdateResult.UpdateFailure failure : updateResult.getFailures()) {
                 html.append("<div class=\"update-failure-item\">\n");
                 html.append("<p><strong>").append(messages.getMessage("difference.record.id")).append(":</strong> ").append(failure.getRecordId()).append("</p>\n");
@@ -529,14 +524,14 @@ public class FileResultRecorder implements ResultRecorder {
 
             Template template = freemarkerConfig.getTemplate("consistency_report.ftl");
 
-             Map<String, Object> data = new HashMap<>();
-             data.put("result", result);
-             data.put("differences", differences);
-             data.put("messages", messages);
-             data.put("dateFormat", dateFormat);
-             data.put("language", language.name());
-             data.put("jsonHelper", new JsonHelper());
-             data.put("outputConfig", outputConfig);
+            Map<String, Object> data = new HashMap<>();
+            data.put("result", result);
+            data.put("differences", differences);
+            data.put("messages", messages);
+            data.put("dateFormat", dateFormat);
+            data.put("language", language.name());
+            data.put("jsonHelper", new JsonHelper());
+            data.put("outputConfig", outputConfig);
 
             StringWriter writer = new StringWriter();
             template.process(data, writer);
@@ -546,7 +541,7 @@ public class FileResultRecorder implements ResultRecorder {
             throw new RuntimeException("Failed to generate HTML report with Freemarker", e);
         }
     }
-    
+
     /**
      * JSON工具类，用于Freemarker模板中转换对象为JSON字符串
      */
@@ -557,14 +552,14 @@ public class FileResultRecorder implements ResultRecorder {
             }
             return JSONObject.toJSONString(obj, SerializerFeature.PrettyFormat);
         }
-        
+
         public String toJsonWithNulls(Object obj) {
             if (obj == null) {
                 return "null";
             }
             return JSONObject.toJSONString(obj, SerializerFeature.WriteMapNullValue);
         }
-        
+
         public String toJson(Object obj) {
             if (obj == null) {
                 return "null";

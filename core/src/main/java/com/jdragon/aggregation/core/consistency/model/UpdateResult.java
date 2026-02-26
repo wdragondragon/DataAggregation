@@ -13,7 +13,7 @@ public class UpdateResult {
 
     private String resultId; // 结果ID，唯一标识符
 
-    private String ruleId; // 规则ID
+    private String id; // ID
 
     private Date executionTime; // 执行时间
 
