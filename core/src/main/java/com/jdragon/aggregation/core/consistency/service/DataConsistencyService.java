@@ -95,7 +95,7 @@ public class DataConsistencyService {
             result.setConsistentRecords(result.getTotalRecords() - differences.size());
             result.setInconsistentRecords(differences.size());
 
-            if (!differences.isEmpty()) {
+            if (!differences.isEmpty() && rule.getConflictResolutionStrategy() != ConflictResolutionStrategy.NO_RESOLVE) {
                 ConflictResolver resolver = ConflictResolverFactory.createResolver(
                         rule.getConflictResolutionStrategy(),
                         rule.getDataSources(),
