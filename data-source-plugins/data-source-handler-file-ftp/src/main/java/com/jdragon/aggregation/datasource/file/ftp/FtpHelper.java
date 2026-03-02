@@ -3,6 +3,7 @@ package com.jdragon.aggregation.datasource.file.ftp;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.file.FileHelper;
+import com.jdragon.aggregation.datasource.file.utils.FileParser;
 import com.jdragon.aggregation.pluginloader.spi.AbstractPlugin;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -95,7 +96,7 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
             LOG.error(message);
             throw AggregationException.asException(FtpHelperErrorCode.FAIL_LOGIN, message, e);
         }
-        return false;
+        return true;
     }
 
     public void login(String host, String username, String password, int port, int timeout,
@@ -262,6 +263,29 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
         } catch (IOException e) {
             throw AggregationException.asException(
                     FtpHelperErrorCode.COMPLETE_PENDING_COMMAND_ERROR, e);
+        }
+    }
+
+    @Override
+    public void readFile(String absPath, String fileType, java.util.function.Consumer<java.util.Map<String, Object>> row) throws IOException {
+        // 从绝对路径中提取目录和文件名
+        int lastSlash = absPath.lastIndexOf('/');
+        String path, name;
+        if (lastSlash >= 0) {
+            path = absPath.substring(0, lastSlash);
+            name = absPath.substring(lastSlash + 1);
+        } else {
+            path = "/";
+            name = absPath;
+        }
+        
+        try (InputStream is = getInputStream(path, name)) {
+            if (is == null) {
+                throw new IOException("Cannot get input stream for file: " + absPath);
+            }
+            
+            FileParser.FileFormat format = FileParser.FileFormat.fromString(fileType);
+            FileParser.parseInputStream(is, format, "UTF-8", row);
         }
     }
 

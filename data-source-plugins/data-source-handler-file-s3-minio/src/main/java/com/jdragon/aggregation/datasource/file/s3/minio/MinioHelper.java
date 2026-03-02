@@ -2,6 +2,7 @@ package com.jdragon.aggregation.datasource.file.s3.minio;
 
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.file.FileHelper;
+import com.jdragon.aggregation.datasource.file.utils.FileParser;
 import com.jdragon.aggregation.pluginloader.spi.AbstractPlugin;
 import io.minio.*;
 import io.minio.messages.Item;
@@ -152,6 +153,31 @@ public class MinioHelper extends AbstractPlugin implements FileHelper {
                 }
             }
         };
+    }
+
+    @Override
+    public void readFile(String absPath, String fileType, java.util.function.Consumer<java.util.Map<String, Object>> row) throws IOException {
+        // 从绝对路径中提取对象名称（MinIO使用对象路径）
+        // absPath格式可能为 "bucket/path/to/file" 或 "/bucket/path/to/file"
+        String objectName = absPath;
+        if (objectName.startsWith("/")) {
+            objectName = objectName.substring(1);
+        }
+
+        try (InputStream is = minioClient.getObject(GetObjectArgs.builder()
+                .bucket(bucketName)
+                .object(objectName)
+                .build())) {
+            if (is == null) {
+                throw new IOException("Cannot get input stream for file: " + absPath);
+            }
+
+            FileParser.FileFormat format =
+                    FileParser.FileFormat.fromString(fileType);
+            FileParser.parseInputStream(is, format, "UTF-8", row);
+        } catch (Exception e) {
+            throw new IOException("Failed to read file: " + absPath, e);
+        }
     }
 
     @Override

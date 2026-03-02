@@ -70,9 +70,9 @@ public class ConsistencyExample {
                         "SELECT user_id, username, age, salary, department, email FROM users_2",
                         1.8, 2),
 
-                createDataSourceConfig("source-3", "数据仓库", "mysql8",
-                        createConnectionConfig("192.168.188.128", "3306", "agg_test", "root", "951753"),
-                        "SELECT user_id, username, age, salary, dept as department, email FROM users_3",
+                createDataSourceConfig("source-3", "数据仓库", "minio",
+                        createFileConfig("http://192.168.188.128:9000", "minioadmin", "minioadmin", "test"),
+                        "/test/users_3.csv",
                         0.9, 3)
         ));
 
@@ -134,6 +134,16 @@ public class ConsistencyExample {
         otherParams.put("useSSL", "false");
         otherParams.put("serverTimezone", "UTC");
         config.set("other", JSONObject.toJSONString(otherParams));
+
+        return config;
+    }
+
+    private static Configuration createFileConfig(String endpoint, String accessKey, String secretKey, String bucket) {
+        Configuration config = Configuration.newDefault();
+        config.set("endpoint", endpoint);
+        config.set("accessKey", accessKey);
+        config.set("secretKey", secretKey);
+        config.set("bucket", bucket);
 
         return config;
     }

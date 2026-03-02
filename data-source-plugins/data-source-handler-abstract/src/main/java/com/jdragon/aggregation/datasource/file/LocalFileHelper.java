@@ -87,7 +87,7 @@ public class LocalFileHelper implements FileHelper {
 
     @Override
     public boolean connect(Configuration configuration) {
-        return false;
+        return true;
     }
 
     public void rmPath(File path) {

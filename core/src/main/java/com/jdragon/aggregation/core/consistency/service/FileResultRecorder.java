@@ -117,36 +117,36 @@ public class FileResultRecorder implements ResultRecorder {
                         simplified.put("missingSources", diff.getMissingSources());
 
                         // Include only inconsistent fields from source values to save space
-                        if (diff.getSourceValues() != null && !diff.getSourceValues().isEmpty()) {
-                            Map<String, Map<String, Object>> inconsistentFields = new HashMap<>();
-                            Set<String> inconsistentFieldNames = diff.getDifferences().keySet();
-
-                            for (Map.Entry<String, Map<String, Object>> sourceEntry : diff.getSourceValues().entrySet()) {
-                                String sourceId = sourceEntry.getKey();
-                                Map<String, Object> sourceVals = sourceEntry.getValue();
-                                Map<String, Object> filteredValues = new HashMap<>();
-
-                                for (String field : inconsistentFieldNames) {
-                                    if (sourceVals.containsKey(field)) {
-                                        filteredValues.put(field, sourceVals.get(field));
-                                    }
-                                }
-
-                                // Also include match key values for context
-                                if (diff.getMatchKeyValues() != null) {
-                                    filteredValues.putAll(diff.getMatchKeyValues());
-                                }
-
-                                if (!filteredValues.isEmpty()) {
-                                    inconsistentFields.put(sourceId, filteredValues);
-                                }
-                            }
-
-                            if (!inconsistentFields.isEmpty()) {
-                                simplified.put("sourceValues", inconsistentFields);
-                                diff.setSourceValues(inconsistentFields);
-                            }
-                        }
+//                        if (diff.getSourceValues() != null && !diff.getSourceValues().isEmpty()) {
+//                            Map<String, Map<String, Object>> inconsistentFields = new HashMap<>();
+//                            Set<String> inconsistentFieldNames = diff.getDifferences().keySet();
+//
+//                            for (Map.Entry<String, Map<String, Object>> sourceEntry : diff.getSourceValues().entrySet()) {
+//                                String sourceId = sourceEntry.getKey();
+//                                Map<String, Object> sourceVals = sourceEntry.getValue();
+//                                Map<String, Object> filteredValues = new HashMap<>();
+//
+//                                for (String field : inconsistentFieldNames) {
+//                                    if (sourceVals.containsKey(field)) {
+//                                        filteredValues.put(field, sourceVals.get(field));
+//                                    }
+//                                }
+//
+//                                // Also include match key values for context
+//                                if (diff.getMatchKeyValues() != null) {
+//                                    filteredValues.putAll(diff.getMatchKeyValues());
+//                                }
+//
+//                                if (!filteredValues.isEmpty()) {
+//                                    inconsistentFields.put(sourceId, filteredValues);
+//                                }
+//                            }
+//
+//                            if (!inconsistentFields.isEmpty()) {
+//                                simplified.put("sourceValues", inconsistentFields);
+//                                diff.setSourceValues(inconsistentFields);
+//                            }
+//                        }
                         return simplified;
                     }).collect(Collectors.toList());
 

@@ -7,6 +7,7 @@ import com.jdragon.aggregation.auth.hdfs.GetKerberosObject;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.file.FileHelper;
 
+import com.jdragon.aggregation.datasource.file.utils.FileParser;
 import com.jdragon.aggregation.pluginloader.spi.AbstractPlugin;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
@@ -171,6 +172,7 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
     @Override
     public void readFile(String absPath, String fileType, Consumer<Map<String, Object>> row) throws IOException {
         if (Objects.equals("parquet", fileType)) {
+            // 使用原有Parquet解析逻辑
             Path path = new Path(absPath);
             try {
                 this.kerberosObject.doAs(() -> {
@@ -195,6 +197,21 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
                 String message = String.format("获取获取SparkSession失败,请检查HDFS地址是否正确: [%s]", "message:defaultFS");
                 LOG.error(message, e);
                 throw new RuntimeException(e);
+            }
+        } else {
+            // 使用通用文件解析器处理CSV、JSON等格式
+            // 从绝对路径中提取目录和文件名
+            Path hdfsPath = new Path(absPath);
+            String parent = hdfsPath.getParent() != null ? hdfsPath.getParent().toString() : "/";
+            String name = hdfsPath.getName();
+            
+            try (InputStream is = getInputStream(parent, name)) {
+                if (is == null) {
+                    throw new IOException("Cannot get input stream for file: " + absPath);
+                }
+                
+                FileParser.FileFormat format = FileParser.FileFormat.fromString(fileType);
+                FileParser.parseInputStream(is, format, "UTF-8", row);
             }
         }
     }

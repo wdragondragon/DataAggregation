@@ -4,6 +4,7 @@ import com.jcraft.jsch.*;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.file.FileHelper;
+import com.jdragon.aggregation.datasource.file.utils.FileParser;
 import com.jdragon.aggregation.pluginloader.spi.AbstractPlugin;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.IOUtils;
@@ -91,7 +92,7 @@ public class SftpHelper extends AbstractPlugin implements FileHelper {
                 }
             }
         }
-        return false;
+        return true;
     }
 
 
@@ -271,6 +272,29 @@ public class SftpHelper extends AbstractPlugin implements FileHelper {
             log.info("current working directory:{}", this.channelSftp.pwd());
         } catch (Exception e) {
             log.warn("printWorkingDirectory error:{}", e.getMessage());
+        }
+    }
+
+    @Override
+    public void readFile(String absPath, String fileType, java.util.function.Consumer<java.util.Map<String, Object>> row) throws IOException {
+        // 从绝对路径中提取目录和文件名
+        int lastSlash = absPath.lastIndexOf('/');
+        String path, name;
+        if (lastSlash >= 0) {
+            path = absPath.substring(0, lastSlash);
+            name = absPath.substring(lastSlash + 1);
+        } else {
+            path = "/";
+            name = absPath;
+        }
+
+        try (InputStream is = getInputStream(path, name)) {
+            if (is == null) {
+                throw new IOException("Cannot get input stream for file: " + absPath);
+            }
+
+            FileParser.FileFormat format = FileParser.FileFormat.fromString(fileType);
+            FileParser.parseInputStream(is, format, "UTF-8", row);
         }
     }
 

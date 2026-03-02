@@ -33,6 +33,7 @@
         <module>data-source-handler-odps</module>
         <module>data-source-handler-influxdb</module>
         <module>data-source-handler-influxdbv1</module>
+        <module>data-source-handler-file-utils</module>
     </modules>
 
     <properties>
