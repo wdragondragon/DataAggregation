@@ -81,7 +81,8 @@ public class UpdateExecutor {
                 // For UPDATE operations, check if target already has same values to avoid unnecessary updates
                 if (operationType == OperationType.UPDATE && skipUnchangedUpdates) {
                     try {
-                        Map<String, Object> targetCurrentValues = fetchTargetCurrentValues(plugin, dto, targetDataSource, diff, matchKeys, fieldMappings);
+//                        Map<String, Object> targetCurrentValues = fetchTargetCurrentValues(plugin, dto, targetDataSource, diff, matchKeys, fieldMappings);
+                        Map<String, Object> targetCurrentValues = diff.getSourceValues().get(targetDataSource.getSourceId());
                         Map<String, Object> resolvedValues = diff.getResolutionResult().getResolvedValues();
                         Map<String, Object> matchKeyValues = diff.getMatchKeyValues();
                         

@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.HashSet;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class DataConsistencyService {
@@ -75,6 +76,14 @@ public class DataConsistencyService {
 
             Map<String, List<Map<String, Object>>> sourceData =
                     fetcher.fetchDataFromSources(rule.getDataSources());
+
+            Map<String, Number> sourceDataCount = sourceData.entrySet()
+                    .stream()
+                    .collect(Collectors.toMap(
+                            Map.Entry::getKey,
+                            e -> e.getValue() == null ? 0L : (long) e.getValue().size()
+                    ));
+            result.setSourceDataCount(sourceDataCount);
 
             Map<String, Map<String, List<Map<String, Object>>>> groupedData =
                     fetcher.groupByMatchKeys(sourceData, rule.getMatchKeys());

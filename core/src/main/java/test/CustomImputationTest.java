@@ -7,6 +7,8 @@ import com.jdragon.aggregation.core.plugin.PluginType;
 import com.jdragon.aggregation.core.plugin.RecordSender;
 import com.jdragon.aggregation.core.plugin.Transformer;
 import com.jdragon.aggregation.core.plugin.spi.Reader;
+import com.jdragon.aggregation.core.statistics.communication.Communication;
+import com.jdragon.aggregation.core.statistics.communication.RunStatus;
 import com.jdragon.aggregation.core.transport.record.DefaultRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
