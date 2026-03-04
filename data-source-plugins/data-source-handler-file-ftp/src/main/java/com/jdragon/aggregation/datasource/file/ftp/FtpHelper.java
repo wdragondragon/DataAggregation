@@ -18,6 +18,7 @@ import java.io.OutputStream;
 import java.net.UnknownHostException;
 import java.nio.charset.Charset;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -267,7 +268,7 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
     }
 
     @Override
-    public void readFile(String absPath, String fileType, java.util.function.Consumer<java.util.Map<String, Object>> row) throws IOException {
+    public void readFile(String absPath, String fileType, java.util.function.Consumer<java.util.Map<String, Object>> row, Configuration options) throws IOException {
         // 从绝对路径中提取目录和文件名
         int lastSlash = absPath.lastIndexOf('/');
         String path, name;
@@ -285,7 +286,7 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
             }
             
             FileParser.FileFormat format = FileParser.FileFormat.fromString(fileType);
-            FileParser.parseInputStream(is, format, "UTF-8", row);
+            FileParser.parseInputStream(is, format, "UTF-8", row, options);
         }
     }
 

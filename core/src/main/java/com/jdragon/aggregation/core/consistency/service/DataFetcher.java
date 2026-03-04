@@ -176,7 +176,7 @@ public class DataFetcher {
                 if (maxRecords != null && maxRecords > 0 && recordCount.incrementAndGet() >= maxRecords) {
                     throw new RecordLimitReachedException();
                 }
-            });
+            }, config.getExtConfig());
 
             log.info("Fetched {} records from file source: {}", results.size(), config.getSourceName());
             return results;
@@ -235,7 +235,7 @@ public class DataFetcher {
     private String getFileType(DataSourceConfig config, String filePath) {
         // 从配置中获取文件格式
         if (config.getConnectionConfig() != null) {
-            String format = config.getConnectionConfig().getString("file.format");
+            String format = config.getExtConfig().getString("file.format");
             if (format != null && !format.trim().isEmpty()) {
                 return format.trim().toLowerCase();
             }

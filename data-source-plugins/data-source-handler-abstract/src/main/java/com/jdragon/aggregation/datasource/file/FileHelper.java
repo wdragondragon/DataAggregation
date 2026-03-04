@@ -5,6 +5,7 @@ import com.jdragon.aggregation.commons.util.Configuration;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -63,6 +64,10 @@ public interface FileHelper extends AutoCloseable {
     }
 
     default void readFile(String absPath, String fileType, Consumer<Map<String, Object>> row) throws IOException {
+        readFile(absPath, fileType, row, Configuration.newDefault());
+    }
+
+    default void readFile(String absPath, String fileType, Consumer<Map<String, Object>> row, Configuration options) throws IOException {
         throw new UnsupportedOperationException("Not implemented yet");
     }
 

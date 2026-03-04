@@ -12,6 +12,7 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.io.*;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -154,14 +155,14 @@ public class AliyunOssHelper extends AbstractPlugin implements FileHelper {
     }
 
     @Override
-    public void readFile(String absPath, String fileType, java.util.function.Consumer<java.util.Map<String, Object>> row) throws IOException {
+    public void readFile(String absPath, String fileType, java.util.function.Consumer<java.util.Map<String, Object>> row, Configuration options) throws IOException {
         // 从绝对路径中提取对象名称（OSS使用对象路径）
         // absPath格式可能为 "bucket/path/to/file" 或 "/bucket/path/to/file"
         String objectName = absPath;
         if (objectName.startsWith("/")) {
             objectName = objectName.substring(1);
         }
-        
+
         // 如果路径包含bucket名称，需要分离
         String targetBucket = bucketName;
         if (objectName.contains("/")) {
@@ -169,15 +170,15 @@ public class AliyunOssHelper extends AbstractPlugin implements FileHelper {
             targetBucket = objectName.substring(0, firstSlash);
             objectName = objectName.substring(firstSlash + 1);
         }
-        
+
         try (InputStream is = ossClient.getObject(targetBucket, objectName).getObjectContent()) {
             if (is == null) {
                 throw new IOException("Cannot get input stream for file: " + absPath);
             }
-            
+
             FileParser.FileFormat format =
                 FileParser.FileFormat.fromString(fileType);
-            FileParser.parseInputStream(is, format, "UTF-8", row);
+            FileParser.parseInputStream(is, format, "UTF-8", row, options);
         } catch (Exception e) {
             throw new IOException("Failed to read file: " + absPath, e);
         }

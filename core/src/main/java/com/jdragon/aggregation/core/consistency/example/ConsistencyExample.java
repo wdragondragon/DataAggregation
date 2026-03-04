@@ -7,6 +7,7 @@ import com.jdragon.aggregation.core.consistency.service.DataConsistencyService;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -63,17 +64,17 @@ public class ConsistencyExample {
                 createDataSourceConfig("source-1", "主数据库", "mysql8",
                         createConnectionConfig("192.168.188.128", "3306", "agg_test", "root", "951753"),
                         "SELECT user_id, username, age, salary, department, email FROM users_1",
-                        1.0, 1),
+                        1.0, 1, Configuration.newDefault()),
 
                 createDataSourceConfig("source-2", "备份数据库", "mysql8",
                         createConnectionConfig("192.168.188.128", "3306", "agg_test", "root", "951753"),
                         "SELECT user_id, username, age, salary, department, email FROM users_2",
-                        1.8, 2),
+                        1.8, 2, Configuration.newDefault()),
 
                 createDataSourceConfig("source-3", "数据仓库", "minio",
                         createFileConfig("http://192.168.188.128:9000", "minioadmin", "minioadmin", "test"),
-                        "/test/users_3.csv",
-                        0.9, 3)
+                        "/test/users_3.txt",
+                        0.9, 3, Configuration.from(Collections.singletonMap("file.format", "efile")))
         ));
 
         Map<String, Object> resolutionParams = new HashMap<>();
@@ -97,7 +98,7 @@ public class ConsistencyExample {
     private static DataSourceConfig createDataSourceConfig(
             String sourceId, String sourceName, String pluginName,
             Configuration connectionConfig, String querySql,
-            double confidenceWeight, int priority) {
+            double confidenceWeight, int priority, Configuration extConfig) {
 
         DataSourceConfig config = new DataSourceConfig();
         config.setSourceId(sourceId);
@@ -107,6 +108,7 @@ public class ConsistencyExample {
         config.setQuerySql(querySql);
         config.setConfidenceWeight(confidenceWeight);
         config.setPriority(priority);
+        config.setExtConfig(extConfig);
 
         Map<String, String> fieldMappings = new HashMap<>();
         if ("source-1".equals(sourceId)) {

@@ -28,6 +28,8 @@ public class DataSourceConfig {
 
     private Map<String, String> fieldMappings; // 字段映射关系
 
+    private Configuration extConfig; // 额外的读取参数
+
     private Boolean updateTarget = false; // 是否为更新目标数据源
 
     public static DataSourceConfig fromConfig(Configuration config) {

@@ -170,7 +170,7 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
     }
 
     @Override
-    public void readFile(String absPath, String fileType, Consumer<Map<String, Object>> row) throws IOException {
+    public void readFile(String absPath, String fileType, Consumer<Map<String, Object>> row, Configuration options) throws IOException {
         if (Objects.equals("parquet", fileType)) {
             // 使用原有Parquet解析逻辑
             Path path = new Path(absPath);
@@ -211,7 +211,7 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
                 }
                 
                 FileParser.FileFormat format = FileParser.FileFormat.fromString(fileType);
-                FileParser.parseInputStream(is, format, "UTF-8", row);
+                FileParser.parseInputStream(is, format, "UTF-8", row, options);
             }
         }
     }

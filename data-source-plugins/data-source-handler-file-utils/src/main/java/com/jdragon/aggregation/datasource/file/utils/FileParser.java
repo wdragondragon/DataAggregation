@@ -3,6 +3,10 @@ package com.jdragon.aggregation.datasource.file.utils;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.jdragon.aggregation.commons.util.Configuration;
+import com.jdragon.aggregation.datasource.file.utils.efile.EFile;
+import com.jdragon.aggregation.datasource.file.utils.efile.EFileTableInfo;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
@@ -21,22 +25,19 @@ import java.util.stream.Collectors;
 
 /**
  * 通用文件解析器
- * 支持CSV、JSON、JSONL格式的文件解析
+ * 支持CSV、JSON、JSONL、EFile格式的文件解析
  */
 @Slf4j
 public class FileParser {
 
+    @Getter
     public enum FileFormat {
-        CSV("csv"), JSON("json"), JSONL("jsonl"), PARQUET("parquet"), AVRO("avro"), XML("xml");
+        CSV("csv"), JSON("json"), JSONL("jsonl"), PARQUET("parquet"), AVRO("avro"), XML("xml"), EFILE("efile");
 
         private final String value;
 
         FileFormat(String value) {
             this.value = value;
-        }
-
-        public String getValue() {
-            return value;
         }
 
         public static FileFormat fromString(String format) {
@@ -62,6 +63,8 @@ public class FileParser {
                 return AVRO;
             } else if (lower.endsWith(".xml")) {
                 return XML;
+            } else if (lower.endsWith(".efile")) {
+                return EFILE;
             }
             return CSV; // 默认CSV格式
         }
@@ -71,13 +74,13 @@ public class FileParser {
      * 解析输入流中的文件数据
      */
     public static void parseInputStream(InputStream is, FileFormat format, String encoding, Consumer<Map<String, Object>> rowConsumer) throws IOException {
-        parseInputStream(is, format, encoding, rowConsumer, new LinkedHashMap<>());
+        parseInputStream(is, format, encoding, rowConsumer, Configuration.newDefault());
     }
 
     /**
      * 解析输入流中的文件数据（带配置选项）
      */
-    public static void parseInputStream(InputStream is, FileFormat format, String encoding, Consumer<Map<String, Object>> rowConsumer, Map<String, Object> options) throws IOException {
+    public static void parseInputStream(InputStream is, FileFormat format, String encoding, Consumer<Map<String, Object>> rowConsumer, Configuration options) throws IOException {
         if (is == null) {
             throw new IllegalArgumentException("InputStream cannot be null");
         }
@@ -92,6 +95,9 @@ public class FileParser {
             case JSONL:
                 parseJsonLinesStream(is, encoding, rowConsumer, options);
                 break;
+            case EFILE:
+                parseEFileStream(is, encoding, rowConsumer, options);
+                break;
             default:
                 throw new UnsupportedOperationException("Unsupported file format: " + format);
         }
@@ -101,13 +107,13 @@ public class FileParser {
      * 解析本地文件
      */
     public static void parseFile(File file, FileFormat format, String encoding, Consumer<Map<String, Object>> rowConsumer) throws IOException {
-        parseFile(file, format, encoding, rowConsumer, null);
+        parseFile(file, format, encoding, rowConsumer, Configuration.newDefault());
     }
 
     /**
      * 解析本地文件（带配置选项）
      */
-    public static void parseFile(File file, FileFormat format, String encoding, Consumer<Map<String, Object>> rowConsumer, Map<String, Object> options) throws IOException {
+    public static void parseFile(File file, FileFormat format, String encoding, Consumer<Map<String, Object>> rowConsumer, Configuration options) throws IOException {
         if (!file.exists() || !file.isFile()) {
             throw new IOException("File does not exist or is not a file: " + file.getAbsolutePath());
         }
@@ -120,12 +126,12 @@ public class FileParser {
     /**
      * 解析CSV流
      */
-    private static void parseCsvStream(InputStream is, String encoding, Consumer<Map<String, Object>> rowConsumer, Map<String, Object> options) throws IOException {
-        boolean hasHeader = Boolean.parseBoolean(String.valueOf(options.getOrDefault("hasHeader", "true")));
-        String delimiter = options.getOrDefault("delimiter", ",").toString();
-        String nullFormat = options.getOrDefault("nullFormat", "\\N").toString();
+    private static void parseCsvStream(InputStream is, String encoding, Consumer<Map<String, Object>> rowConsumer, Configuration options) throws IOException {
+        boolean hasHeader = options.getBool("hasHeader", true);
+        String delimiter = options.getString("delimiter", ",");
+        String nullFormat = options.getString("nullFormat", "\\N");
         Charset charset = Charset.forName(encoding != null ? encoding : "UTF-8");
-        Character fieldQuote = CharUtils.toChar(options.getOrDefault("fieldQuote", "\"").toString());
+        Character fieldQuote = options.getChar("fieldQuote", '\"');
 
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, charset))) {
             CSVParser csvParser;
@@ -155,7 +161,7 @@ public class FileParser {
     /**
      * 解析JSON流
      */
-    private static void parseJsonStream(InputStream is, String encoding, Consumer<Map<String, Object>> rowConsumer, Map<String, Object> options) throws IOException {
+    private static void parseJsonStream(InputStream is, String encoding, Consumer<Map<String, Object>> rowConsumer, Configuration options) throws IOException {
         Charset charset = Charset.forName(encoding != null ? encoding : "UTF-8");
 
         String jsonContent = IOUtils.toString(is, charset).trim();
@@ -183,7 +189,7 @@ public class FileParser {
     /**
      * 解析JSON Lines流
      */
-    private static void parseJsonLinesStream(InputStream is, String encoding, Consumer<Map<String, Object>> rowConsumer, Map<String, Object> options) throws IOException {
+    private static void parseJsonLinesStream(InputStream is, String encoding, Consumer<Map<String, Object>> rowConsumer, Configuration options) throws IOException {
         Charset charset = Charset.forName(encoding != null ? encoding : "UTF-8");
 
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, charset))) {
@@ -240,5 +246,36 @@ public class FileParser {
             }
         }
         return list;
+    }
+
+    /**
+     * 解析EFile流
+     */
+    private static void parseEFileStream(InputStream is, String encoding, Consumer<Map<String, Object>> rowConsumer, Configuration options) throws IOException {
+        String dataType = options.getString("dataType");
+        List<String> dataTag = options.getList("dataTag", String.class);
+        try {
+            // 使用EFileUtil解析
+            EFileUtil eFileUtil = new EFileUtil();
+            EFile eFile = eFileUtil.parseEFile(is, dataType, dataTag);
+            List<EFile.EFileDetail> parsedData = eFile.getEFileDetails();
+            // 将解析结果转换为行数据
+            for (EFile.EFileDetail tableBlock : parsedData) {
+                List<String> columns = tableBlock.getColumn();
+                List<List<String>> dataRows = tableBlock.getData();
+                // 处理数据行
+                for (List<String> rowData : dataRows) {
+                    Map<String, Object> rowMap = new LinkedHashMap<>();
+                    for (int i = 0; i < columns.size(); i++) {
+                        String columnName = columns.get(i);
+                        String value = rowData.get(i);
+                        rowMap.put(columnName, value);
+                    }
+                    rowConsumer.accept(rowMap);
+                }
+            }
+        } catch (Exception e) {
+            throw new IOException("EFile解析失败: " + e.getMessage(), e);
+        }
     }
 }
