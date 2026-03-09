@@ -1,0 +1,6 @@
+{
+  "name": "consolereader",
+  "class": "com.jdragon.aggregation.reader.console.ConsoleReader",
+  "description": "consolereader",
+  "developer": "jdragon"
+}

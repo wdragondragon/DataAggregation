@@ -73,8 +73,8 @@ public class ConsistencyExample {
 
                 createDataSourceConfig("source-3", "数据仓库", "minio",
                         createFileConfig("http://192.168.188.128:9000", "minioadmin", "minioadmin", "test"),
-                        "/test/users_3.txt",
-                        0.9, 3, Configuration.from(Collections.singletonMap("file.format", "efile")))
+                        "/test/users_3.csv",
+                        0.9, 3, Configuration.from(Collections.singletonMap("file.format", "csv")))
         ));
 
         Map<String, Object> resolutionParams = new HashMap<>();

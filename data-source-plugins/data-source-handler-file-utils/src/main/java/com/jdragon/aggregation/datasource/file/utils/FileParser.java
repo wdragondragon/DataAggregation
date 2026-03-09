@@ -135,13 +135,37 @@ public class FileParser {
 
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, charset))) {
             CSVParser csvParser;
-            CSVFormat build = CSVFormat.DEFAULT.builder().setNullString(nullFormat).setDelimiter(delimiter).setQuote(fieldQuote).build();
-            csvParser = new CSVParser(reader, build);
+            // 兼容Apache Commons CSV 1.8 API
+            CSVFormat format = CSVFormat.DEFAULT;
+
+            // 设置分隔符
+            if (delimiter != null && !delimiter.isEmpty()) {
+                if (delimiter.equals("\\t")) {
+                    format = format.withDelimiter('\t');
+                } else {
+                    format = format.withDelimiter(delimiter.charAt(0));
+                }
+            }
+
+            // 设置引号字符
+            if (fieldQuote != null) {
+                format = format.withQuote(fieldQuote);
+            }
+
+            // 设置空值字符串
+            if (nullFormat != null) {
+                format = format.withNullString(nullFormat);
+            }
+
+            csvParser = new CSVParser(reader, format);
             List<String> header = new ArrayList<>();
-            if (hasHeader) {
+            if (hasHeader && csvParser.iterator().hasNext()) {
                 CSVRecord next = csvParser.iterator().next();
-                header = next.stream().collect(Collectors.toList());
-                log.info("Header line {} has been skiped.", JSONObject.toJSONString(header));
+                // 兼容CSV 1.8 API，手动提取header值
+                for (int i = 0; i < next.size(); i++) {
+                    header.add(next.get(i));
+                }
+                log.info("Header line {} has been skipped.", JSONObject.toJSONString(header));
             }
             for (CSVRecord record : csvParser) {
                 Map<String, Object> data = new LinkedHashMap<>(record.size());
@@ -252,7 +276,7 @@ public class FileParser {
      * 解析EFile流
      */
     private static void parseEFileStream(InputStream is, String encoding, Consumer<Map<String, Object>> rowConsumer, Configuration options) throws IOException {
-        String dataType = options.getString("dataType");
+        String dataType = options.getString("dataType", null);
         List<String> dataTag = options.getList("dataTag", String.class);
         try {
             // 使用EFileUtil解析
