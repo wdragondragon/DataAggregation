@@ -1,0 +1,3 @@
+[submodule "data-aggregation-skills"]
+	path = data-aggregation-skills
+	url = https://github.com/wdragondragon/data-aggregation-skills.git
