@@ -143,10 +143,23 @@ public class JobContainer {
         String taskCollectorClass = configuration.getString(Key.COLLECTOR_CLASS,
                 "com.jdragon.aggregation.core.plugin.StdoutPluginCollector");
 
-        List<TransformerExecution> transformerExecutions = TransformerUtil.buildTransformerInfo(configuration, customTransformers);
+        List<TransformerExecution> transformerExecutions;
+        try {
+            transformerExecutions = TransformerUtil.buildTransformerInfo(configuration, customTransformers);
+        } catch (Exception e) {
+            throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "transformer init error", e);
+        }
 
-        readerJobPlugin = initJobPlugin(PluginType.READER, readerType, readerConfiguration, writerConfiguration);
-        writerJobPlugin = initJobPlugin(PluginType.WRITER, writerType, writerConfiguration, readerConfiguration);
+        try {
+            readerJobPlugin = initJobPlugin(PluginType.READER, readerType, readerConfiguration, writerConfiguration);
+        } catch (Exception e) {
+            throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "reader job plugin init error", e);
+        }
+        try {
+            writerJobPlugin = initJobPlugin(PluginType.WRITER, writerType, writerConfiguration, readerConfiguration);
+        } catch (Exception e) {
+            throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "writer job plugin init error", e);
+        }
 
         readerThread = initExecThread(jobId, readerJobPlugin, transformerExecutions, taskCollectorClass, jobCommunication, channel, jobPointReporter);
         writerThread = initExecThread(jobId, writerJobPlugin, transformerExecutions, taskCollectorClass, jobCommunication, channel, jobPointReporter);
