@@ -1,0 +1,123 @@
+{
+  "reader": {
+    "type": "fusion",
+    "config": {
+      "sources": [
+        {
+          "id": "fusion_1",
+          "name": "基础信息",
+          "type": "mysql8",
+          "config": {
+            "host": "192.168.188.128",
+            "port": 3306,
+            "database": "agg_test",
+            "userName": "root",
+            "password": "951753",
+            "other": "{\"rewriteBatchedStatements\":true}",
+            "usePool": true,
+            "extraParams": {}
+          },
+          "weight": 1.0,
+          "priority": 10,
+          "confidence": 0.9,
+          "isPrimary": true,
+          "fieldMappings": {},
+          "querySql": "select * from fusion_1"
+        },
+        {
+          "id": "fusion_2",
+          "name": "额外信息",
+          "type": "mysql8",
+          "config": {
+            "host": "192.168.188.128",
+            "port": 3306,
+            "database": "agg_test",
+            "userName": "root",
+            "password": "951753",
+            "other": "{\"rewriteBatchedStatements\":true}",
+            "usePool": true,
+            "extraParams": {}
+          },
+          "weight": 1.5,
+          "priority": 5,
+          "confidence": 0.8,
+          "fieldMappings": {},
+          "querySql": "select * from fusion_2"
+        }
+      ],
+      "join": {
+        "keys": [
+          "user_id"
+        ],
+        "type": "LEFT"
+      },
+      "fieldMappings": [
+        {
+          "type": "DIRECT",
+          "sourceField": "fusion_1.user_id",
+          "targetField": "user_id"
+        },
+        {
+          "type": "DIRECT",
+          "sourceField": "fusion_1.username",
+          "targetField": "username"
+        },
+        {
+          "type": "DIRECT",
+          "sourceField": "fusion_1.age",
+          "targetField": "age"
+        },
+        {
+          "type": "DIRECT",
+          "sourceField": "fusion_2.salary",
+          "targetField": "salary"
+        },
+        {
+          "type": "DIRECT",
+          "sourceField": "fusion_2.department",
+          "targetField": "dept"
+        },
+        {
+          "type": "DIRECT",
+          "sourceField": "fusion_2.email",
+          "targetField": "email"
+        }
+      ],
+      "errorMode": "LENIENT",
+      "cache": {
+        "enabled": true,
+        "maxSize": 10000,
+        "type": "memory"
+      },
+      "performance": {
+        "batchSize": 1000,
+        "parallelSourceCount": 2
+      }
+    }
+  },
+  "writer": {
+    "type": "mysql8",
+    "config": {
+      "connect": {
+        "host": "192.168.188.128",
+        "port": 3306,
+        "database": "agg_test",
+        "userName": "root",
+        "password": "951753",
+        "other": "{\"rewriteBatchedStatements\":true}",
+        "usePool": true,
+        "extraParams": {}
+      },
+      "table": "fusion_3",
+      "columns": [
+        "user_id",
+        "username",
+        "age",
+        "salary",
+        "dept",
+        "email"
+      ],
+      "writeMode": "update"
+    }
+  }
+}

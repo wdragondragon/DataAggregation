@@ -64,7 +64,7 @@ public class DataSourcePluginManager {
             dto.setHost(config.getConnectionConfig().getString("host"));
             dto.setPort(config.getConnectionConfig().getString("port"));
             dto.setDatabase(config.getConnectionConfig().getString("database"));
-            dto.setUserName(config.getConnectionConfig().getString("username"));
+            dto.setUserName(config.getConnectionConfig().getString("username", config.getConnectionConfig().getString("userName")));
             dto.setPassword(config.getConnectionConfig().getString("password"));
             String other = config.getConnectionConfig().getString("other");
             if (other != null) {

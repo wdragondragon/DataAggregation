@@ -225,11 +225,8 @@ public class JobContainer {
     private AbstractJobPlugin initJobPlugin(PluginType pluginType, String pluginName,
                                             Configuration configuration, Configuration peerConfiguration) {
         AbstractJobPlugin jobPlugin;
-        if ("custom".equalsIgnoreCase(pluginName)) {
-            if (!customJobPlugins.containsKey(pluginType)) {
-                throw AggregationException.asException(pluginType + "类型custom插件未注册");
-            }
-            jobPlugin = (AbstractJobPlugin) customJobPlugins.get(pluginType).createJobPlugin(configuration, peerConfiguration);
+        if (customJobPlugins.containsKey(pluginType)) {
+            jobPlugin = customJobPlugins.get(pluginType).createJobPlugin(configuration, peerConfiguration);
 
             if (jobPlugin.getClassLoader() == null) {
                 jobPlugin.setClassLoader(Thread.currentThread().getContextClassLoader());

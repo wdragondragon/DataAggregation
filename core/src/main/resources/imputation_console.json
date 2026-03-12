@@ -1,0 +1,40 @@
+{
+  "reader": {
+    "type": "custom",
+    "config": {}
+  },
+  "writer": {
+    "type": "consolewriter",
+    "config": {}
+  },
+  "transformer": [
+    {
+      "name": "dx_imputation",
+      "parameter": {
+        "columnIndex": 1,
+        "paras": ["constant", "Unknown"]
+      }
+    },
+    {
+      "name": "dx_imputation",
+      "parameter": {
+        "columnIndex": 2,
+        "paras": ["constant", "25"]
+      }
+    },
+    {
+      "name": "dx_imputation",
+      "parameter": {
+        "columnIndex": 3,
+        "paras": ["mean", "5500.0"]
+      }
+    },
+    {
+      "name": "dx_imputation",
+      "parameter": {
+        "columnIndex": 4,
+        "paras": ["constant", "DefaultDept"]
+      }
+    }
+  ]
+}

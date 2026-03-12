@@ -1,0 +1,94 @@
+{
+  "sources": [
+    {
+      "id": "source1",
+      "name": "MySQL用户数据",
+      "type": "mysql5",
+      "config": {
+        "host": "localhost",
+        "port": 3306,
+        "database": "user_db",
+        "username": "root",
+        "password": "password",
+        "table": "users"
+      },
+      "weight": 1.0,
+      "priority": 10,
+      "confidence": 0.9,
+      "isPrimary": true,
+      "fieldMappings": {
+        "user_id": "userId",
+        "user_name": "userName",
+        "age": "age"
+      }
+    },
+    {
+      "id": "source2", 
+      "name": "MySQL订单数据",
+      "type": "mysql5",
+      "config": {
+        "host": "localhost",
+        "port": 3306,
+        "database": "order_db",
+        "username": "root",
+        "password": "password",
+        "table": "orders"
+      },
+      "weight": 1.5,
+      "priority": 5,
+      "confidence": 0.8,
+      "fieldMappings": {
+        "user_id": "userId",
+        "order_id": "orderId",
+        "amount": "amount"
+      }
+    }
+  ],
+  "joinKeys": ["userId"],
+  "joinType": "LEFT",
+  "fieldMappings": [
+    {
+      "type": "DIRECT",
+      "targetField": "userId",
+      "sourceField": "userId"
+    },
+    {
+      "type": "DIRECT",
+      "targetField": "userName",
+      "sourceField": "userName"
+    },
+    {
+      "type": "DIRECT",
+      "targetField": "age",
+      "sourceField": "age"
+    },
+    {
+      "type": "DIRECT",
+      "targetField": "orderId",
+      "sourceField": "orderId"
+    },
+    {
+      "type": "EXPRESSION",
+      "targetField": "totalAmount",
+      "expression": "amount * 1.1",
+      "resultType": "DOUBLE",
+      "strategy": "WEIGHTED_AVERAGE"
+    }
+  ],
+  "defaultStrategy": "PRIORITY",
+  "strategies": {
+    "fieldOverrides": {
+      "totalAmount": "WEIGHTED_AVERAGE"
+    }
+  },
+  "errorMode": "LENIENT",
+  "cache": {
+    "type": "memory",
+    "maxSize": 50000
+  },
+  "performance": {
+    "batchSize": 1000,
+    "parallelSourceCount": 2,
+    "enableLazyLoading": true
+  }
+}
