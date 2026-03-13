@@ -39,9 +39,14 @@ public class DirectFieldMapping extends FieldMapping {
     public Column map(Map<String, Map<String, Column>> sourceValues, FusionContext context) {
         try {
             // 解析源字段引用：支持两种格式：
-            // 1. sourceId.fieldName - 明确源，直接取值
-            // 2. fieldName - 模糊源，从所有数据源收集值并应用融合策略
-            String[] parts = sourceField.split("\\.");
+            // 1. ${sourceId.fieldName} - 明确源，直接取值
+            // 2. ${fieldName} - 模糊源，从所有数据源收集值并应用融合策略
+            // 去除 ${} 包装
+            String fieldRef = sourceField;
+            if (fieldRef.startsWith("${") && fieldRef.endsWith("}")) {
+                fieldRef = fieldRef.substring(2, fieldRef.length() - 1);
+            }
+            String[] parts = fieldRef.split("\\.");
 
             if (parts.length == 2) {
                 // 明确源：直接取值
@@ -121,10 +126,15 @@ public class DirectFieldMapping extends FieldMapping {
             throw new IllegalArgumentException("源字段不能为空");
         }
 
-        // 检查源字段格式：支持 sourceId.fieldName 或 fieldName
-        String[] parts = sourceField.split("\\.");
+        // 检查源字段格式：支持 ${sourceId.fieldName} 或 ${fieldName}
+        // 去除 ${} 包装
+        String fieldRef = sourceField;
+        if (fieldRef.startsWith("${") && fieldRef.endsWith("}")) {
+            fieldRef = fieldRef.substring(2, fieldRef.length() - 1);
+        }
+        String[] parts = fieldRef.split("\\.");
         if (parts.length < 1 || parts.length > 2) {
-            throw new IllegalArgumentException("源字段格式错误，应为 sourceId.fieldName 或 fieldName: " + sourceField);
+            throw new IllegalArgumentException("源字段格式错误，应为 ${sourceId.fieldName} 或 ${fieldName}: " + sourceField);
         }
 
         // 检查字段名

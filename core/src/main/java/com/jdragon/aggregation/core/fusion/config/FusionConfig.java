@@ -234,7 +234,12 @@ public class FusionConfig {
         String sourceField = mapping.getSourceField();
         if (sourceField == null) return;
         
-        String[] parts = sourceField.split("\\.");
+        // 去除 ${} 包装
+        String fieldRef = sourceField;
+        if (fieldRef.startsWith("${") && fieldRef.endsWith("}")) {
+            fieldRef = fieldRef.substring(2, fieldRef.length() - 1);
+        }
+        String[] parts = fieldRef.split("\\.");
         if (parts.length == 2) {
             // 格式: sourceId.fieldName
             String sourceId = parts[0];

@@ -2,6 +2,8 @@ package com.jdragon.aggregation.datasource.rdbms;
 
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.TypeReference;
+import com.jdragon.aggregation.commons.element.*;
+import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.pagination.Table;
 import com.jdragon.aggregation.datasource.*;
 import lombok.Getter;
@@ -9,7 +11,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.calcite.adapter.jdbc.JdbcSchema;
 import org.apache.commons.lang3.StringUtils;
 
+import java.io.BufferedReader;
 import java.sql.*;
+import java.sql.Date;
 import java.text.DecimalFormat;
 import java.text.MessageFormat;
 import java.text.SimpleDateFormat;
@@ -198,14 +202,14 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
             ResultSetMetaData metaData = resultSet.getMetaData();
             int columnCount = metaData.getColumnCount();
             while (resultSet.next()) {
-                Map<String, Object> mapOfColValues = new HashMap<>();
-                for (int i = 1; i <= columnCount; i++) {
-                    String columnName = metaData.getColumnLabel(i);
-                    Object value = resultSet.getObject(columnName);
-                    value = resultSetToObject(value);
-                    String fieldName = columnLabel ? metaData.getColumnLabel(i) : metaData.getColumnName(i);
-                    mapOfColValues.put(fieldName, value);
-                }
+                Map<String, Object> mapOfColValues = buildRecord(resultSet, metaData, columnCount, dataSource.getExtraParams().getOrDefault("mandatoryEncoding", "utf-8"), columnLabel);
+//                for (int i = 1; i <= columnCount; i++) {
+//                    String columnName = metaData.getColumnLabel(i);
+//                    Object value = resultSet.getObject(columnName);
+//                    value = resultSetToObject(value);
+//                    String fieldName = columnLabel ? metaData.getColumnLabel(i) : metaData.getColumnName(i);
+//                    mapOfColValues.put(fieldName, value);
+//                }
                 resultList.add(mapOfColValues);
             }
             //设置表头
@@ -222,6 +226,137 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
         }
         table.setBodies(resultList);
         return table;
+    }
+
+    protected Map<String, Object> buildRecord(ResultSet rs, ResultSetMetaData metaData, int columnNumber, String mandatoryEncoding, boolean columnLabel) {
+        Map<String, Object> record = new HashMap<>();
+        try {
+            for (int i = 1; i <= columnNumber; i++) {
+                addRecord(rs, metaData, i, record, mandatoryEncoding, columnLabel);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e.getMessage());
+        }
+        return record;
+    }
+
+    protected void addRecord(ResultSet rs, ResultSetMetaData metaData, int i, Map<String, Object> record, String mandatoryEncoding, boolean columnLabel) throws Exception {
+        String fieldName = columnLabel ? metaData.getColumnLabel(i) : metaData.getColumnName(i);
+        int columnType = metaData.getColumnType(i);
+        Object rawData;
+        switch (columnType) {
+            case Types.CHAR:
+            case Types.NCHAR:
+            case Types.VARCHAR:
+            case Types.LONGVARCHAR:
+            case Types.NVARCHAR:
+            case Types.LONGNVARCHAR:
+            case Types.SQLXML:
+                if (StringUtils.isBlank(mandatoryEncoding)) {
+                    rawData = rs.getString(i);
+                } else {
+                    rawData = rs.getBytes(i) == null ? null : new String(rs.getBytes(i), mandatoryEncoding);
+                }
+                break;
+            case Types.CLOB:
+            case Types.NCLOB:
+                Clob clob;
+                if (columnType == Types.CLOB) {
+                    clob = rs.getClob(i);
+                } else {
+                    clob = rs.getNClob(i);
+                }
+                if (clob == null) {
+                    rawData = null;
+                    break;
+                }
+                StringBuilder builder = new StringBuilder();
+                java.io.Reader reader = clob.getCharacterStream();
+                BufferedReader br = new BufferedReader(reader);
+
+                String line;
+                while (null != (line = br.readLine())) {
+                    builder.append(line);
+                }
+                rawData = builder.toString();
+                break;
+            case Types.SMALLINT:
+            case Types.TINYINT:
+            case Types.INTEGER:
+            case Types.BIGINT:
+                if (StringUtils.isBlank(rs.getString(i))) {
+                    rawData = null;
+                } else {
+                    rawData = new LongColumn(rs.getString(i)).asLong();
+                }
+                break;
+            case Types.NUMERIC:
+            case Types.DECIMAL:
+            case Types.FLOAT:
+            case Types.REAL:
+            case Types.DOUBLE:
+                if (StringUtils.isBlank(rs.getString(i))) {
+                    rawData = null;
+                } else {
+                    rawData = new DoubleColumn(rs.getString(i)).asDouble();
+                }
+                break;
+            case Types.TIME:
+                if (StringUtils.isBlank(rs.getString(i))) {
+                    rawData = null;
+                } else {
+                    rawData = rs.getTime(i).getTime();
+                }
+                break;
+            // for mysql bug, see http://bugs.mysql.com/bug.php?id=35115
+            case Types.DATE:
+                rawData = resultSetToObject(rs.getDate(i));
+                break;
+            case Types.TIMESTAMP:
+                rawData = resultSetToObject(rs.getTimestamp(i));
+                break;
+            case -101:
+            case -102:
+                if (rs.getString(i) == null || rs.getString(i).isEmpty()) {
+                    rawData = null;
+                } else {
+                    rawData = new DateColumn(new StringColumn(String.valueOf(rs.getString(i))).asDate()).asString();
+                }
+                break;
+
+            case Types.BINARY:
+            case Types.VARBINARY:
+            case Types.LONGVARBINARY:
+                rawData = rs.getBytes(i);
+                break;
+            case Types.BLOB:
+                Blob blob = rs.getBlob(i);
+                rawData = blob.getBytes(0, (int) blob.length());
+                rawData = resultSetToObject(rawData);
+                break;
+            case Types.OTHER:
+                rawData = rs.getObject(i);
+                break;
+            case Types.BOOLEAN:
+            case Types.BIT:
+                if (StringUtils.isBlank(rs.getString(i))) {
+                    rawData = null;
+                } else {
+                    rawData = rs.getBoolean(i);
+                }
+                break;
+
+            case Types.NULL:
+                String stringData = null;
+                if (rs.getObject(i) != null) {
+                    stringData = rs.getObject(i).toString();
+                }
+                rawData = stringData;
+                break;
+            default:
+                throw AggregationException.asException(String.format("您的配置文件中的列配置信息有误. 因为引擎不支持数据库读取这种字段类型. Types:[%s], 字段名:[%s], 字段名称:[%s], 字段Java类型:[%s]. 请尝试使用数据库函数将其转换引擎支持的类型 或者不同步该字段 .", columnType, metaData.getColumnName(i), metaData.getColumnType(i), metaData.getColumnClassName(i)));
+        }
+        record.put(fieldName, rawData);
     }
 
     private final DecimalFormat DOUBLE_VALUE_FORMAT = new DecimalFormat("#.###############");
