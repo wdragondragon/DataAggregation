@@ -84,20 +84,32 @@
         },
         {
           "type": "EXPRESSION",
-          "expression": "toNumber(ifNull(${fusion_2.salary, Double},0)) * 2",
+          "expression": "TO_NUMBER(IFNULL(${fusion_2.salary, Double},0)) * 2",
           "targetField": "double_salary"
         },
         {
           "type": "EXPRESSION",
-          "expression": "${fusion_2.email} + \"_test\"",
+          "expression": "IFNULL(${fusion_2.email},\"no_email\") + \"_test\"",
           "targetField": "ste"
         },
         {
           "type": "CONDITIONAL",
-          "condition": "toNumber(${fusion_1.age})>30",
-          "trueValue": "toInteger(${fusion_1.age}) + \"_old\"",
-          "falseValue": "toInteger(${fusion_1.age}) + \"_young\"",
+          "condition": "TO_NUMBER(${fusion_1.age})>30",
+          "trueValue": "TO_INTEGER(${fusion_1.age}) + \"_old\"",
+          "falseValue": "TO_INTEGER(${fusion_1.age}) + \"_young\"",
           "targetField": "condition"
+        },
+        {
+          "type": "CONSTANT",
+          "value": "用户",
+          "resultType": "STRING",
+          "targetField": "constant"
+        },
+        {
+          "type": "CONSTANT",
+          "value": "123",
+          "resultType": "INT",
+          "targetField": "constant_int"
         }
       ],
       "errorMode": "LENIENT",
@@ -135,7 +147,9 @@
         "email",
         "double_salary",
         "ste",
-        "condition"
+        "condition",
+        "constant",
+        "constant_int"
       ],
       "writeMode": "update"
     }

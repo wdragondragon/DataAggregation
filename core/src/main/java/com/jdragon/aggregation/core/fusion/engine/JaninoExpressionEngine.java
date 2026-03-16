@@ -263,7 +263,8 @@ public class JaninoExpressionEngine implements ExpressionEngine {
             return functionName;
         }
 
-//        String lowerName = functionName.toLowerCase();
+        Method function = FunctionRegistry.getFunction(functionName);
+        functionName = function.getName();
 
         // 特殊处理一些函数名
         switch (functionName) {

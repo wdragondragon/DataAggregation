@@ -181,8 +181,8 @@ public class FunctionRegistry {
     }
 
     private static void register(String name, Class<?> clazz, String methodName, String description, Class<?>... paramTypes) {
-        register(methodName, clazz, methodName, paramTypes);
-        functionDescriptions.put(methodName, description);
+        register(name.toUpperCase(), clazz, methodName, paramTypes);
+        functionDescriptions.put(name.toUpperCase(), description);
     }
 
     /**
