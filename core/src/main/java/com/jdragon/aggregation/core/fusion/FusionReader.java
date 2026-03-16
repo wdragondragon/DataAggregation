@@ -69,7 +69,16 @@ public class FusionReader extends Reader.Job {
                 recordSender.sendToWriter(record);
             }
 
+            // 4. 保存融合详情（如果启用）
+            fusionContext.saveFusionDetails();
+
         } catch (Exception e) {
+            // 尝试保存已记录的融合详情（即使失败）
+            try {
+                fusionContext.saveFusionDetails();
+            } catch (Exception inner) {
+                // 忽略保存错误，主异常更重要
+            }
             throw new RuntimeException("数据融合失败", e);
         }
     }

@@ -121,6 +121,15 @@
       "performance": {
         "batchSize": 1000,
         "parallelSourceCount": 2
+      },
+      "detailConfig": {
+        "enabled": true,
+        "savePath": "./fusion_details",
+        "samplingRate": 1.0,
+        "maxRecords": 1000,
+        "includeSourceData": true,
+        "includeFieldDetails": true,
+        "fileNamePattern": "fusion_details_{datetime}.json"
       }
     }
   },

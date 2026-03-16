@@ -50,6 +50,9 @@ public class FusionConfig {
     // 性能配置
     private PerformanceConfig performanceConfig = new PerformanceConfig();
     
+    // 融合详情配置
+    private FusionDetailConfig detailConfig = new FusionDetailConfig();
+    
     /**
      * 从Configuration解析FusionConfig
      */
@@ -113,6 +116,12 @@ public class FusionConfig {
         Configuration perfConfig = config.getConfiguration("performance");
         if (perfConfig != null) {
             fusionConfig.setPerformanceConfig(PerformanceConfig.fromConfig(perfConfig));
+        }
+        
+        // 解析融合详情配置
+        Configuration detailConfig = config.getConfiguration("detailConfig");
+        if (detailConfig != null) {
+            fusionConfig.setDetailConfig(FusionDetailConfig.fromConfig(detailConfig));
         }
         
         return fusionConfig;
@@ -199,6 +208,9 @@ public class FusionConfig {
             // 验证源字段引用（如果适用）
             validateFieldMappingSources(mapping);
         }
+        
+        // 验证融合详情配置
+        detailConfig.validate();
     }
     
     /**

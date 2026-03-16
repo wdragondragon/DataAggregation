@@ -3,6 +3,7 @@ package com.jdragon.aggregation.core.fusion;
 import com.jdragon.aggregation.core.fusion.config.FusionConfig;
 import com.jdragon.aggregation.core.fusion.config.SourceConfig;
 import com.jdragon.aggregation.commons.element.Column;
+import com.jdragon.aggregation.core.fusion.detail.FusionDetailRecorder;
 import lombok.Data;
 
 import java.util.ArrayList;
@@ -40,6 +41,9 @@ public class FusionContext {
     private List<FieldError> fieldErrors = new ArrayList<>(); // 字段级错误列表
     private Map<String, Integer> errorTypeCounts = new HashMap<>(); // 错误类型统计
     private List<String> targetColumns = new ArrayList<>();
+    
+    // 融合详情记录
+    private FusionDetailRecorder detailRecorder;
 
     // 性能监控
     private long startTime;                      // 开始时间
@@ -58,6 +62,9 @@ public class FusionContext {
         for (com.jdragon.aggregation.core.fusion.config.SourceConfig source : fusionConfig.getSources()) {
             this.sourceConfigs.put(source.getSourceId(), source);
         }
+        
+        // 初始化融合详情记录器
+        this.detailRecorder = new FusionDetailRecorder(fusionConfig);
     }
 
     /**
@@ -289,5 +296,40 @@ public class FusionContext {
             this.errorMode = errorMode;
             this.timestamp = System.currentTimeMillis();
         }
+    }
+    
+    // ========== 融合详情记录方法 ==========
+    
+    /**
+     * 判断是否应该记录融合详情
+     */
+    public boolean shouldRecordFusionDetail() {
+        return detailRecorder != null && detailRecorder.shouldRecord();
+    }
+    
+    /**
+     * 记录融合详情
+     */
+    public void recordFusionDetail(com.jdragon.aggregation.core.fusion.detail.FusionDetail detail) {
+        if (detailRecorder != null) {
+            detailRecorder.recordDetail(detail);
+        }
+    }
+    
+    /**
+     * 保存融合详情到文件
+     */
+    public String saveFusionDetails() {
+        if (detailRecorder != null) {
+            return detailRecorder.saveToFile();
+        }
+        return null;
+    }
+    
+    /**
+     * 获取融合详情记录器
+     */
+    public FusionDetailRecorder getDetailRecorder() {
+        return detailRecorder;
     }
 }

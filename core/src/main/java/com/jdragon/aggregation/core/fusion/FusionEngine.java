@@ -5,9 +5,15 @@ import com.jdragon.aggregation.commons.element.Record;
 import com.jdragon.aggregation.commons.element.StringColumn;
 import com.jdragon.aggregation.core.consistency.service.DataFetcher;
 import com.jdragon.aggregation.core.fusion.config.FusionConfig;
+import com.jdragon.aggregation.core.fusion.config.FusionDetailConfig;
 import com.jdragon.aggregation.core.fusion.config.FieldMapping;
+import com.jdragon.aggregation.core.fusion.config.DirectFieldMapping;
+import com.jdragon.aggregation.core.fusion.config.ExpressionFieldMapping;
+import com.jdragon.aggregation.core.fusion.config.ConditionalFieldMapping;
 import com.jdragon.aggregation.core.fusion.strategy.FusionStrategy;
 import com.jdragon.aggregation.core.fusion.strategy.FusionStrategyFactory;
+import com.jdragon.aggregation.core.fusion.detail.FusionDetail;
+import com.jdragon.aggregation.core.fusion.detail.FieldDetail;
 
 import java.util.*;
 
@@ -126,6 +132,12 @@ public class FusionEngine {
             return fuseRowsLegacy(sourceRows, fusedRecord);
         }
 
+        // 创建融合详情（如果需要记录）
+        FusionDetail fusionDetail = null;
+        if (fusionContext.shouldRecordFusionDetail()) {
+            fusionDetail = createFusionDetail(sourceRows);
+        }
+
         // 按目标字段顺序排序
         List<String> targetColumns = fusionContext.getTargetColumns();
 
@@ -146,6 +158,18 @@ public class FusionEngine {
             } else {
                 fusedRecord.setColumn(index, new StringColumn(null));
             }
+
+            // 记录字段级详情
+            if (fusionDetail != null) {
+                FieldDetail fieldDetail = createFieldDetail(fieldMapping, sourceRows, mappedValue);
+                fusionDetail.addFieldDetail(fieldDetail);
+            }
+        }
+
+        // 记录融合详情
+        if (fusionDetail != null) {
+            fusionDetail.setStatus("SUCCESS");
+            fusionContext.recordFusionDetail(fusionDetail);
         }
 
         return fusedRecord;
@@ -155,6 +179,12 @@ public class FusionEngine {
      * 旧版融合逻辑（兼容字段映射为空的情况）
      */
     private Record fuseRowsLegacy(Map<String, Map<String, Object>> sourceRows, Record fusedRecord) {
+        // 创建融合详情（如果需要记录）
+        FusionDetail fusionDetail = null;
+        if (fusionContext.shouldRecordFusionDetail()) {
+            fusionDetail = createFusionDetail(sourceRows);
+        }
+
         // 收集所有字段名
         Set<String> allFieldNames = new HashSet<>();
         for (Map<String, Object> row : sourceRows.values()) {
@@ -176,6 +206,18 @@ public class FusionEngine {
             if (fusedValue != null) {
                 fusedRecord.addColumn(fusedValue);
             }
+
+            // 记录字段级详情
+            if (fusionDetail != null) {
+                FieldDetail fieldDetail = createLegacyFieldDetail(fieldName, sourceRows, sourceValues, fusedValue, strategy);
+                fusionDetail.addFieldDetail(fieldDetail);
+            }
+        }
+
+        // 记录融合详情
+        if (fusionDetail != null) {
+            fusionDetail.setStatus("SUCCESS");
+            fusionContext.recordFusionDetail(fusionDetail);
         }
 
         return fusedRecord;
@@ -269,5 +311,196 @@ public class FusionEngine {
             // 默认转为String
             return new com.jdragon.aggregation.commons.element.StringColumn(value.toString());
         }
+    }
+    
+    /**
+     * 创建融合详情
+     */
+    private FusionDetail createFusionDetail(Map<String, Map<String, Object>> sourceRows) {
+        FusionDetail detail = new FusionDetail();
+        detail.setJoinKey(fusionContext.getCurrentJoinKey());
+        detail.setTimestamp(System.currentTimeMillis());
+        detail.setStatus("PROCESSING");
+        
+        // 添加源数据快照（如果需要）
+        FusionDetailConfig detailConfig = fusionConfig.getDetailConfig();
+        if (detailConfig != null && detailConfig.isIncludeSourceData()) {
+            for (Map.Entry<String, Map<String, Object>> entry : sourceRows.entrySet()) {
+                if (entry.getValue() != null) {
+                    // 深拷贝避免后续修改
+                    Map<String, Object> rowCopy = new HashMap<>(entry.getValue());
+                    detail.addSourceRow(entry.getKey(), rowCopy);
+                }
+            }
+        }
+        
+        return detail;
+    }
+    
+    /**
+     * 创建字段级详情
+     */
+    private FieldDetail createFieldDetail(FieldMapping fieldMapping, Map<String, Map<String, Object>> sourceRows, Column fusedValue) {
+        FieldDetail fieldDetail = new FieldDetail();
+        fieldDetail.setTargetField(fieldMapping.getTargetField());
+        fieldDetail.setMappingType(fieldMapping.getMappingType().name());
+        fieldDetail.setStrategyUsed(fieldMapping.getFusionStrategy());
+        fieldDetail.setStatus("SUCCESS");
+        
+        // 设置源引用（根据映射类型）
+        FieldMapping.MappingType mappingType = fieldMapping.getMappingType();
+        switch (mappingType) {
+            case DIRECT:
+                if (fieldMapping instanceof DirectFieldMapping) {
+                    fieldDetail.setSourceRef(((DirectFieldMapping) fieldMapping).getSourceField());
+                } else {
+                    fieldDetail.setSourceRef("DIRECT");
+                }
+                break;
+            case EXPRESSION:
+                if (fieldMapping instanceof ExpressionFieldMapping) {
+                    fieldDetail.setSourceRef("Expression: " + ((ExpressionFieldMapping) fieldMapping).getExpression());
+                } else {
+                    fieldDetail.setSourceRef("EXPRESSION");
+                }
+                break;
+            case CONDITIONAL:
+                if (fieldMapping instanceof ConditionalFieldMapping) {
+                    fieldDetail.setSourceRef("Conditional: " + ((ConditionalFieldMapping) fieldMapping).getCondition());
+                } else {
+                    fieldDetail.setSourceRef("CONDITIONAL");
+                }
+                break;
+            case GROOVY:
+                fieldDetail.setSourceRef("Groovy Script");
+                break;
+            case CONSTANT:
+                fieldDetail.setSourceRef("Constant");
+                break;
+        }
+        
+        // 收集源值
+        FusionDetailConfig detailConfig = fusionConfig.getDetailConfig();
+        if (detailConfig != null && detailConfig.isIncludeFieldDetails()) {
+            // 对于直接映射，收集各数据源的值
+            if (mappingType == FieldMapping.MappingType.DIRECT && fieldMapping instanceof DirectFieldMapping) {
+                String sourceField = ((DirectFieldMapping) fieldMapping).getSourceField();
+                if (sourceField != null) {
+                    // 解析源引用
+                    String fieldRef = sourceField;
+                    if (fieldRef.startsWith("${") && fieldRef.endsWith("}")) {
+                        fieldRef = fieldRef.substring(2, fieldRef.length() - 1);
+                    }
+                    
+                    String[] parts = fieldRef.split("\\.");
+                    if (parts.length == 2) {
+                        // 明确源
+                        String sourceId = parts[0];
+                        String fieldName = parts[1];
+                        Map<String, Object> row = sourceRows.get(sourceId);
+                        if (row != null && row.containsKey(fieldName)) {
+                            fieldDetail.addSourceValue(sourceId, row.get(fieldName));
+                        }
+                    } else if (parts.length == 1) {
+                        // 模糊源：从所有数据源收集
+                        String fieldName = parts[0];
+                        for (Map.Entry<String, Map<String, Object>> entry : sourceRows.entrySet()) {
+                            Map<String, Object> row = entry.getValue();
+                            if (row != null && row.containsKey(fieldName)) {
+                                fieldDetail.addSourceValue(entry.getKey(), row.get(fieldName));
+                            }
+                        }
+                    }
+                }
+            } else {
+                // 对于其他映射类型，可以尝试收集表达式中引用的字段值
+                // 简化处理：暂时不收集
+            }
+        }
+        
+        // 设置融合值
+        if (fusedValue != null) {
+            // 将Column转换为Java对象
+            if (fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.INT ||
+                fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.LONG) {
+                fieldDetail.setFusedValue(fusedValue.asLong());
+            } else if (fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.DOUBLE) {
+                fieldDetail.setFusedValue(fusedValue.asDouble());
+            } else if (fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.STRING) {
+                fieldDetail.setFusedValue(fusedValue.asString());
+            } else if (fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.BOOL) {
+                fieldDetail.setFusedValue(fusedValue.asBoolean());
+            } else {
+                fieldDetail.setFusedValue(fusedValue.asString());
+            }
+        }
+        
+        return fieldDetail;
+    }
+    
+    /**
+     * 创建旧版融合逻辑的字段级详情
+     */
+    private FieldDetail createLegacyFieldDetail(String fieldName, Map<String, Map<String, Object>> sourceRows, 
+                                               Map<String, Column> sourceValues, Column fusedValue, FusionStrategy strategy) {
+        FieldDetail fieldDetail = new FieldDetail();
+        fieldDetail.setTargetField(fieldName);
+        fieldDetail.setMappingType("LEGACY");
+        fieldDetail.setStrategyUsed(strategy != null ? strategy.getClass().getSimpleName() : "UNKNOWN");
+        fieldDetail.setStatus("SUCCESS");
+        
+        // 设置源引用（收集所有数据源）
+        StringBuilder sourceRefBuilder = new StringBuilder();
+        for (Map.Entry<String, Column> entry : sourceValues.entrySet()) {
+            if (sourceRefBuilder.length() > 0) {
+                sourceRefBuilder.append(", ");
+            }
+            sourceRefBuilder.append(entry.getKey()).append(".").append(fieldName);
+        }
+        fieldDetail.setSourceRef(sourceRefBuilder.toString());
+        
+        // 收集源值
+        FusionDetailConfig detailConfig = fusionConfig.getDetailConfig();
+        if (detailConfig != null && detailConfig.isIncludeFieldDetails()) {
+            for (Map.Entry<String, Column> entry : sourceValues.entrySet()) {
+                String sourceId = entry.getKey();
+                Column column = entry.getValue();
+                // 将Column转换为Java对象
+                Object value = null;
+                if (column != null) {
+                    if (column.getType() == com.jdragon.aggregation.commons.element.Column.Type.INT ||
+                        column.getType() == com.jdragon.aggregation.commons.element.Column.Type.LONG) {
+                        value = column.asLong();
+                    } else if (column.getType() == com.jdragon.aggregation.commons.element.Column.Type.DOUBLE) {
+                        value = column.asDouble();
+                    } else if (column.getType() == com.jdragon.aggregation.commons.element.Column.Type.STRING) {
+                        value = column.asString();
+                    } else if (column.getType() == com.jdragon.aggregation.commons.element.Column.Type.BOOL) {
+                        value = column.asBoolean();
+                    } else {
+                        value = column.asString();
+                    }
+                }
+                fieldDetail.addSourceValue(sourceId, value);
+            }
+        }
+        
+        // 设置融合值
+        if (fusedValue != null) {
+            if (fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.INT ||
+                fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.LONG) {
+                fieldDetail.setFusedValue(fusedValue.asLong());
+            } else if (fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.DOUBLE) {
+                fieldDetail.setFusedValue(fusedValue.asDouble());
+            } else if (fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.STRING) {
+                fieldDetail.setFusedValue(fusedValue.asString());
+            } else if (fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.BOOL) {
+                fieldDetail.setFusedValue(fusedValue.asBoolean());
+            } else {
+                fieldDetail.setFusedValue(fusedValue.asString());
+            }
+        }
+        
+        return fieldDetail;
     }
 }
