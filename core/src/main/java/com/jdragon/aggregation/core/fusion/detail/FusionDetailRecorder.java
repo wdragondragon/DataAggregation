@@ -3,6 +3,7 @@ package com.jdragon.aggregation.core.fusion.detail;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.jdragon.aggregation.core.fusion.config.*;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
@@ -25,6 +26,7 @@ public class FusionDetailRecorder {
     
     // 数据存储
     private final List<FusionDetail> fusionDetails = new CopyOnWriteArrayList<>();
+    @Getter
     private final FusionDetailOutput output;
     private final long startTime;
     

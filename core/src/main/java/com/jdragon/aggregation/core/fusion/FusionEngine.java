@@ -160,7 +160,7 @@ public class FusionEngine {
             }
 
             // 记录字段级详情
-            if (fusionDetail != null) {
+            if (fusionDetail != null && fusionConfig.getDetailConfig().isIncludeFieldDetails()) {
                 FieldDetail fieldDetail = createFieldDetail(fieldMapping, sourceRows, mappedValue);
                 fusionDetail.addFieldDetail(fieldDetail);
             }
@@ -208,7 +208,7 @@ public class FusionEngine {
             }
 
             // 记录字段级详情
-            if (fusionDetail != null) {
+            if (fusionDetail != null && fusionConfig.getDetailConfig().isIncludeFieldDetails()) {
                 FieldDetail fieldDetail = createLegacyFieldDetail(fieldName, sourceRows, sourceValues, fusedValue, strategy);
                 fusionDetail.addFieldDetail(fieldDetail);
             }
@@ -312,7 +312,7 @@ public class FusionEngine {
             return new com.jdragon.aggregation.commons.element.StringColumn(value.toString());
         }
     }
-    
+
     /**
      * 创建融合详情
      */
@@ -321,7 +321,7 @@ public class FusionEngine {
         detail.setJoinKey(fusionContext.getCurrentJoinKey());
         detail.setTimestamp(System.currentTimeMillis());
         detail.setStatus("PROCESSING");
-        
+
         // 添加源数据快照（如果需要）
         FusionDetailConfig detailConfig = fusionConfig.getDetailConfig();
         if (detailConfig != null && detailConfig.isIncludeSourceData()) {
@@ -333,10 +333,10 @@ public class FusionEngine {
                 }
             }
         }
-        
+
         return detail;
     }
-    
+
     /**
      * 创建字段级详情
      */
@@ -346,7 +346,7 @@ public class FusionEngine {
         fieldDetail.setMappingType(fieldMapping.getMappingType().name());
         fieldDetail.setStrategyUsed(fieldMapping.getFusionStrategy());
         fieldDetail.setStatus("SUCCESS");
-        
+
         // 设置源引用（根据映射类型）
         FieldMapping.MappingType mappingType = fieldMapping.getMappingType();
         switch (mappingType) {
@@ -378,10 +378,10 @@ public class FusionEngine {
                 fieldDetail.setSourceRef("Constant");
                 break;
         }
-        
+
         // 收集源值
         FusionDetailConfig detailConfig = fusionConfig.getDetailConfig();
-        if (detailConfig != null && detailConfig.isIncludeFieldDetails()) {
+        if (detailConfig != null && detailConfig.isIncludeSourceData()) {
             // 对于直接映射，收集各数据源的值
             if (mappingType == FieldMapping.MappingType.DIRECT && fieldMapping instanceof DirectFieldMapping) {
                 String sourceField = ((DirectFieldMapping) fieldMapping).getSourceField();
@@ -391,7 +391,7 @@ public class FusionEngine {
                     if (fieldRef.startsWith("${") && fieldRef.endsWith("}")) {
                         fieldRef = fieldRef.substring(2, fieldRef.length() - 1);
                     }
-                    
+
                     String[] parts = fieldRef.split("\\.");
                     if (parts.length == 2) {
                         // 明确源
@@ -417,12 +417,12 @@ public class FusionEngine {
                 // 简化处理：暂时不收集
             }
         }
-        
+
         // 设置融合值
         if (fusedValue != null) {
             // 将Column转换为Java对象
             if (fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.INT ||
-                fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.LONG) {
+                    fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.LONG) {
                 fieldDetail.setFusedValue(fusedValue.asLong());
             } else if (fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.DOUBLE) {
                 fieldDetail.setFusedValue(fusedValue.asDouble());
@@ -434,21 +434,21 @@ public class FusionEngine {
                 fieldDetail.setFusedValue(fusedValue.asString());
             }
         }
-        
+
         return fieldDetail;
     }
-    
+
     /**
      * 创建旧版融合逻辑的字段级详情
      */
-    private FieldDetail createLegacyFieldDetail(String fieldName, Map<String, Map<String, Object>> sourceRows, 
-                                               Map<String, Column> sourceValues, Column fusedValue, FusionStrategy strategy) {
+    private FieldDetail createLegacyFieldDetail(String fieldName, Map<String, Map<String, Object>> sourceRows,
+                                                Map<String, Column> sourceValues, Column fusedValue, FusionStrategy strategy) {
         FieldDetail fieldDetail = new FieldDetail();
         fieldDetail.setTargetField(fieldName);
         fieldDetail.setMappingType("LEGACY");
         fieldDetail.setStrategyUsed(strategy != null ? strategy.getClass().getSimpleName() : "UNKNOWN");
         fieldDetail.setStatus("SUCCESS");
-        
+
         // 设置源引用（收集所有数据源）
         StringBuilder sourceRefBuilder = new StringBuilder();
         for (Map.Entry<String, Column> entry : sourceValues.entrySet()) {
@@ -458,10 +458,10 @@ public class FusionEngine {
             sourceRefBuilder.append(entry.getKey()).append(".").append(fieldName);
         }
         fieldDetail.setSourceRef(sourceRefBuilder.toString());
-        
+
         // 收集源值
         FusionDetailConfig detailConfig = fusionConfig.getDetailConfig();
-        if (detailConfig != null && detailConfig.isIncludeFieldDetails()) {
+        if (detailConfig != null && detailConfig.isIncludeSourceData()) {
             for (Map.Entry<String, Column> entry : sourceValues.entrySet()) {
                 String sourceId = entry.getKey();
                 Column column = entry.getValue();
@@ -469,7 +469,7 @@ public class FusionEngine {
                 Object value = null;
                 if (column != null) {
                     if (column.getType() == com.jdragon.aggregation.commons.element.Column.Type.INT ||
-                        column.getType() == com.jdragon.aggregation.commons.element.Column.Type.LONG) {
+                            column.getType() == com.jdragon.aggregation.commons.element.Column.Type.LONG) {
                         value = column.asLong();
                     } else if (column.getType() == com.jdragon.aggregation.commons.element.Column.Type.DOUBLE) {
                         value = column.asDouble();
@@ -484,11 +484,11 @@ public class FusionEngine {
                 fieldDetail.addSourceValue(sourceId, value);
             }
         }
-        
+
         // 设置融合值
         if (fusedValue != null) {
             if (fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.INT ||
-                fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.LONG) {
+                    fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.LONG) {
                 fieldDetail.setFusedValue(fusedValue.asLong());
             } else if (fusedValue.getType() == com.jdragon.aggregation.commons.element.Column.Type.DOUBLE) {
                 fieldDetail.setFusedValue(fusedValue.asDouble());
@@ -500,7 +500,7 @@ public class FusionEngine {
                 fieldDetail.setFusedValue(fusedValue.asString());
             }
         }
-        
+
         return fieldDetail;
     }
 }

@@ -31,7 +31,7 @@ public class FusionDetailConfig {
         }
 
         detailConfig.setEnabled(config.getBool("enabled", true));
-        detailConfig.setSavePath(config.getString("savePath"));
+        detailConfig.setSavePath(config.getString("savePath", "./fusion_details"));
         detailConfig.setSamplingRate(config.getDouble("samplingRate", 1.0));
         detailConfig.setMaxRecords(config.getInt("maxRecords", 10000));
         detailConfig.setIncludeSourceData(config.getBool("includeSourceData", true));
