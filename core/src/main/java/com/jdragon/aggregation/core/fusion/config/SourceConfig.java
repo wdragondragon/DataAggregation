@@ -1,8 +1,12 @@
 package com.jdragon.aggregation.core.fusion.config;
 
+import com.jdragon.aggregation.commons.element.Column;
+import com.jdragon.aggregation.commons.element.StringColumn;
 import com.jdragon.aggregation.commons.util.Configuration;
 import lombok.Data;
+import org.apache.commons.lang3.StringUtils;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -26,6 +30,10 @@ public class SourceConfig {
 
     private boolean isPrimary = false;     // 是否为主数据源（驱动源）
     private Integer maxRecords;            // 最大记录数限制（可选）
+
+    private String incrColumn;
+    private String incrModel;
+    private Column maxIncrValue;
 
     private Map<String, String> fieldMappings; // 字段映射关系（源字段->内部字段名）
     private Configuration extConfig;       // 额外的扩展配置
@@ -55,6 +63,22 @@ public class SourceConfig {
         sourceConfig.setFieldMappings(config.getMap("fieldMappings", String.class));
         sourceConfig.setExtConfig(config.getConfiguration("extConfig"));
         sourceConfig.setQuerySql(config.getString("querySql"));
+
+        if (StringUtils.isBlank(sourceConfig.getQuerySql())) {
+            String tableName = config.getString("table");
+            List<String> columns = config.getList("columns", String.class);
+            sourceConfig.setIncrColumn(config.getString("incrColumn"));
+            sourceConfig.setIncrModel(config.getString("incrModel", ">"));
+            String querySql = String.format("select %s from %s", String.join(",", columns), tableName);
+            if (StringUtils.isNotBlank(sourceConfig.getIncrColumn())) {
+                String maxPk = config.get("pkValue", null);
+                if (maxPk != null) {
+                    sourceConfig.setMaxIncrValue(new StringColumn(maxPk));
+                    querySql += String.format("where %s %s '%s'", sourceConfig.getIncrColumn(), sourceConfig.getIncrModel(), maxPk);
+                }
+            }
+            sourceConfig.setQuerySql(querySql);
+        }
 
         return sourceConfig;
     }

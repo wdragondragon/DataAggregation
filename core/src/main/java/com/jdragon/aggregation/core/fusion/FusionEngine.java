@@ -160,7 +160,7 @@ public class FusionEngine {
             }
 
             // 记录字段级详情
-            if (fusionDetail != null && fusionConfig.getDetailConfig().isIncludeFieldDetails()) {
+            if (fusionDetail != null) {
                 FieldDetail fieldDetail = createFieldDetail(fieldMapping, sourceRows, mappedValue);
                 fusionDetail.addFieldDetail(fieldDetail);
             }
@@ -169,7 +169,9 @@ public class FusionEngine {
         // 记录融合详情
         if (fusionDetail != null) {
             fusionDetail.setStatus("SUCCESS");
-            fusionContext.recordFusionDetail(fusionDetail);
+            if (fusionConfig.getDetailConfig().isIncludeFieldDetails()) {
+                fusionContext.recordFusionDetail(fusionDetail);
+            }
         }
 
         return fusedRecord;
@@ -208,7 +210,7 @@ public class FusionEngine {
             }
 
             // 记录字段级详情
-            if (fusionDetail != null && fusionConfig.getDetailConfig().isIncludeFieldDetails()) {
+            if (fusionDetail != null) {
                 FieldDetail fieldDetail = createLegacyFieldDetail(fieldName, sourceRows, sourceValues, fusedValue, strategy);
                 fusionDetail.addFieldDetail(fieldDetail);
             }
@@ -217,7 +219,9 @@ public class FusionEngine {
         // 记录融合详情
         if (fusionDetail != null) {
             fusionDetail.setStatus("SUCCESS");
-            fusionContext.recordFusionDetail(fusionDetail);
+            if (fusionConfig.getDetailConfig().isIncludeFieldDetails()) {
+                fusionContext.recordFusionDetail(fusionDetail);
+            }
         }
 
         return fusedRecord;

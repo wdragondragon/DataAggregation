@@ -1,10 +1,13 @@
 package com.jdragon.aggregation.core.fusion;
 
+import com.jdragon.aggregation.commons.element.StringColumn;
 import com.jdragon.aggregation.core.fusion.config.FusionConfig;
 import com.jdragon.aggregation.core.fusion.config.SourceConfig;
 import com.jdragon.aggregation.commons.element.Column;
 import com.jdragon.aggregation.core.fusion.detail.FusionDetailRecorder;
+import com.jdragon.aggregation.core.plugin.spi.reporter.JobPointReporter;
 import lombok.Data;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -41,13 +44,18 @@ public class FusionContext {
     private List<FieldError> fieldErrors = new ArrayList<>(); // 字段级错误列表
     private Map<String, Integer> errorTypeCounts = new HashMap<>(); // 错误类型统计
     private List<String> targetColumns = new ArrayList<>();
-    
+
     // 融合详情记录
     private FusionDetailRecorder detailRecorder;
 
     // 性能监控
     private long startTime;                      // 开始时间
     private long lastLogTime;                    // 上次日志时间
+
+    private Map<String, Column> sourceMaxIncrValues = new HashMap<>();
+    private Map<String, String> sourceIncrColumn = new HashMap<>();
+
+    private JobPointReporter jobPointReporter;
 
     /**
      * 构造函数
@@ -62,9 +70,34 @@ public class FusionContext {
         for (com.jdragon.aggregation.core.fusion.config.SourceConfig source : fusionConfig.getSources()) {
             this.sourceConfigs.put(source.getSourceId(), source);
         }
-        
+
         // 初始化融合详情记录器
         this.detailRecorder = new FusionDetailRecorder(fusionConfig);
+    }
+
+    public void updateIncrValue() {
+        for (Map.Entry<String, SourceConfig> entry : this.sourceConfigs.entrySet()) {
+            String sourceId = entry.getKey();
+            SourceConfig source = entry.getValue();
+            if (StringUtils.isNotBlank(source.getIncrColumn())) {
+                sourceIncrColumn.put(sourceId, source.getIncrColumn());
+                if (source.getMaxIncrValue() != null) {
+                    sourceMaxIncrValues.put(sourceId, source.getMaxIncrValue());
+                }
+            }
+        }
+    }
+
+    public void updateIncrValue(String sourceId, Column incrValue) {
+        if (sourceIncrColumn.containsKey(sourceId)) {
+            // 更新增量值
+            Column maxPkValue = sourceMaxIncrValues.get(sourceId);
+            if (maxPkValue == null || maxPkValue.compareTo(incrValue) < 0) {
+//                maxPkValue = incrValue;
+//                this.getJobPointReporter().put("pkValue_" + sourceId, maxPkValue.asString());
+                sourceMaxIncrValues.put(sourceId, incrValue);
+            }
+        }
     }
 
     /**
@@ -297,16 +330,16 @@ public class FusionContext {
             this.timestamp = System.currentTimeMillis();
         }
     }
-    
+
     // ========== 融合详情记录方法 ==========
-    
+
     /**
      * 判断是否应该记录融合详情
      */
     public boolean shouldRecordFusionDetail() {
         return detailRecorder != null && detailRecorder.shouldRecord();
     }
-    
+
     /**
      * 记录融合详情
      */
@@ -315,7 +348,7 @@ public class FusionContext {
             detailRecorder.recordDetail(detail);
         }
     }
-    
+
     /**
      * 保存融合详情到文件
      */
@@ -325,7 +358,7 @@ public class FusionContext {
         }
         return null;
     }
-    
+
     /**
      * 获取融合详情记录器
      */

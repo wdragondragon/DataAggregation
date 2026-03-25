@@ -39,7 +39,7 @@ public class DataSourceConfig {
         dsConfig.setPluginName(config.getString("pluginName"));
         dsConfig.setConnectionConfig(config.getConfiguration("connectionConfig"));
         dsConfig.setQuerySql(config.getString("querySql"));
-        dsConfig.setTableName(config.getString("tableName"));
+        dsConfig.setTableName(config.getString("table"));
         dsConfig.setConfidenceWeight(config.getDouble("confidenceWeight", 1.0));
         dsConfig.setPriority(config.getInt("priority", 0));
         if (config.get("maxRecords") != null) {

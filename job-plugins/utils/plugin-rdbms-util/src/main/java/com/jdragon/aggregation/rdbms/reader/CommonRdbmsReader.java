@@ -72,8 +72,8 @@ public class CommonRdbmsReader extends Reader.Job {
             }
 
             if (pkIndex != null && maxPk != null) {
-                maxPkValue = new StringColumn(pkColumn);
-                selectSql += String.format("where %s %s '%s'", pkColumn, pkModel, pkColumn);
+                maxPkValue = new StringColumn(maxPk);
+                selectSql += String.format("where %s %s '%s'", pkColumn, pkModel, maxPk);
             }
         }
 

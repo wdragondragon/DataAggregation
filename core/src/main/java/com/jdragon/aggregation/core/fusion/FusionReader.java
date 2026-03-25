@@ -1,6 +1,6 @@
 package com.jdragon.aggregation.core.fusion;
 
-import com.jdragon.aggregation.commons.element.Record;
+import com.jdragon.aggregation.commons.element.*;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.consistency.model.DataSourceConfig;
 import com.jdragon.aggregation.core.consistency.service.DataFetcher;
@@ -10,10 +10,10 @@ import com.jdragon.aggregation.core.fusion.config.SourceConfig;
 import com.jdragon.aggregation.core.fusion.strategy.FusionStrategyFactory;
 import com.jdragon.aggregation.core.plugin.RecordSender;
 import com.jdragon.aggregation.core.plugin.spi.Reader;
+import com.jdragon.aggregation.core.plugin.spi.reporter.JobPointReporter;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 数据融合读取器
@@ -42,9 +42,11 @@ public class FusionReader extends Reader.Job {
         List<String> targetColumns = getPeerPluginJobConf().getList("columns", String.class);
         fusionContext.setTargetColumns(targetColumns);
 
+        fusionContext.setJobPointReporter(this.getJobPointReporter());
+        fusionContext.updateIncrValue();
+
         // 初始化融合策略
         FusionStrategyFactory.initDefaultStrategies();
-
 
     }
 
@@ -112,7 +114,9 @@ public class FusionReader extends Reader.Job {
     /**
      * 执行数据融合
      */
-    private List<Record> performFusion( Map<String, List<Map<String, Object>>> sourceData) {
+    private List<Record> performFusion(Map<String, List<Map<String, Object>>> sourceData) {
+        // 获取当前增量最大增量值
+        updateIncrValue(sourceData);
         // 使用DataFetcher进行分组
         DataFetcher dataFetcher = new DataFetcher(new com.jdragon.aggregation.core.consistency.service.DataSourcePluginManager());
         Map<String, Map<String, List<Map<String, Object>>>> groupedData =
@@ -121,5 +125,76 @@ public class FusionReader extends Reader.Job {
         // 使用融合引擎进行融合
         FusionEngine fusionEngine = new FusionEngine(fusionConfig, fusionContext);
         return fusionEngine.fuse(groupedData);
+    }
+
+    private void updateIncrValue(Map<String, List<Map<String, Object>>> sourceData) {
+        Map<String, String> sourceIncrColumn = fusionContext.getSourceIncrColumn();
+        for (Map.Entry<String, List<Map<String, Object>>> entry : sourceData.entrySet()) {
+            String sourceId = entry.getKey();
+            if (sourceIncrColumn.containsKey(sourceId)) {
+                List<Map<String, Object>> values = entry.getValue();
+                for (Map<String, Object> value : values) {
+                    Object o = value.get(sourceIncrColumn.get(sourceId));
+                    Column column = object2Column(o);
+                    fusionContext.updateIncrValue(sourceId, column);
+                }
+            }
+        }
+
+        Map<String, Column> sourceMaxIncrValues = fusionContext.getSourceMaxIncrValues();
+        Map<String, Column> incrColumnValue = new HashMap<>();
+
+        for (Map.Entry<String, String> entry : sourceIncrColumn.entrySet()) {
+            String sourceId = entry.getKey();
+            String incrColumn = entry.getValue();
+            Column column = sourceMaxIncrValues.get(sourceId);
+            if (fusionContext.getFusionConfig().getJoinKeys().contains(incrColumn)) {
+                if (!incrColumnValue.containsKey(incrColumn)) {
+                    incrColumnValue.put(incrColumn, column);
+                } else {
+                    Column minColumn = incrColumnValue.get(incrColumn);
+                    if (minColumn.compareTo(column) > 0) {
+                        incrColumnValue.put(incrColumn, column);
+                    }
+                }
+            }
+        }
+
+        for (Map.Entry<String, String> entry : sourceIncrColumn.entrySet()) {
+            String sourceId = entry.getKey();
+            String incrColumn = entry.getValue();
+
+            Column column = incrColumnValue.get(incrColumn);
+            if (column == null) {
+                column = sourceMaxIncrValues.get(incrColumn);
+            }
+            this.getJobPointReporter().put("pkValue_" + sourceId, column.asString());
+        }
+    }
+
+    public Column object2Column(Object o) {
+        if (o == null) {
+            return new StringColumn(null);
+        }
+
+        if (o instanceof String) {
+            return new StringColumn((String) o);
+        } else if (o instanceof Integer) {
+            return new LongColumn((Integer) o);
+        } else if (o instanceof Long) {
+            return new LongColumn((Long) o);
+        } else if (o instanceof Double) {
+            return new DoubleColumn((Double) o);
+        } else if (o instanceof Boolean) {
+            return new BoolColumn((Boolean) o);
+        } else if (o instanceof Float) {
+            return new DoubleColumn((Float) o);
+        } else if (o instanceof Date) {
+            return new DateColumn((Date) o);
+        } else if (o instanceof byte[]) {
+            return new BytesColumn((byte[]) o);
+        } else {
+            return new ObjectColumn(o);
+        }
     }
 }

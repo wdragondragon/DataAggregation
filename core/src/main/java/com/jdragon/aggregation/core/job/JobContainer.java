@@ -100,6 +100,7 @@ public class JobContainer {
             // 持续输出作业状态
             this.holdDoStat(jobCommunication, configuration);
         } catch (AggregationException e) {
+            log.error("", e);
             if (!(e.getCause() instanceof InterruptedException)) {
                 jobCommunication.setState(State.FAILED);
                 throw e;
@@ -147,18 +148,18 @@ public class JobContainer {
         try {
             transformerExecutions = TransformerUtil.buildTransformerInfo(configuration, customTransformers);
         } catch (Exception e) {
-            throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "transformer init error", e);
+            throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "transformer init error " + e.getMessage(), e);
         }
 
         try {
             readerJobPlugin = initJobPlugin(PluginType.READER, readerType, readerConfiguration, writerConfiguration);
         } catch (Exception e) {
-            throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "reader job plugin init error", e);
+            throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "reader job plugin init error " + e.getMessage(), e);
         }
         try {
             writerJobPlugin = initJobPlugin(PluginType.WRITER, writerType, writerConfiguration, readerConfiguration);
         } catch (Exception e) {
-            throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "writer job plugin init error", e);
+            throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "writer job plugin init error " + e.getMessage(), e);
         }
 
         readerThread = initExecThread(jobId, readerJobPlugin, transformerExecutions, taskCollectorClass, jobCommunication, channel, jobPointReporter);
@@ -175,7 +176,7 @@ public class JobContainer {
             log.info("job writer init end");
         } catch (Throwable e) {
             jobCommunication.setState(State.FAILED);
-            throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "job writer init error", e);
+            throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "job writer init error " + e.getMessage(), e);
         } finally {
             classLoaderSwapper.restoreCurrentThreadClassLoader();
         }
@@ -187,7 +188,7 @@ public class JobContainer {
             log.info("job reader init end");
         } catch (Throwable e) {
             jobCommunication.setState(State.FAILED);
-            throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "job reader init error", e);
+            throw AggregationException.asException(FrameworkErrorCode.RUNTIME_ERROR, "job reader init error " + e.getMessage(), e);
         } finally {
             classLoaderSwapper.restoreCurrentThreadClassLoader();
         }
