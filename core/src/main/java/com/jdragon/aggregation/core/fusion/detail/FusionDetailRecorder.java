@@ -19,20 +19,20 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 @Slf4j
 public class FusionDetailRecorder {
-    
+
     private final FusionDetailConfig config;
     private final FusionConfig fusionConfig;
     private final Random random = new Random();
-    
+
     // 数据存储
     private final List<FusionDetail> fusionDetails = new CopyOnWriteArrayList<>();
     @Getter
     private final FusionDetailOutput output;
     private final long startTime;
-    
+
     // 作业信息
     private String jobId;
-    
+
     /**
      * 构造函数
      */
@@ -41,11 +41,11 @@ public class FusionDetailRecorder {
         this.config = fusionConfig.getDetailConfig();
         this.startTime = System.currentTimeMillis();
         this.output = FusionDetailOutput.createDefault();
-        
+
         // 初始化元数据
         initMetadata();
     }
-    
+
     /**
      * 初始化元数据
      */
@@ -55,7 +55,7 @@ public class FusionDetailRecorder {
         metadata.setConfig(fusionConfig);
         metadata.setDataSources(fusionConfig.getSources());
         metadata.setDetailConfig(config);
-        
+
         // 构建简化字段映射
         List<Map<String, Object>> fieldMappings = new ArrayList<>();
         if (fusionConfig.getFieldMappings() != null) {
@@ -98,17 +98,17 @@ public class FusionDetailRecorder {
             }
         }
         metadata.setFieldMappings(fieldMappings);
-        
+
         this.jobId = metadata.getFusionJobId();
     }
-    
+
     /**
      * 生成作业ID
      */
     private String generateJobId() {
         return "fusion_" + System.currentTimeMillis() + "_" + random.nextInt(1000);
     }
-    
+
     /**
      * 判断是否应该记录该行详情（采样判断）
      */
@@ -116,15 +116,15 @@ public class FusionDetailRecorder {
         if (!config.isEnabled()) {
             return false;
         }
-        
+
         // 采样率判断
         if (config.getSamplingRate() >= 1.0) {
             return true; // 100%采样
         }
-        
+
         return random.nextDouble() < config.getSamplingRate();
     }
-    
+
     /**
      * 记录单行融合详情
      */
@@ -132,7 +132,7 @@ public class FusionDetailRecorder {
         if (!config.isEnabled()) {
             return;
         }
-        
+
         // 检查最大记录数限制
         if (fusionDetails.size() >= config.getMaxRecords()) {
             // FIFO淘汰：移除最早记录
@@ -142,20 +142,20 @@ public class FusionDetailRecorder {
                 }
             }
         }
-        
+
         fusionDetails.add(detail);
-        
+
         // 更新统计摘要
         output.getSummary().update(detail);
     }
-    
+
     /**
      * 获取当前记录数
      */
     public int getRecordCount() {
         return fusionDetails.size();
     }
-    
+
     /**
      * 保存详情到文件
      */
@@ -164,40 +164,42 @@ public class FusionDetailRecorder {
             log.info("融合详情记录未启用，跳过保存");
             return null;
         }
-        
+
         try {
             // 更新统计信息
             updateSummary();
-            
+
             // 设置输出数据
             output.setFusionDetails(new ArrayList<>(fusionDetails));
-            
+
             // 获取文件路径
             String filePath = getOutputFilePath();
-            
+
             // 确保目录存在
             ensureDirectoryExists(filePath);
-            
+
             // 转换为JSON并保存
             String json = JSON.toJSONString(output, SerializerFeature.PrettyFormat,
                     SerializerFeature.WriteMapNullValue, SerializerFeature.WriteDateUseDateFormat);
-            
+
             Path path = Paths.get(filePath);
             Files.write(path, json.getBytes());
-            
+
             log.info("融合详情已保存到文件: {}", filePath);
-            
-            // 同时生成前端HTML文件
-            generateHtmlFile(filePath);
-            
+
+            if (config.isSaveHtml()) {
+                // 同时生成前端HTML文件
+                generateHtmlFile(filePath);
+            }
+
             return filePath;
-            
+
         } catch (Exception e) {
             log.error("保存融合详情失败", e);
             return null;
         }
     }
-    
+
     /**
      * 获取输出文件路径
      */
@@ -207,30 +209,30 @@ public class FusionDetailRecorder {
             // 默认文件名
             return "fusion_details_" + System.currentTimeMillis() + ".json";
         }
-        
+
         // 如果是目录，生成文件名
         if (config.isSavePathDirectory()) {
             String fileName = config.getFileNamePattern();
-            
+
             // 替换占位符
             fileName = fileName.replace("{timestamp}", String.valueOf(System.currentTimeMillis()));
             fileName = fileName.replace("{jobId}", jobId);
             fileName = fileName.replace("{datetime}", new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date()));
             fileName = fileName.replace("{sourceCount}", String.valueOf(fusionConfig.getSources().size()));
             fileName = fileName.replace("{recordCount}", String.valueOf(fusionDetails.size()));
-            
+
             // 确保文件名以.json结尾
             if (!fileName.endsWith(".json")) {
                 fileName += ".json";
             }
-            
+
             return savePath + File.separator + fileName;
         }
-        
+
         // 已经是完整文件路径
         return savePath;
     }
-    
+
     /**
      * 确保目录存在
      */
@@ -241,7 +243,7 @@ public class FusionDetailRecorder {
             Files.createDirectories(parentDir.toPath());
         }
     }
-    
+
     /**
      * 更新统计摘要
      */
@@ -251,20 +253,20 @@ public class FusionDetailRecorder {
         summary.setProcessingTimeMs(System.currentTimeMillis() - startTime);
         summary.setSamplingRate(config.getSamplingRate());
     }
-    
+
     /**
      * 生成HTML可视化文件
      */
     private void generateHtmlFile(String jsonFilePath) throws IOException {
         String htmlContent = buildHtmlContent(jsonFilePath);
         String htmlFilePath = jsonFilePath.replace(".json", ".html");
-        
+
         Path path = Paths.get(htmlFilePath);
         Files.write(path, htmlContent.getBytes());
-        
+
         log.info("融合详情可视化页面已生成: {}", htmlFilePath);
     }
-    
+
     /**
      * 构建HTML内容
      */
@@ -272,7 +274,7 @@ public class FusionDetailRecorder {
         // 返回通用HTML模板，不嵌入任何数据
         return getHtmlTemplate();
     }
-    
+
     /**
      * 获取HTML模板
      */
@@ -305,22 +307,22 @@ public class FusionDetailRecorder {
                 "        <div class=\"row mb-3\">\n" +
                 "            <div class=\"col\">\n" +
                 "                <h1 class=\"h3\">数据融合详情可视化</h1>\n" +
-"                <div class=\"text-muted small\">\n" +
-"                    作业ID: <span id=\"jobId\">--</span> | 记录数: <span id=\"recordCount\">0</span> | 生成时间: <span id=\"timestamp\">--</span>\n" +
-"                </div>\n" +
-"                <div class=\"mt-2\">\n" +
-"                    <small class=\"text-info\" id=\"dataStatus\">请加载JSON文件以查看融合详情</small>\n" +
-"                </div>\n" +
+                "                <div class=\"text-muted small\">\n" +
+                "                    作业ID: <span id=\"jobId\">--</span> | 记录数: <span id=\"recordCount\">0</span> | 生成时间: <span id=\"timestamp\">--</span>\n" +
+                "                </div>\n" +
+                "                <div class=\"mt-2\">\n" +
+                "                    <small class=\"text-info\" id=\"dataStatus\">请加载JSON文件以查看融合详情</small>\n" +
+                "                </div>\n" +
                 "            </div>\n" +
-"            <div class=\"col-auto\">\n" +
-"                <input type=\"file\" id=\"jsonFileInput\" accept=\".json\" style=\"display: none;\" @change=\"handleFileSelect\">\n" +
-"                <button class=\"btn btn-outline-primary\" @click=\"openFilePicker\">\n" +
-"                    <i class=\"bi-folder2-open\"></i> 打开JSON文件\n" +
-"                </button>\n" +
-"                <button class=\"btn btn-outline-secondary ms-2\" @click=\"reloadData\" :disabled=\"!currentFile\">\n" +
-"                    <i class=\"bi-arrow-clockwise\"></i> 重新加载\n" +
-"                </button>\n" +
-"            </div>\n" +
+                "            <div class=\"col-auto\">\n" +
+                "                <input type=\"file\" id=\"jsonFileInput\" accept=\".json\" style=\"display: none;\" @change=\"handleFileSelect\">\n" +
+                "                <button class=\"btn btn-outline-primary\" @click=\"openFilePicker\">\n" +
+                "                    <i class=\"bi-folder2-open\"></i> 打开JSON文件\n" +
+                "                </button>\n" +
+                "                <button class=\"btn btn-outline-secondary ms-2\" @click=\"reloadData\" :disabled=\"!currentFile\">\n" +
+                "                    <i class=\"bi-arrow-clockwise\"></i> 重新加载\n" +
+                "                </button>\n" +
+                "            </div>\n" +
                 "        </div>\n" +
                 "\n" +
                 "        <!-- 概览仪表板 -->\n" +
@@ -453,7 +455,7 @@ public class FusionDetailRecorder {
                 "                                        <th width=\"120\">状态</th>\n" +
                 "                                        <th width=\"100\">字段数</th>\n" +
                 "                                        <th>字段详情</th>\n" +
-                                        "                                        <th width=\"120\">操作</th>\n" +
+                "                                        <th width=\"120\">操作</th>\n" +
                 "                                    </tr>\n" +
                 "                                </thead>\n" +
                 "                                <tbody>\n" +
@@ -546,8 +548,8 @@ public class FusionDetailRecorder {
                 "                                                                </tr>\n" +
                 "                                                            </tbody>\n" +
                 "                                                        </table>\n" +
-"                                                    </div>\n" +
-"                                                </div>\n" +
+                "                                                    </div>\n" +
+                "                                                </div>\n" +
                 "                                            </td>\n" +
                 "                                        </tr>\n" +
                 "                                    </template>\n" +
@@ -578,7 +580,7 @@ public class FusionDetailRecorder {
                 "                                </li>\n" +
                 "                                <li class=\"page-item disabled\">\n" +
                 "                                    <span class=\"page-link\">第 {{ currentPage }} 页 / 共 {{ totalPages }} 页</span>\n" +
-                                "                                </li>\n" +
+                "                                </li>\n" +
                 "                                <li class=\"page-item\" :class=\"{ disabled: currentPage === totalPages }\">\n" +
                 "                                    <a class=\"page-link\" href=\"#\" @click.prevent=\"currentPage++\">下一页</a>\n" +
                 "                                </li>\n" +
@@ -599,62 +601,62 @@ public class FusionDetailRecorder {
                 "        createApp({\n" +
                 "            setup() {\n" +
                 "                // 数据状态\n" +
-"                const metadata = ref({});\n" +
-"                const fusionDetails = ref([]);\n" +
-"                const summary = ref({});\n" +
-"                const currentFile = ref(null);\n" +
-"                \n" +
-"                const openFilePicker = () => {\n" +
-"                    document.getElementById('jsonFileInput').click();\n" +
-"                };\n" +
-"                \n" +
-"                const handleFileSelect = (event) => {\n" +
-"                    const file = event.target.files[0];\n" +
-"                    if (file) {\n" +
-"                        currentFile.value = file;\n" +
-"                        loadData(file);\n" +
-"                    }\n" +
-"                };\n" +
-"                \n" +
-"                const reloadData = () => {\n" +
-"                    if (currentFile.value) {\n" +
-"                        loadData(currentFile.value);\n" +
-"                    } else {\n" +
-"                        const statusEl = document.getElementById('dataStatus');\n" +
-"                        if (statusEl) {\n" +
-"                            statusEl.textContent = '请先选择JSON文件';\n" +
-"                            statusEl.className = 'text-danger';\n" +
-"                        }\n" +
-"                    }\n" +
-"                };\n" +
-"                \n" +
-"                const readFileAsText = (file) => {\n" +
-"                    return new Promise((resolve, reject) => {\n" +
-"                        const reader = new FileReader();\n" +
-"                        reader.onload = (e) => resolve(e.target.result);\n" +
-"                        reader.onerror = (e) => reject(new Error('文件读取失败'));\n" +
-"                        reader.readAsText(file);\n" +
-"                    });\n" +
-"                };\n" +
-"                \n" +
-"                const updatePageMetadata = (data) => {\n" +
-"                    const jobIdEl = document.getElementById('jobId');\n" +
-"                    const recordCountEl = document.getElementById('recordCount');\n" +
-"                    const timestampEl = document.getElementById('timestamp');\n" +
-"                    if (jobIdEl) jobIdEl.textContent = data.metadata?.jobId || '--';\n" +
-"                    if (recordCountEl) recordCountEl.textContent = data.summary?.totalRecords || 0;\n" +
-"                    if (timestampEl) timestampEl.textContent = data.metadata?.timestamp ? new Date(data.metadata.timestamp).toLocaleString() : '--';\n" +
-"                };\n" +
-"                \n" +
-"                const updateDataStatus = (message, type = 'info') => {\n" +
-"                    const statusEl = document.getElementById('dataStatus');\n" +
-"                    if (statusEl) {\n" +
-"                        statusEl.textContent = message;\n" +
-"                        statusEl.className = type === 'success' ? 'text-success' : type === 'error' ? 'text-danger' : 'text-info';\n" +
-"                    }\n" +
-"                };\n" +
-"                \n" +
-"                // UI状态\n" +
+                "                const metadata = ref({});\n" +
+                "                const fusionDetails = ref([]);\n" +
+                "                const summary = ref({});\n" +
+                "                const currentFile = ref(null);\n" +
+                "                \n" +
+                "                const openFilePicker = () => {\n" +
+                "                    document.getElementById('jsonFileInput').click();\n" +
+                "                };\n" +
+                "                \n" +
+                "                const handleFileSelect = (event) => {\n" +
+                "                    const file = event.target.files[0];\n" +
+                "                    if (file) {\n" +
+                "                        currentFile.value = file;\n" +
+                "                        loadData(file);\n" +
+                "                    }\n" +
+                "                };\n" +
+                "                \n" +
+                "                const reloadData = () => {\n" +
+                "                    if (currentFile.value) {\n" +
+                "                        loadData(currentFile.value);\n" +
+                "                    } else {\n" +
+                "                        const statusEl = document.getElementById('dataStatus');\n" +
+                "                        if (statusEl) {\n" +
+                "                            statusEl.textContent = '请先选择JSON文件';\n" +
+                "                            statusEl.className = 'text-danger';\n" +
+                "                        }\n" +
+                "                    }\n" +
+                "                };\n" +
+                "                \n" +
+                "                const readFileAsText = (file) => {\n" +
+                "                    return new Promise((resolve, reject) => {\n" +
+                "                        const reader = new FileReader();\n" +
+                "                        reader.onload = (e) => resolve(e.target.result);\n" +
+                "                        reader.onerror = (e) => reject(new Error('文件读取失败'));\n" +
+                "                        reader.readAsText(file);\n" +
+                "                    });\n" +
+                "                };\n" +
+                "                \n" +
+                "                const updatePageMetadata = (data) => {\n" +
+                "                    const jobIdEl = document.getElementById('jobId');\n" +
+                "                    const recordCountEl = document.getElementById('recordCount');\n" +
+                "                    const timestampEl = document.getElementById('timestamp');\n" +
+                "                    if (jobIdEl) jobIdEl.textContent = data.metadata?.jobId || '--';\n" +
+                "                    if (recordCountEl) recordCountEl.textContent = data.summary?.totalRecords || 0;\n" +
+                "                    if (timestampEl) timestampEl.textContent = data.metadata?.timestamp ? new Date(data.metadata.timestamp).toLocaleString() : '--';\n" +
+                "                };\n" +
+                "                \n" +
+                "                const updateDataStatus = (message, type = 'info') => {\n" +
+                "                    const statusEl = document.getElementById('dataStatus');\n" +
+                "                    if (statusEl) {\n" +
+                "                        statusEl.textContent = message;\n" +
+                "                        statusEl.className = type === 'success' ? 'text-success' : type === 'error' ? 'text-danger' : 'text-info';\n" +
+                "                    }\n" +
+                "                };\n" +
+                "                \n" +
+                "                // UI状态\n" +
                 "                const expandedDetails = ref(new Set());\n" +
                 "                const currentPage = ref(1);\n" +
                 "                const pageSize = ref(25);\n" +
@@ -715,36 +717,36 @@ public class FusionDetailRecorder {
                 "                });\n" +
                 "\n" +
                 "                // 方法\n" +
-"                const loadData = async (file) => {\n" +
-"                    try {\n" +
-"                        const fileToRead = file || currentFile.value;\n" +
-"                        if (!fileToRead) {\n" +
-"                            throw new Error('请先选择JSON文件');\n" +
-"                        }\n" +
-"                        const text = await readFileAsText(fileToRead);\n" +
-"                        const data = JSON.parse(text);\n" +
-"                        \n" +
-"                        metadata.value = data.metadata || {};\n" +
-"                        fusionDetails.value = data.fusionDetails || [];\n" +
-"                        summary.value = data.summary || {};\n" +
-"                        \n" +
-"                        // 更新页面元数据\n" +
-"                        updatePageMetadata(data);\n" +
-"                        \n" +
-"                        // 重置分页\n" +
-"                        currentPage.value = 1;\n" +
-"                        expandedDetails.value.clear();\n" +
-"                        \n" +
-"                        // 初始化图表\n" +
-"                        setTimeout(initCharts, 100);\n" +
-"                        \n" +
-"                        console.log('数据加载成功:', fusionDetails.value.length, '条记录');\n" +
-"                        updateDataStatus('数据加载成功', 'success');\n" +
-"                    } catch (error) {\n" +
-"                        console.error('加载数据失败:', error);\n" +
-"                        updateDataStatus('加载数据失败: ' + error.message, 'error');\n" +
-"                    }\n" +
-"                };\n" +
+                "                const loadData = async (file) => {\n" +
+                "                    try {\n" +
+                "                        const fileToRead = file || currentFile.value;\n" +
+                "                        if (!fileToRead) {\n" +
+                "                            throw new Error('请先选择JSON文件');\n" +
+                "                        }\n" +
+                "                        const text = await readFileAsText(fileToRead);\n" +
+                "                        const data = JSON.parse(text);\n" +
+                "                        \n" +
+                "                        metadata.value = data.metadata || {};\n" +
+                "                        fusionDetails.value = data.fusionDetails || [];\n" +
+                "                        summary.value = data.summary || {};\n" +
+                "                        \n" +
+                "                        // 更新页面元数据\n" +
+                "                        updatePageMetadata(data);\n" +
+                "                        \n" +
+                "                        // 重置分页\n" +
+                "                        currentPage.value = 1;\n" +
+                "                        expandedDetails.value.clear();\n" +
+                "                        \n" +
+                "                        // 初始化图表\n" +
+                "                        setTimeout(initCharts, 100);\n" +
+                "                        \n" +
+                "                        console.log('数据加载成功:', fusionDetails.value.length, '条记录');\n" +
+                "                        updateDataStatus('数据加载成功', 'success');\n" +
+                "                    } catch (error) {\n" +
+                "                        console.error('加载数据失败:', error);\n" +
+                "                        updateDataStatus('加载数据失败: ' + error.message, 'error');\n" +
+                "                    }\n" +
+                "                };\n" +
                 "                \n" +
                 "                const toggleExpand = (detail) => {\n" +
                 "                    if (expandedDetails.value.has(detail.joinKey)) {\n" +
@@ -825,7 +827,7 @@ public class FusionDetailRecorder {
                 "                            type: 'bar',\n" +
                 "                            data: {\n" +
                 "                                labels: Object.keys(summary.value.strategyStatistics),\n" +
-                                "                                datasets: [{\n" +
+                "                                datasets: [{\n" +
                 "                                    label: '使用次数',\n" +
                 "                                    data: Object.values(summary.value.strategyStatistics),\n" +
                 "                                    backgroundColor: '#007bff'\n" +
@@ -869,12 +871,12 @@ public class FusionDetailRecorder {
                 "                    toggleExpand,\n" +
                 "                    getStatusBadgeClass,\n" +
                 "                    formatValue,\n" +
-"                    exportData,\n" +
-"                    currentFile,\n" +
-"                    openFilePicker,\n" +
-"                    handleFileSelect,\n" +
-"                    reloadData\n" +
-"                };\n" +
+                "                    exportData,\n" +
+                "                    currentFile,\n" +
+                "                    openFilePicker,\n" +
+                "                    handleFileSelect,\n" +
+                "                    reloadData\n" +
+                "                };\n" +
                 "            }\n" +
                 "        }).mount('#app');\n" +
                 "    </script>\n" +

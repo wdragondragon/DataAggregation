@@ -18,6 +18,7 @@ public class FusionDetailConfig {
     private int maxRecords = 10000;                    // 最大记录条数（防内存溢出）
     private boolean includeSourceData = true;          // 是否包含源数据快照
     private boolean includeFieldDetails = true;        // 是否包含字段级详情
+    private boolean saveHtml = false;
     private String fileNamePattern = "fusion_details_{timestamp}.json"; // 文件名模式
 
     /**
@@ -34,8 +35,9 @@ public class FusionDetailConfig {
         detailConfig.setSavePath(config.getString("savePath", "./fusion_details"));
         detailConfig.setSamplingRate(config.getDouble("samplingRate", 1.0));
         detailConfig.setMaxRecords(config.getInt("maxRecords", 10000));
-        detailConfig.setIncludeSourceData(config.getBool("includeSourceData", true));
-        detailConfig.setIncludeFieldDetails(config.getBool("includeFieldDetails", true));
+        detailConfig.setIncludeSourceData(config.getBool("includeSourceData", false));
+        detailConfig.setIncludeFieldDetails(config.getBool("includeFieldDetails", false));
+        detailConfig.setSaveHtml(config.getBool("saveHtml", false));
         detailConfig.setFileNamePattern(config.getString("fileNamePattern", "fusion_details_{timestamp}.json"));
 
         return detailConfig;

@@ -47,7 +47,7 @@ public class SourceConfig {
         sourceConfig.setSourceId(config.getString("id"));
         sourceConfig.setSourceName(config.getString("name", config.getString("id")));
         sourceConfig.setPluginType(config.getString("type"));
-        sourceConfig.setPluginConfig(config.getConfiguration("config"));
+        sourceConfig.setPluginConfig(config.getConfiguration("connect"));
 
         // 解析融合相关参数
         sourceConfig.setWeight(config.getDouble("weight", 1.0));
@@ -62,7 +62,7 @@ public class SourceConfig {
 
         sourceConfig.setFieldMappings(config.getMap("fieldMappings", String.class));
         sourceConfig.setExtConfig(config.getConfiguration("extConfig"));
-        sourceConfig.setQuerySql(config.getString("querySql"));
+        sourceConfig.setQuerySql(config.getString("querySql", config.getString("selectSql")));
 
         if (StringUtils.isBlank(sourceConfig.getQuerySql())) {
             String tableName = config.getString("table");

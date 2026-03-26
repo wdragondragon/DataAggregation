@@ -1,5 +1,6 @@
 package com.jdragon.aggregation.core.fusion;
 
+import com.alibaba.fastjson.JSONObject;
 import com.jdragon.aggregation.commons.element.*;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.consistency.model.DataSourceConfig;
@@ -7,6 +8,7 @@ import com.jdragon.aggregation.core.consistency.service.DataFetcher;
 import com.jdragon.aggregation.core.consistency.service.DataSourcePluginManager;
 import com.jdragon.aggregation.core.fusion.config.FusionConfig;
 import com.jdragon.aggregation.core.fusion.config.SourceConfig;
+import com.jdragon.aggregation.core.fusion.detail.FusionDetailOutput;
 import com.jdragon.aggregation.core.fusion.strategy.FusionStrategyFactory;
 import com.jdragon.aggregation.core.plugin.RecordSender;
 import com.jdragon.aggregation.core.plugin.spi.Reader;
@@ -196,5 +198,11 @@ public class FusionReader extends Reader.Job {
         } else {
             return new ObjectColumn(o);
         }
+    }
+
+    @Override
+    public void post() {
+        FusionDetailOutput.Summary summary = fusionContext.getDetailRecorder().getOutput().getSummary();
+        getJobPointReporter().getTrackCommunication().addMessage("fusion_summary", JSONObject.toJSONString(summary));
     }
 }
