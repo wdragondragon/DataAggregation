@@ -1,0 +1,6 @@
+{
+  "name": "custom_batch_replace",
+  "class": "com.jdragon.aggregation.transformer.impl.CustomBatchReplace",
+  "description": "",
+  "developer": "jdragon"
+}
