@@ -43,33 +43,35 @@ public class DatasourceCache {
                 user,
                 password);
         try {
-            DataSource dataSource;
-            dataSource = dataSourceCache.getIfPresent(key);
-            if (dataSource != null) {
-                return dataSource;
-            }
-            HikariConfig hikariConfig = new HikariConfig();
-            hikariConfig.setPoolName(key);
-            hikariConfig.setJdbcUrl(jdbcUrl);
-            hikariConfig.setUsername(user);
-            hikariConfig.setPassword(password);
-            hikariConfig.setDriverClassName(driverClassName);
-            hikariConfig.setMaximumPoolSize(20);
-            hikariConfig.setMinimumIdle(2);
-            hikariConfig.setIdleTimeout(60000L);
-            hikariConfig.setMaxLifetime(180000L);
-            hikariConfig.setKeepaliveTime(30000L);
-            hikariConfig.setConnectionTimeout(60000L);
-//            hikariConfig.setRegisterMbeans(true);
-            if (StringUtils.isNotBlank(testQuery)) {
-                hikariConfig.setConnectionTestQuery(testQuery);
-            }
-            HikariDataSource hikariDataSource = new HikariDataSource(hikariConfig);
-            dataSourceCache.put(key, hikariDataSource);
-            return hikariDataSource;
+            return dataSourceCache.get(key, cacheKey -> createDataSource(cacheKey, jdbcUrl, driverClassName, user, password, testQuery));
         } catch (Throwable e) {
             throw e;
         }
+    }
+
+    private static DataSource createDataSource(String key,
+                                               String jdbcUrl,
+                                               String driverClassName,
+                                               String user,
+                                               String password,
+                                               String testQuery) {
+        HikariConfig hikariConfig = new HikariConfig();
+        hikariConfig.setPoolName(key);
+        hikariConfig.setJdbcUrl(jdbcUrl);
+        hikariConfig.setUsername(user);
+        hikariConfig.setPassword(password);
+        hikariConfig.setDriverClassName(driverClassName);
+        hikariConfig.setMaximumPoolSize(20);
+        hikariConfig.setMinimumIdle(2);
+        hikariConfig.setIdleTimeout(60000L);
+        hikariConfig.setMaxLifetime(180000L);
+        hikariConfig.setKeepaliveTime(30000L);
+        hikariConfig.setConnectionTimeout(60000L);
+//            hikariConfig.setRegisterMbeans(true);
+        if (StringUtils.isNotBlank(testQuery)) {
+            hikariConfig.setConnectionTestQuery(testQuery);
+        }
+        return new HikariDataSource(hikariConfig);
     }
 
     public static void logMon(String jdbcUrl, String driverClassName, String user, String password) {

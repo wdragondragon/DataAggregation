@@ -2,6 +2,7 @@ package com.jdragon.aggregation.core.fusion.detail;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.serializer.SerializerFeature;
+import com.jdragon.aggregation.core.streaming.AppendOnlySpillList;
 import com.jdragon.aggregation.core.fusion.config.*;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -12,7 +13,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * 融合详情记录器
@@ -25,7 +25,7 @@ public class FusionDetailRecorder {
     private final Random random = new Random();
 
     // 数据存储
-    private final List<FusionDetail> fusionDetails = new CopyOnWriteArrayList<>();
+    private final List<FusionDetail> fusionDetails;
     @Getter
     private final FusionDetailOutput output;
     private final long startTime;
@@ -41,6 +41,7 @@ public class FusionDetailRecorder {
         this.config = fusionConfig.getDetailConfig();
         this.startTime = System.currentTimeMillis();
         this.output = FusionDetailOutput.createDefault();
+        this.fusionDetails = new AppendOnlySpillList<>("fusion-details", FusionDetail.class);
 
         // 初始化元数据
         initMetadata();
@@ -138,7 +139,7 @@ public class FusionDetailRecorder {
             // FIFO淘汰：移除最早记录
             synchronized (fusionDetails) {
                 if (fusionDetails.size() >= config.getMaxRecords()) {
-                    fusionDetails.remove(0);
+                    return;
                 }
             }
         }

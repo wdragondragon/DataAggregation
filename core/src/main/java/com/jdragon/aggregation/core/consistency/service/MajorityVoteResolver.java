@@ -53,7 +53,7 @@ public class MajorityVoteResolver extends BaseConflictResolver {
             String sourceId = sourceEntry.getKey();
             Map<String, Object> record = sourceEntry.getValue();
             
-            if (isMissingSource(record)) {
+            if (isMissingSource(differenceRecord, sourceId)) {
                 continue;
             }
             
@@ -111,14 +111,5 @@ public class MajorityVoteResolver extends BaseConflictResolver {
         Set<String> conflictFields = new HashSet<>();
         conflictFields.addAll(differenceRecord.getDifferences().keySet());
         return conflictFields;
-    }
-    
-    private boolean isMissingSource(Map<String, Object> record) {
-        for (Object value : record.values()) {
-            if (value != null) {
-                return false;
-            }
-        }
-        return true;
     }
 }

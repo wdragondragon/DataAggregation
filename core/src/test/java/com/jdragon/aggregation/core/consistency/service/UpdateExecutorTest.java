@@ -3,6 +3,7 @@ package com.jdragon.aggregation.core.consistency.service;
 import com.jdragon.aggregation.core.consistency.model.ConsistencyRule;
 import com.jdragon.aggregation.core.consistency.model.DifferenceRecord;
 import com.jdragon.aggregation.core.consistency.model.ResolutionResult;
+import com.jdragon.aggregation.core.consistency.model.UpdatePlan;
 import com.jdragon.aggregation.commons.util.Configuration;
 import org.junit.Before;
 import org.junit.Test;
@@ -191,6 +192,65 @@ public class UpdateExecutorTest {
         // recordShouldExist=true, targetExists=false -> INSERT
         assertEquals("Should be INSERT when at least one non-match-key field has value and target missing", 
                 UpdateExecutor.OperationType.INSERT, result);
+    }
+
+    @Test
+    public void testDetermineOperationType_InsertWhenWinningSourceIsMissingButAnotherSourceExists() throws Exception {
+        DifferenceRecord diff = createDifferenceRecord(
+                Arrays.asList("user_id", "username"),
+                createMatchKeys("user_id", "7", "username", "wujiu"),
+                createResolvedValues("user_id", "7", "username", "wujiu", "age", null, "salary", null),
+                Arrays.asList("target", "source-2")
+        );
+        diff.setSourceValues(new LinkedHashMap<String, Map<String, Object>>() {{
+            put("target", createMatchKeys("user_id", "7", "username", "wujiu"));
+            put("source-2", createMatchKeys("user_id", "7", "username", "wujiu"));
+            put("source-3", createResolvedValues("user_id", "7", "username", "wujiu", "age", null, "salary", null));
+        }});
+        diff.getResolutionResult().setWinningSource("source-2");
+
+        UpdateExecutor.OperationType result = (UpdateExecutor.OperationType)
+                determineOperationTypeMethod.invoke(updateExecutor, diff, "target");
+
+        assertEquals("Should still INSERT when another non-missing source has the record",
+                UpdateExecutor.OperationType.INSERT, result);
+    }
+
+    @Test
+    public void testDetermineOperationType_PrefersUpdatePlanOperationType() throws Exception {
+        DifferenceRecord diff = createDifferenceRecord(
+                Arrays.asList("id"),
+                createMatchKeys("id", 1),
+                createResolvedValues("id", 1),
+                Arrays.asList("source1")
+        );
+        UpdatePlan updatePlan = new UpdatePlan();
+        updatePlan.setOperationType("SKIP");
+        updatePlan.setMatchKeyValues(createMatchKeys("id", 1));
+        updatePlan.setResolvedValues(createResolvedValues("id", 1, "age", 18));
+        diff.setUpdatePlan(updatePlan);
+
+        UpdateExecutor.OperationType result = (UpdateExecutor.OperationType)
+                determineOperationTypeMethod.invoke(updateExecutor, diff, "target");
+
+        assertEquals("Should honor explicit operation type from update plan",
+                UpdateExecutor.OperationType.SKIP, result);
+    }
+
+    @Test
+    public void testDetermineOperationType_UsesLegacyFallbackWhenUpdatePlanAbsent() throws Exception {
+        DifferenceRecord diff = createDifferenceRecord(
+                Arrays.asList("id", "name"),
+                createMatchKeys("id", 1, "name", "test"),
+                createResolvedValues("id", 1, "name", "test"),
+                Arrays.asList("source1")
+        );
+
+        UpdateExecutor.OperationType result = (UpdateExecutor.OperationType)
+                determineOperationTypeMethod.invoke(updateExecutor, diff, "target");
+
+        assertEquals("Should retain legacy behavior without update plan",
+                UpdateExecutor.OperationType.DELETE, result);
     }
 
     @Test

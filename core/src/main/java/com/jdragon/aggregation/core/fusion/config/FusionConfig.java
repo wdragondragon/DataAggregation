@@ -69,12 +69,15 @@ public class FusionConfig {
         
         // 解析关联键
         List<String> joinKeys = config.getList("join.keys", String.class);
+        if (joinKeys == null) {
+            joinKeys = config.getList("joinKeys", String.class);
+        }
         if (joinKeys != null) {
             fusionConfig.setJoinKeys(joinKeys);
         }
         
         // 解析连接类型
-        String joinTypeStr = config.getString("join.type", "INNER");
+        String joinTypeStr = config.getString("join.type", config.getString("joinType", "INNER"));
         fusionConfig.setJoinType(JoinType.valueOf(joinTypeStr.toUpperCase()));
         
         // 解析字段映射

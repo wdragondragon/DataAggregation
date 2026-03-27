@@ -127,8 +127,8 @@
         "savePath": "./fusion_details",
         "samplingRate": 1.0,
         "maxRecords": 1000,
-        "includeSourceData": true,
-        "includeFieldDetails": true,
+        "includeSourceData": false,
+        "includeFieldDetails": false,
         "fileNamePattern": "fusion_details_{datetime}.json"
       }
     }

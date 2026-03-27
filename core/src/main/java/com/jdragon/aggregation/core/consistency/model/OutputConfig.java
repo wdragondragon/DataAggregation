@@ -1,45 +1,64 @@
 package com.jdragon.aggregation.core.consistency.model;
 
+import com.jdragon.aggregation.commons.util.Configuration;
 import lombok.Data;
 
 @Data
 public class OutputConfig {
-    
-    private OutputType outputType; // 输出类型：文件、数据库、内存
-    
-    private String outputPath; // 输出文件路径（当输出类型为FILE时）
-    
-    private String databaseTable; // 数据库表名（当输出类型为DATABASE时）
-    
-    private String databaseConnection; // 数据库连接（当输出类型为DATABASE时）
-    
-    private Boolean storeDifferences = true; // 是否存储差异数据
-    
-    private Boolean storeResolutionResults = true; // 是否存储解决结果
-    
-    private Boolean generateReport = true; // 是否生成报告
-    
-    private ReportFormat reportFormat = ReportFormat.JSON; // 报告格式：JSON、HTML、CSV
-    
-    private ReportLanguage reportLanguage = ReportLanguage.ENGLISH; // 报告语言：英文、中文、双语
-    
-    private Integer maxDifferencesToDisplay = 100; // 报告中最大显示差异数量
-    
+
+    private OutputType outputType = OutputType.FILE;
+
+    private String outputPath;
+
+    private String databaseTable;
+
+    private String databaseConnection;
+
+    private Boolean storeDifferences = true;
+
+    private Boolean storeResolutionResults = true;
+
+    private Boolean generateReport = true;
+
+    private ReportFormat reportFormat = ReportFormat.JSON;
+
+    private ReportLanguage reportLanguage = ReportLanguage.ENGLISH;
+
+    private Integer maxDifferencesToDisplay = 100;
+
+    public static OutputConfig fromConfig(Configuration config) {
+        OutputConfig outputConfig = new OutputConfig();
+        if (config == null) {
+            return outputConfig;
+        }
+        outputConfig.setOutputType(OutputType.valueOf(config.getString("outputType", "FILE").toUpperCase()));
+        outputConfig.setOutputPath(config.getString("outputPath"));
+        outputConfig.setDatabaseTable(config.getString("databaseTable"));
+        outputConfig.setDatabaseConnection(config.getString("databaseConnection"));
+        outputConfig.setStoreDifferences(config.getBool("storeDifferences", true));
+        outputConfig.setStoreResolutionResults(config.getBool("storeResolutionResults", true));
+        outputConfig.setGenerateReport(config.getBool("generateReport", true));
+        outputConfig.setReportFormat(ReportFormat.valueOf(config.getString("reportFormat", "JSON").toUpperCase()));
+        outputConfig.setReportLanguage(ReportLanguage.valueOf(config.getString("reportLanguage", "ENGLISH").toUpperCase()));
+        outputConfig.setMaxDifferencesToDisplay(config.getInt("maxDifferencesToDisplay", 100));
+        return outputConfig;
+    }
+
     public enum OutputType {
-        FILE, // 文件输出
-        DATABASE, // 数据库输出
-        MEMORY // 内存输出
+        FILE,
+        DATABASE,
+        MEMORY
     }
-    
+
     public enum ReportFormat {
-        JSON, // JSON格式报告
-        HTML, // HTML格式报告
-        CSV // CSV格式报告
+        JSON,
+        HTML,
+        CSV
     }
-    
+
     public enum ReportLanguage {
-        ENGLISH, // 英文报告
-        CHINESE, // 中文报告
-        BILINGUAL // 双语报告（中英文）
+        ENGLISH,
+        CHINESE,
+        BILINGUAL
     }
 }

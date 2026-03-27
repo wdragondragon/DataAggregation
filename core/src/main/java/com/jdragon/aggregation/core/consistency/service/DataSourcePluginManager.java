@@ -1,6 +1,7 @@
 package com.jdragon.aggregation.core.consistency.service;
 
 import com.alibaba.fastjson.JSONObject;
+import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.AbstractDataSourcePlugin;
 import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
 import com.jdragon.aggregation.datasource.SourcePluginType;
@@ -8,6 +9,7 @@ import com.jdragon.aggregation.pluginloader.LoadUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -59,16 +61,40 @@ public class DataSourcePluginManager {
 
     public static BaseDataSourceDTO createDataSourceDTO(com.jdragon.aggregation.core.consistency.model.DataSourceConfig config) {
         BaseDataSourceDTO dto = new BaseDataSourceDTO();
+        dto.setName(config.getSourceName());
 
         if (config.getConnectionConfig() != null) {
-            dto.setHost(config.getConnectionConfig().getString("host"));
-            dto.setPort(config.getConnectionConfig().getString("port"));
-            dto.setDatabase(config.getConnectionConfig().getString("database"));
-            dto.setUserName(config.getConnectionConfig().getString("username", config.getConnectionConfig().getString("userName")));
-            dto.setPassword(config.getConnectionConfig().getString("password"));
-            String other = config.getConnectionConfig().getString("other");
-            if (other != null) {
-                dto.setOther(other);
+            Configuration connectionConfig = config.getConnectionConfig();
+            dto.setHost(connectionConfig.getString("host"));
+            dto.setPort(connectionConfig.getString("port"));
+            dto.setDatabase(connectionConfig.getString("database"));
+            dto.setUserName(connectionConfig.getString("username", connectionConfig.getString("userName")));
+            dto.setPassword(connectionConfig.getString("password"));
+            dto.setUsePool(connectionConfig.getBool("usePool", false));
+            dto.setJdbcUrl(connectionConfig.getString("jdbcUrl"));
+            dto.setDriverClassName(connectionConfig.getString("driverClassName"));
+
+            Map<String, String> extraParams = new LinkedHashMap<>();
+            Map<String, Object> extraParamConfig = connectionConfig.getMap("extraParams");
+            if (extraParamConfig != null) {
+                for (Map.Entry<String, Object> entry : extraParamConfig.entrySet()) {
+                    if (entry.getValue() != null) {
+                        extraParams.put(entry.getKey(), String.valueOf(entry.getValue()));
+                    }
+                }
+            }
+
+            mergeStringValues(extraParams, config.getExtConfig());
+            dto.setExtraParams(extraParams);
+
+            Object other = connectionConfig.get("other");
+            if (other instanceof Map) {
+                dto.setOther(JSONObject.toJSONString(other));
+            } else {
+                String otherValue = connectionConfig.getString("other");
+                if (StringUtils.isNotBlank(otherValue)) {
+                    dto.setOther(otherValue);
+                }
             }
 
             String pluginName = config.getPluginName();
@@ -78,6 +104,21 @@ public class DataSourcePluginManager {
         }
 
         return dto;
+    }
+
+    private static void mergeStringValues(Map<String, String> target, Configuration configuration) {
+        if (configuration == null) {
+            return;
+        }
+        Map<String, Object> values = configuration.getMap("");
+        if (values == null) {
+            return;
+        }
+        for (Map.Entry<String, Object> entry : values.entrySet()) {
+            if (entry.getValue() != null && !target.containsKey(entry.getKey())) {
+                target.put(entry.getKey(), String.valueOf(entry.getValue()));
+            }
+        }
     }
 
     private static String mapPluginNameToType(String pluginName) {

@@ -41,4 +41,30 @@ public abstract class BaseConflictResolver implements ConflictResolver {
         result.setResolutionId(java.util.UUID.randomUUID().toString());
         return result;
     }
+
+    protected boolean isMissingSource(DifferenceRecord differenceRecord, String sourceId) {
+        if (differenceRecord == null || sourceId == null) {
+            return false;
+        }
+        List<String> missingSources = differenceRecord.getMissingSources();
+        if (missingSources != null && missingSources.contains(sourceId)) {
+            return true;
+        }
+        Map<String, Object> record = differenceRecord.getSourceValues() != null
+                ? differenceRecord.getSourceValues().get(sourceId)
+                : null;
+        return isPlaceholderRecord(record);
+    }
+
+    protected boolean isPlaceholderRecord(Map<String, Object> record) {
+        if (record == null || record.isEmpty()) {
+            return true;
+        }
+        for (Object value : record.values()) {
+            if (value != null) {
+                return false;
+            }
+        }
+        return true;
+    }
 }

@@ -47,7 +47,11 @@ public class SourceConfig {
         sourceConfig.setSourceId(config.getString("id"));
         sourceConfig.setSourceName(config.getString("name", config.getString("id")));
         sourceConfig.setPluginType(config.getString("type"));
-        sourceConfig.setPluginConfig(config.getConfiguration("connect"));
+        Configuration pluginConfig = config.getConfiguration("connect");
+        if (pluginConfig == null) {
+            pluginConfig = config.getConfiguration("config");
+        }
+        sourceConfig.setPluginConfig(pluginConfig);
 
         // 解析融合相关参数
         sourceConfig.setWeight(config.getDouble("weight", 1.0));
@@ -61,23 +65,28 @@ public class SourceConfig {
         }
 
         sourceConfig.setFieldMappings(config.getMap("fieldMappings", String.class));
-        sourceConfig.setExtConfig(config.getConfiguration("extConfig"));
+        Configuration extConfig = config.getConfiguration("extConfig");
+        sourceConfig.setExtConfig(extConfig != null ? extConfig : Configuration.newDefault());
         sourceConfig.setQuerySql(config.getString("querySql", config.getString("selectSql")));
+        sourceConfig.setTableName(config.getString("table", config.getString("tableName")));
 
         if (StringUtils.isBlank(sourceConfig.getQuerySql())) {
-            String tableName = config.getString("table");
+            String tableName = sourceConfig.getTableName();
             List<String> columns = config.getList("columns", String.class);
             sourceConfig.setIncrColumn(config.getString("incrColumn"));
             sourceConfig.setIncrModel(config.getString("incrModel", ">"));
-            String querySql = String.format("select %s from %s", String.join(",", columns), tableName);
-            if (StringUtils.isNotBlank(sourceConfig.getIncrColumn())) {
-                String maxPk = config.get("pkValue", null);
-                if (maxPk != null) {
-                    sourceConfig.setMaxIncrValue(new StringColumn(maxPk));
-                    querySql += String.format("where %s %s '%s'", sourceConfig.getIncrColumn(), sourceConfig.getIncrModel(), maxPk);
+            if (StringUtils.isNotBlank(tableName)) {
+                String selectedColumns = (columns == null || columns.isEmpty()) ? "*" : String.join(",", columns);
+                String querySql = String.format("select %s from %s", selectedColumns, tableName);
+                if (StringUtils.isNotBlank(sourceConfig.getIncrColumn())) {
+                    String maxPk = config.get("pkValue", null);
+                    if (maxPk != null) {
+                        sourceConfig.setMaxIncrValue(new StringColumn(maxPk));
+                        querySql += String.format(" where %s %s '%s'", sourceConfig.getIncrColumn(), sourceConfig.getIncrModel(), maxPk);
+                    }
                 }
+                sourceConfig.setQuerySql(querySql);
             }
-            sourceConfig.setQuerySql(querySql);
         }
 
         return sourceConfig;

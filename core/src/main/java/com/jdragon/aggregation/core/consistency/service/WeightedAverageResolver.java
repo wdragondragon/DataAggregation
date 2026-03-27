@@ -79,6 +79,9 @@ public class WeightedAverageResolver extends BaseConflictResolver {
         double effectiveTotalWeight = 0.0;
         for (Map.Entry<String, Map<String, Object>> sourceEntry : differenceRecord.getSourceValues().entrySet()) {
             String sourceId = sourceEntry.getKey();
+            if (isMissingSource(differenceRecord, sourceId)) {
+                continue;
+            }
             Map<String, Object> record = sourceEntry.getValue();
             Object value = record.get(field);
             
@@ -98,7 +101,11 @@ public class WeightedAverageResolver extends BaseConflictResolver {
     }
     
     private boolean isNumericField(String field, DifferenceRecord differenceRecord) {
-        for (Map<String, Object> record : differenceRecord.getSourceValues().values()) {
+        for (Map.Entry<String, Map<String, Object>> entry : differenceRecord.getSourceValues().entrySet()) {
+            if (isMissingSource(differenceRecord, entry.getKey())) {
+                continue;
+            }
+            Map<String, Object> record = entry.getValue();
             Object value = record.get(field);
             if (value != null && !isNumeric(value)) {
                 return false;
@@ -128,7 +135,11 @@ public class WeightedAverageResolver extends BaseConflictResolver {
     
     private Object getMostCommonValue(String field, DifferenceRecord differenceRecord) {
         Map<Object, Integer> frequency = new HashMap<>();
-        for (Map<String, Object> record : differenceRecord.getSourceValues().values()) {
+        for (Map.Entry<String, Map<String, Object>> entry : differenceRecord.getSourceValues().entrySet()) {
+            if (isMissingSource(differenceRecord, entry.getKey())) {
+                continue;
+            }
+            Map<String, Object> record = entry.getValue();
             Object value = record.get(field);
             frequency.put(value, frequency.getOrDefault(value, 0) + 1);
         }

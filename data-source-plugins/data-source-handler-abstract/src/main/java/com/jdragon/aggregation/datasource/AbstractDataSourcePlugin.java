@@ -9,6 +9,7 @@ import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 public abstract class AbstractDataSourcePlugin extends AbstractPlugin {
 
@@ -20,6 +21,16 @@ public abstract class AbstractDataSourcePlugin extends AbstractPlugin {
     public abstract Connection getConnection(BaseDataSourceDTO dataSource);
 
     public abstract Table<Map<String, Object>> executeQuerySql(BaseDataSourceDTO dataSource, String sql, boolean columnLabel);
+
+    public void scanQuery(BaseDataSourceDTO dataSource, String sql, boolean columnLabel, Consumer<Map<String, Object>> rowConsumer) {
+        Table<Map<String, Object>> table = executeQuerySql(dataSource, sql, columnLabel);
+        if (table == null || table.getBodies() == null || rowConsumer == null) {
+            return;
+        }
+        for (Map<String, Object> row : table.getBodies()) {
+            rowConsumer.accept(row);
+        }
+    }
 
     public abstract void executeUpdate(BaseDataSourceDTO dataSource, String sql);
 

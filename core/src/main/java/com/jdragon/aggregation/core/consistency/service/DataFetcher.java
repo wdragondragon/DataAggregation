@@ -4,6 +4,7 @@ import com.jdragon.aggregation.commons.pagination.Table;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.exception.CommonErrorCode;
 import com.jdragon.aggregation.core.consistency.model.DataSourceConfig;
+import com.jdragon.aggregation.core.streaming.SourceRowScanner;
 import com.jdragon.aggregation.datasource.AbstractDataSourcePlugin;
 import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
 import com.jdragon.aggregation.datasource.SourcePluginType;
@@ -15,6 +16,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -22,6 +24,7 @@ public class DataFetcher {
 
     private final DataSourcePluginManager pluginManager;
     private final boolean parallelFetch;
+    private final SourceRowScanner rowScanner;
 
     public DataFetcher(DataSourcePluginManager pluginManager) {
         this(pluginManager, true);
@@ -30,6 +33,19 @@ public class DataFetcher {
     public DataFetcher(DataSourcePluginManager pluginManager, boolean parallelFetch) {
         this.pluginManager = pluginManager;
         this.parallelFetch = parallelFetch;
+        this.rowScanner = new SourceRowScanner(pluginManager);
+    }
+
+    public void scanSources(List<DataSourceConfig> dataSourceConfigs,
+                            int parallelism,
+                            BiConsumer<String, Map<String, Object>> consumer) {
+        rowScanner.scanSources(dataSourceConfigs, parallelism, consumer);
+    }
+
+    public void scanSources(List<DataSourceConfig> dataSourceConfigs,
+                            BiConsumer<String, Map<String, Object>> consumer) {
+        int parallelism = parallelFetch ? Math.max(1, dataSourceConfigs != null ? dataSourceConfigs.size() : 1) : 1;
+        scanSources(dataSourceConfigs, parallelism, consumer);
     }
 
     public Map<String, List<Map<String, Object>>> fetchDataFromSources(List<DataSourceConfig> dataSourceConfigs) {

@@ -53,7 +53,7 @@ public class ConsistencyExample {
         rule.setEnabled(true);
         rule.setParallelFetch(true);
         rule.setToleranceThreshold(0.01);
-        rule.setConflictResolutionStrategy(ConflictResolutionStrategy.HIGH_CONFIDENCE);
+        rule.setConflictResolutionStrategy(ConflictResolutionStrategy.MAJORITY_VOTE);
         rule.setUpdateTargetSourceId("source-1");
         rule.setAutoApplyResolutions(true);
 

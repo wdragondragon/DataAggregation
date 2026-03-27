@@ -9,6 +9,7 @@ import com.jdragon.aggregation.core.consistency.model.DifferenceRecord;
 import com.jdragon.aggregation.core.consistency.model.OutputConfig;
 import com.jdragon.aggregation.core.consistency.model.ResolutionResult;
 import com.jdragon.aggregation.core.consistency.model.UpdateResult;
+import com.jdragon.aggregation.core.streaming.AppendOnlySpillList;
 import freemarker.template.Configuration;
 import freemarker.template.Template;
 import freemarker.template.TemplateException;
@@ -18,6 +19,7 @@ import static com.jdragon.aggregation.core.consistency.model.OutputConfig.Report
 
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -105,53 +107,22 @@ public class FileResultRecorder implements ResultRecorder {
 
             Path filePath = Paths.get(outputDirectory, filename);
 
-            // Create simplified differences for smaller file size
-            List<Map<String, Object>> simplifiedDifferences = differences.stream()
-                    .map(diff -> {
-                        Map<String, Object> simplified = new HashMap<>();
-                        simplified.put("recordId", diff.getRecordId());
-                        simplified.put("matchKeyValues", diff.getMatchKeyValues());
-                        simplified.put("conflictType", diff.getConflictType());
-                        simplified.put("differences", diff.getDifferences());
-                        simplified.put("discrepancyScore", diff.getDiscrepancyScore());
-                        simplified.put("missingSources", diff.getMissingSources());
-
-                        // Include only inconsistent fields from source values to save space
-//                        if (diff.getSourceValues() != null && !diff.getSourceValues().isEmpty()) {
-//                            Map<String, Map<String, Object>> inconsistentFields = new HashMap<>();
-//                            Set<String> inconsistentFieldNames = diff.getDifferences().keySet();
-//
-//                            for (Map.Entry<String, Map<String, Object>> sourceEntry : diff.getSourceValues().entrySet()) {
-//                                String sourceId = sourceEntry.getKey();
-//                                Map<String, Object> sourceVals = sourceEntry.getValue();
-//                                Map<String, Object> filteredValues = new HashMap<>();
-//
-//                                for (String field : inconsistentFieldNames) {
-//                                    if (sourceVals.containsKey(field)) {
-//                                        filteredValues.put(field, sourceVals.get(field));
-//                                    }
-//                                }
-//
-//                                // Also include match key values for context
-//                                if (diff.getMatchKeyValues() != null) {
-//                                    filteredValues.putAll(diff.getMatchKeyValues());
-//                                }
-//
-//                                if (!filteredValues.isEmpty()) {
-//                                    inconsistentFields.put(sourceId, filteredValues);
-//                                }
-//                            }
-//
-//                            if (!inconsistentFields.isEmpty()) {
-//                                simplified.put("sourceValues", inconsistentFields);
-//                                diff.setSourceValues(inconsistentFields);
-//                            }
-//                        }
-                        return simplified;
-                    }).collect(Collectors.toList());
-
-            String json = JSON.toJSONString(simplifiedDifferences, SerializerFeature.PrettyFormat);
-            Files.write(filePath, json.getBytes());
+            try (BufferedWriter writer = Files.newBufferedWriter(filePath, StandardCharsets.UTF_8)) {
+                writer.write("[");
+                boolean first = true;
+                for (DifferenceRecord diff : differences) {
+                    if (!first) {
+                        writer.write(",");
+                    }
+                    writer.newLine();
+                    writer.write(JSON.toJSONString(simplifyDifference(diff), SerializerFeature.WriteMapNullValue));
+                    first = false;
+                }
+                if (!first) {
+                    writer.newLine();
+                }
+                writer.write("]");
+            }
             log.info("Differences recorded to: {}", filePath);
             return filePath.toAbsolutePath().normalize().toString();
         } catch (IOException e) {
@@ -171,6 +142,7 @@ public class FileResultRecorder implements ResultRecorder {
             String filename = String.format("resolutions_%s.json", timestamp);
 
             Path filePath = Paths.get(outputDirectory, filename);
+            AppendOnlySpillList<ResolutionResult> resolutions = new AppendOnlySpillList<>("consistency-resolutions", ResolutionResult.class, outputDirectory);
 
             // Get operation types from update result if available
             final Map<String, String> operationTypes =
@@ -178,25 +150,39 @@ public class FileResultRecorder implements ResultRecorder {
                             ? result.getUpdateResult().getOperationTypes()
                             : null;
 
-            List<ResolutionResult> resolutions = resolvedDifferences.stream()
-                    .map(diff -> {
-                        ResolutionResult resolutionResult = diff.getResolutionResult();
-                        if (resolutionResult != null) {
-                            // Add operation type if available
-                            if (operationTypes != null) {
-                                String operationType = operationTypes.get(diff.getRecordId());
-                                if (operationType != null) {
-                                    resolutionResult.setOperationType(operationType);
-                                }
-                            }
-
-                            resolutionResult.setMatchKeyValues(diff.getMatchKeyValues());
-                            resolutionResult.setRecordId(diff.getRecordId());
+            try (BufferedWriter writer = Files.newBufferedWriter(filePath, StandardCharsets.UTF_8)) {
+                writer.write("[");
+                boolean first = true;
+                for (DifferenceRecord diff : resolvedDifferences) {
+                    ResolutionResult resolutionResult = diff.getResolutionResult();
+                    if (resolutionResult == null) {
+                        continue;
+                    }
+                    if (diff.getUpdatePlan() != null && diff.getUpdatePlan().getOperationType() != null) {
+                        resolutionResult.setOperationType(diff.getUpdatePlan().getOperationType());
+                    }
+                    if (operationTypes != null) {
+                        String operationType = operationTypes.get(diff.getRecordId());
+                        if (operationType != null) {
+                            resolutionResult.setOperationType(operationType);
                         }
-                        return resolutionResult;
-                    }).collect(Collectors.toList());
-            String json = JSON.toJSONString(resolutions, SerializerFeature.PrettyFormat);
-            Files.write(filePath, json.getBytes());
+                    }
+                    resolutionResult.setMatchKeyValues(diff.getMatchKeyValues());
+                    resolutionResult.setRecordId(diff.getRecordId());
+                    resolutions.add(resolutionResult);
+
+                    if (!first) {
+                        writer.write(",");
+                    }
+                    writer.newLine();
+                    writer.write(JSON.toJSONString(resolutionResult, SerializerFeature.WriteMapNullValue));
+                    first = false;
+                }
+                if (!first) {
+                    writer.newLine();
+                }
+                writer.write("]");
+            }
             log.info("Resolution results recorded to: {}", filePath);
             result.setResolutionOutputAbsPath(filePath.toAbsolutePath().normalize().toString());
             return resolutions;
@@ -214,12 +200,17 @@ public class FileResultRecorder implements ResultRecorder {
     @Override
     public String generateReport(ComparisonResult result, List<DifferenceRecord> differences, OutputConfig outputConfig) {
         try {
+            if (outputConfig != null && Boolean.FALSE.equals(outputConfig.getGenerateReport())) {
+                return null;
+            }
             String timestamp = reportDateFormat.format(new Date());
             String filename = String.format("consistency_report_%s_%s.html",
                     result.getRuleId(), timestamp);
 
             Path filePath = Paths.get(outputDirectory, filename);
-            String htmlReport = generateHtmlReport(result, differences, outputConfig);
+            int totalDifferenceCount = differences != null ? differences.size() : 0;
+            List<DifferenceRecord> previewDifferences = previewDifferences(differences, outputConfig);
+            String htmlReport = generateHtmlReport(result, previewDifferences, outputConfig, totalDifferenceCount);
 
             Files.write(filePath, htmlReport.getBytes(StandardCharsets.UTF_8));
             log.info("HTML report generated: {}", filePath);
@@ -231,12 +222,12 @@ public class FileResultRecorder implements ResultRecorder {
         }
     }
 
-    private String generateHtmlReport(ComparisonResult result, List<DifferenceRecord> differences, OutputConfig outputConfig) {
+    private String generateHtmlReport(ComparisonResult result, List<DifferenceRecord> differences, OutputConfig outputConfig, int totalDifferenceCount) {
         // Try to use Freemarker template first for better maintainability and styling
         if (freemarkerConfig != null) {
             try {
                 log.info("use freemarker generate html report....");
-                return generateHtmlReportWithFreemarker(result, differences, outputConfig);
+                return generateHtmlReportWithFreemarker(result, differences, outputConfig, totalDifferenceCount);
             } catch (Exception e) {
                 log.warn("Freemarker report generation failed, falling back to string concatenation", e);
                 // Continue to fallback method
@@ -244,10 +235,10 @@ public class FileResultRecorder implements ResultRecorder {
         }
 
         // Fallback to original string concatenation method
-        return generateHtmlReportWithStringConcatenation(result, differences, outputConfig);
+        return generateHtmlReportWithStringConcatenation(result, differences, outputConfig, totalDifferenceCount);
     }
 
-    private String generateHtmlReportWithStringConcatenation(ComparisonResult result, List<DifferenceRecord> differences, OutputConfig outputConfig) {
+    private String generateHtmlReportWithStringConcatenation(ComparisonResult result, List<DifferenceRecord> differences, OutputConfig outputConfig, int totalDifferenceCount) {
         ReportLanguage language = outputConfig != null ? outputConfig.getReportLanguage() : ReportLanguage.ENGLISH;
         MessageResource messages = MessageResource.forLanguage(language);
 
@@ -326,7 +317,7 @@ public class FileResultRecorder implements ResultRecorder {
 
         if (!differences.isEmpty()) {
             // Differences header
-            html.append("<h2>").append(messages.getMessage("report.differences.found", differences.size())).append("</h2>\n");
+            html.append("<h2>").append(messages.getMessage("report.differences.found", totalDifferenceCount)).append("</h2>\n");
 
             int maxDisplay = outputConfig != null && outputConfig.getMaxDifferencesToDisplay() != null ? outputConfig.getMaxDifferencesToDisplay() : 100;
             for (int i = 0; i < Math.min(differences.size(), maxDisplay); i++) {
@@ -449,8 +440,8 @@ public class FileResultRecorder implements ResultRecorder {
                 html.append("</div>\n");
             }
 
-            if (differences.size() > maxDisplay) {
-                html.append("<p>").append(messages.getMessage("report.more.differences", differences.size() - maxDisplay)).append("</p>\n");
+            if (totalDifferenceCount > maxDisplay) {
+                html.append("<p>").append(messages.getMessage("report.more.differences", totalDifferenceCount - maxDisplay)).append("</p>\n");
             }
         } else {
             html.append("<h2>").append(messages.getMessage("report.no.differences")).append("</h2>\n");
@@ -513,7 +504,8 @@ public class FileResultRecorder implements ResultRecorder {
 
     private String generateHtmlReportWithFreemarker(ComparisonResult result,
                                                     List<DifferenceRecord> differences,
-                                                    OutputConfig outputConfig) {
+                                                    OutputConfig outputConfig,
+                                                    int totalDifferenceCount) {
         if (freemarkerConfig == null) {
             throw new IllegalStateException("Freemarker configuration not initialized");
         }
@@ -527,6 +519,7 @@ public class FileResultRecorder implements ResultRecorder {
             Map<String, Object> data = new HashMap<>();
             data.put("result", result);
             data.put("differences", differences);
+            data.put("differenceCount", totalDifferenceCount);
             data.put("messages", messages);
             data.put("dateFormat", dateFormat);
             data.put("language", language.name());
@@ -545,6 +538,35 @@ public class FileResultRecorder implements ResultRecorder {
     /**
      * JSON工具类，用于Freemarker模板中转换对象为JSON字符串
      */
+    private Map<String, Object> simplifyDifference(DifferenceRecord diff) {
+        Map<String, Object> simplified = new HashMap<>();
+        simplified.put("recordId", diff.getRecordId());
+        simplified.put("matchKeyValues", diff.getMatchKeyValues());
+        simplified.put("conflictType", diff.getConflictType());
+        simplified.put("differences", diff.getDifferences());
+        simplified.put("discrepancyScore", diff.getDiscrepancyScore());
+        simplified.put("missingSources", diff.getMissingSources());
+        if (diff.getUpdatePlan() != null) {
+            simplified.put("updatePlan", diff.getUpdatePlan());
+        }
+        return simplified;
+    }
+
+    private List<DifferenceRecord> previewDifferences(List<DifferenceRecord> differences, OutputConfig outputConfig) {
+        if (differences == null || differences.isEmpty()) {
+            return new ArrayList<>();
+        }
+        int maxDisplay = outputConfig != null && outputConfig.getMaxDifferencesToDisplay() != null
+                ? outputConfig.getMaxDifferencesToDisplay()
+                : 100;
+        int end = Math.min(differences.size(), maxDisplay);
+        List<DifferenceRecord> preview = new ArrayList<>(end);
+        for (int i = 0; i < end; i++) {
+            preview.add(differences.get(i));
+        }
+        return preview;
+    }
+
     public static class JsonHelper {
         public String toPrettyJson(Object obj) {
             if (obj == null) {

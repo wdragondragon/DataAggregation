@@ -19,15 +19,21 @@ public class KafkaTest {
             kafkaParams.set("auto.offset.reset", "latest");
             kafkaQueue.setPluginQueueConf(kafkaParams);
             kafkaQueue.init();
+
+            // 发送消息
             int i = 0;
             while (i++ < 10) {
                 kafkaQueue.sendMessage("test" + i);
             }
             kafkaQueue.sendMessage("exit");
+
+            // 接受处理消息
             kafkaQueue.receiveMessage(message -> {
                 log.info("处理 Kafka 消息: {}", message);
                 return !message.equals("exit");  // 如果收到 exit 消息，停止消费
             });
+
+            // 销毁
             kafkaQueue.destroy();
         }
     }

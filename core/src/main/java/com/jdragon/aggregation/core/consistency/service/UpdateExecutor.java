@@ -20,7 +20,8 @@ public class UpdateExecutor {
     enum OperationType {
         INSERT,
         UPDATE,
-        DELETE
+        DELETE,
+        SKIP
     }
 
     private final DataSourcePluginManager pluginManager;
@@ -65,15 +66,20 @@ public class UpdateExecutor {
 
             // Build SQL statements for each resolved difference
             for (DifferenceRecord diff : resolvedDifferences) {
-                if (diff.getResolutionResult() == null) {
+                if (diff.getResolutionResult() == null && diff.getUpdatePlan() == null) {
                     continue;
                 }
 
                  String targetSourceId = targetDataSource.getSourceId();
                  OperationType operationType = determineOperationType(diff, targetSourceId);
+
+                 if (operationType == OperationType.SKIP) {
+                     result.incrementSkip(diff.getRecordId(), "No operation required");
+                     continue;
+                 }
                  
                   // Skip UPDATE operations that have no non-match-key values to update
-                  if (operationType == OperationType.UPDATE && !hasNonMatchKeyValues(diff)) {
+                  if (operationType == OperationType.UPDATE && !LegacyUpdatePlanningSupport.hasNonMatchKeyValues(diff)) {
                       log.debug("No non-match-key values to update for record {}, skipping UPDATE operation", diff.getRecordId());
                       continue;
                   }
@@ -83,8 +89,8 @@ public class UpdateExecutor {
                     try {
 //                        Map<String, Object> targetCurrentValues = fetchTargetCurrentValues(plugin, dto, targetDataSource, diff, matchKeys, fieldMappings);
                         Map<String, Object> targetCurrentValues = diff.getSourceValues().get(targetDataSource.getSourceId());
-                        Map<String, Object> resolvedValues = diff.getResolutionResult().getResolvedValues();
-                        Map<String, Object> matchKeyValues = diff.getMatchKeyValues();
+                        Map<String, Object> resolvedValues = LegacyUpdatePlanningSupport.effectiveResolvedValues(diff);
+                        Map<String, Object> matchKeyValues = LegacyUpdatePlanningSupport.effectiveMatchKeyValues(diff);
                         
                         if (valuesAreEqual(resolvedValues, targetCurrentValues, matchKeyValues)) {
                             log.debug("Target already has same values for record {}, skipping UPDATE operation", diff.getRecordId());
@@ -284,51 +290,22 @@ public class UpdateExecutor {
     }
     
     public OperationType determineOperationType(DifferenceRecord diff, String targetSourceId) {
-        // Check if target source exists
-        List<String> missingSources = diff.getMissingSources();
-        if (missingSources == null) {
-            missingSources = new ArrayList<>();
+        OperationType explicitOperationType = LegacyUpdatePlanningSupport.resolveExplicitOperationType(diff);
+        if (explicitOperationType != null) {
+            return explicitOperationType;
         }
-
-        // Determine if record should exist
-        // Priority 1: Use winning source if available
-        // Priority 2: Fall back to checking if there are non-match-key values
-        boolean recordShouldExist = false;
-        if (diff.getResolutionResult() != null) {
-            String winningSource = diff.getResolutionResult().getWinningSource();
-            if (winningSource != null) {
-                // Use winning source to determine if record should exist
-                recordShouldExist = !missingSources.contains(winningSource);
-            } else {
-                // No winning source, check if there are non-match-key values
-                recordShouldExist = hasNonMatchKeyValues(diff);
-            }
+        String operationType = LegacyUpdatePlanningSupport.rawExplicitOperationType(diff);
+        if (operationType != null && !operationType.trim().isEmpty()) {
+            log.warn("Unknown explicit operation type {} for record {}, ignore and auto determine it",
+                    operationType,
+                    diff != null ? diff.getRecordId() : null);
         }
-        // If resolution result is null, recordShouldExist remains false
-
-        boolean targetExists = !missingSources.contains(targetSourceId);
-        
-        // Determine operation based on resolution result and target existence
-        // Rule 1: Resolution says record should exist, but target doesn't exist -> INSERT
-        if (recordShouldExist && !targetExists) {
-            return OperationType.INSERT;
-        }
-        
-        // Rule 2: Resolution says record should NOT exist, but target exists -> DELETE
-        if (!recordShouldExist && targetExists) {
-            return OperationType.DELETE;
-        }
-        
-        // Rule 3: All other cases -> UPDATE
-        // This includes:
-        // - Record should exist and target exists (normal update case)
-        // - Record should not exist and target doesn't exist (no operation needed)
-        return OperationType.UPDATE;
+        return LegacyUpdatePlanningSupport.determineOperationType(diff, targetSourceId);
     }
     
     private boolean validateRecordExists(AbstractDataSourcePlugin plugin, BaseDataSourceDTO dto, DataSourceConfig targetDataSource, DifferenceRecord diff, List<String> matchKeys, Map<String, String> fieldMappings) {
         try {
-            Map<String, Object> matchKeyValues = diff.getMatchKeyValues();
+            Map<String, Object> matchKeyValues = LegacyUpdatePlanningSupport.effectiveMatchKeyValues(diff);
             Map<String, String> reverseMappings = new HashMap<>();
             if (fieldMappings != null) {
                 for (Map.Entry<String, String> entry : fieldMappings.entrySet()) {
@@ -366,8 +343,8 @@ public class UpdateExecutor {
     
     private String buildUpdateStatement(DataSourceConfig targetDataSource, DifferenceRecord diff, List<String> matchKeys, Map<String, String> fieldMappings) {
         String tableName = targetDataSource.getTableName();
-        Map<String, Object> resolvedValues = diff.getResolutionResult().getResolvedValues();
-        Map<String, Object> matchKeyValues = diff.getMatchKeyValues();
+        Map<String, Object> resolvedValues = LegacyUpdatePlanningSupport.effectiveResolvedValues(diff);
+        Map<String, Object> matchKeyValues = LegacyUpdatePlanningSupport.effectiveMatchKeyValues(diff);
 
         // Determine which fields actually have differences
         List<String> fieldsToUpdate = new ArrayList<>();
@@ -426,8 +403,8 @@ public class UpdateExecutor {
     
     private String buildInsertStatement(DataSourceConfig targetDataSource, DifferenceRecord diff, List<String> matchKeys, Map<String, String> fieldMappings) {
         String tableName = targetDataSource.getTableName();
-        Map<String, Object> resolvedValues = diff.getResolutionResult().getResolvedValues();
-        Map<String, Object> matchKeyValues = diff.getMatchKeyValues();
+        Map<String, Object> resolvedValues = LegacyUpdatePlanningSupport.effectiveResolvedValues(diff);
+        Map<String, Object> matchKeyValues = LegacyUpdatePlanningSupport.effectiveMatchKeyValues(diff);
         
         // Combine match keys and resolved values for INSERT
         Map<String, Object> allValues = new HashMap<>();
@@ -472,7 +449,7 @@ public class UpdateExecutor {
     
     private String buildDeleteStatement(DataSourceConfig targetDataSource, DifferenceRecord diff, List<String> matchKeys, Map<String, String> fieldMappings) {
         String tableName = targetDataSource.getTableName();
-        Map<String, Object> matchKeyValues = diff.getMatchKeyValues();
+        Map<String, Object> matchKeyValues = LegacyUpdatePlanningSupport.effectiveMatchKeyValues(diff);
         
         // Apply field mappings
         Map<String, String> reverseMappings = new HashMap<>();
@@ -504,27 +481,9 @@ public class UpdateExecutor {
         return String.format("DELETE FROM %s WHERE %s", tableName, whereClause);
     }
 
-    private boolean hasNonMatchKeyValues(DifferenceRecord diff) {
-        ResolutionResult resolutionResult = diff.getResolutionResult();
-        Map<String, Object> resolvedValues = resolutionResult != null ? resolutionResult.getResolvedValues() : null;
-        if (resolvedValues == null || resolvedValues.isEmpty()) {
-            return false;
-        }
-        Set<String> matchKeysSet = new HashSet<>(diff.getMatchKeyValues() != null ? 
-                diff.getMatchKeyValues().keySet() : Collections.emptySet());
-        for (Map.Entry<String, Object> entry : resolvedValues.entrySet()) {
-            String field = entry.getKey();
-            Object value = entry.getValue();
-            if (!matchKeysSet.contains(field) && value != null) {
-                return true;
-            }
-        }
-        return false;
-    }
-    
     private Map<String, Object> fetchTargetCurrentValues(AbstractDataSourcePlugin plugin, BaseDataSourceDTO dto, DataSourceConfig targetDataSource, DifferenceRecord diff, List<String> matchKeys, Map<String, String> fieldMappings) {
         try {
-            Map<String, Object> matchKeyValues = diff.getMatchKeyValues();
+            Map<String, Object> matchKeyValues = LegacyUpdatePlanningSupport.effectiveMatchKeyValues(diff);
             Map<String, String> reverseMappings = new HashMap<>();
             if (fieldMappings != null) {
                 for (Map.Entry<String, String> entry : fieldMappings.entrySet()) {

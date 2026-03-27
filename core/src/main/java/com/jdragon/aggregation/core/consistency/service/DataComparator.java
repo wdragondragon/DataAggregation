@@ -1,7 +1,5 @@
 package com.jdragon.aggregation.core.consistency.service;
 
-import com.alibaba.fastjson.JSONObject;
-import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.jdragon.aggregation.core.consistency.i18n.MessageResource;
 import com.jdragon.aggregation.core.consistency.model.DifferenceRecord;
 import lombok.extern.slf4j.Slf4j;
@@ -33,12 +31,24 @@ public class DataComparator {
             List<String> matchKeys) {
 
         List<DifferenceRecord> differences = new ArrayList<>();
-
         LinkedHashSet<String> allMatchKeys = collectAllMatchKeys(groupedData);
+        List<String> sourceIds = new ArrayList<>(groupedData.keySet());
 
         for (String matchKey : allMatchKeys) {
-            DifferenceRecord diffRecord = compareRecordsForMatchKey(groupedData, matchKey, matchKeys);
-            if (diffRecord != null && !diffRecord.getDifferences().isEmpty()) {
+            Map<String, Map<String, Object>> keyGroup = new LinkedHashMap<>();
+            for (String sourceId : sourceIds) {
+                Map<String, List<Map<String, Object>>> sourceGroup = groupedData.get(sourceId);
+                if (sourceGroup == null) {
+                    continue;
+                }
+                List<Map<String, Object>> rows = sourceGroup.get(matchKey);
+                if (rows != null && !rows.isEmpty()) {
+                    keyGroup.put(sourceId, rows.get(0));
+                }
+            }
+
+            DifferenceRecord diffRecord = compareKeyGroup(matchKey, matchKeys, sourceIds, keyGroup);
+            if (diffRecord != null) {
                 differences.add(diffRecord);
             }
         }
@@ -47,93 +57,36 @@ public class DataComparator {
         return differences;
     }
 
-    private LinkedHashSet<String> collectAllMatchKeys(Map<String, Map<String, List<Map<String, Object>>>> groupedData) {
-        LinkedHashSet<String> allMatchKeys = new LinkedHashSet<>();
-
-        if (groupedData.isEmpty()) {
-            return allMatchKeys;
-        }
-
-        // Find the first data source with data to use as ordering reference
-        String orderingSourceId = null;
-        Map<String, List<Map<String, Object>>> orderingSourceGroup = null;
-
-        for (Map.Entry<String, Map<String, List<Map<String, Object>>>> entry : groupedData.entrySet()) {
-            Map<String, List<Map<String, Object>>> sourceGroup = entry.getValue();
-            if (sourceGroup != null && !sourceGroup.isEmpty()) {
-                orderingSourceId = entry.getKey();
-                orderingSourceGroup = sourceGroup;
-                break;
-            }
-        }
-
-        // If we found a data source with data, use its match key order as primary ordering
-        if (orderingSourceGroup != null) {
-            allMatchKeys.addAll(orderingSourceGroup.keySet());
-        }
-
-        // Add any additional match keys from other data sources (in source order)
-        for (Map.Entry<String, Map<String, List<Map<String, Object>>>> entry : groupedData.entrySet()) {
-            String sourceId = entry.getKey();
-            if (orderingSourceId != null && sourceId.equals(orderingSourceId)) {
-                continue; // Already processed
-            }
-            Map<String, List<Map<String, Object>>> sourceGroup = entry.getValue();
-            if (sourceGroup != null) {
-                // Add keys from this source in their natural order (preserving insertion order)
-                for (String matchKey : sourceGroup.keySet()) {
-                    if (!allMatchKeys.contains(matchKey)) {
-                        allMatchKeys.add(matchKey);
-                    }
-                }
-            }
-        }
-
-        return allMatchKeys;
-    }
-
-    private DifferenceRecord compareRecordsForMatchKey(
-            Map<String, Map<String, List<Map<String, Object>>>> groupedData,
+    public DifferenceRecord compareKeyGroup(
             String matchKey,
-            List<String> matchKeyFields) {
+            List<String> matchKeyFields,
+            List<String> sourceOrder,
+            Map<String, Map<String, Object>> firstRowsBySource) {
 
         DifferenceRecord diffRecord = new DifferenceRecord();
         diffRecord.setRecordId(UUID.randomUUID().toString());
-
-        Map<String, Object> matchKeyValues = parseMatchKeyValues(matchKey, matchKeyFields);
-        diffRecord.setMatchKeyValues(matchKeyValues);
+        diffRecord.setMatchKeyValues(parseMatchKeyValues(matchKey, matchKeyFields));
 
         Map<String, Map<String, Object>> sourceValues = new LinkedHashMap<>();
-        Map<String, List<Map<String, Object>>> recordsBySource = new LinkedHashMap<>();
         List<String> missingSources = new ArrayList<>();
 
-        for (Map.Entry<String, Map<String, List<Map<String, Object>>>> sourceEntry : groupedData.entrySet()) {
-            String sourceId = sourceEntry.getKey();
-            Map<String, List<Map<String, Object>>> sourceGroup = sourceEntry.getValue();
-
-            List<Map<String, Object>> records = sourceGroup.get(matchKey);
-            if (records != null && !records.isEmpty()) {
-                recordsBySource.put(sourceId, records);
-                sourceValues.put(sourceId, records.get(0));
+        for (String sourceId : sourceOrder) {
+            Map<String, Object> record = firstRowsBySource != null ? firstRowsBySource.get(sourceId) : null;
+            if (record != null) {
+                sourceValues.put(sourceId, record);
             } else {
-                String[] matchKeyArr = matchKey.split("-\\|-");
-                Map<String, Object> record = new HashMap<>();
-                for (int i = 0; i < matchKeyFields.size(); i++) {
-                    String matchKeyField = matchKeyFields.get(i);
-                    record.put(matchKeyField, matchKeyArr[i]);
+                Map<String, Object> missingRecord = createMissingRecord(matchKey, matchKeyFields);
+                for (String field : compareFields) {
+                    missingRecord.put(field, null);
                 }
                 missingSources.add(sourceId);
-                for (String field : compareFields) {
-                    record.put(field, null);
-                }
-                sourceValues.put(sourceId, record);
+                sourceValues.put(sourceId, missingRecord);
             }
         }
 
         diffRecord.setSourceValues(sourceValues);
 
         boolean hasDifferences = false;
-
         if (!missingSources.isEmpty()) {
             diffRecord.setMissingSources(missingSources);
             hasDifferences = true;
@@ -155,8 +108,62 @@ public class DataComparator {
 
         diffRecord.setConflictType(determineConflictType(sourceValues, missingSources));
         diffRecord.setDiscrepancyScore(calculateDiscrepancyScore(diffRecord.getDifferences(), sourceValues, missingSources.size()));
-
         return diffRecord;
+    }
+
+    private LinkedHashSet<String> collectAllMatchKeys(Map<String, Map<String, List<Map<String, Object>>>> groupedData) {
+        LinkedHashSet<String> allMatchKeys = new LinkedHashSet<>();
+
+        if (groupedData.isEmpty()) {
+            return allMatchKeys;
+        }
+
+        String orderingSourceId = null;
+        Map<String, List<Map<String, Object>>> orderingSourceGroup = null;
+
+        for (Map.Entry<String, Map<String, List<Map<String, Object>>>> entry : groupedData.entrySet()) {
+            Map<String, List<Map<String, Object>>> sourceGroup = entry.getValue();
+            if (sourceGroup != null && !sourceGroup.isEmpty()) {
+                orderingSourceId = entry.getKey();
+                orderingSourceGroup = sourceGroup;
+                break;
+            }
+        }
+
+        if (orderingSourceGroup != null) {
+            allMatchKeys.addAll(orderingSourceGroup.keySet());
+        }
+
+        for (Map.Entry<String, Map<String, List<Map<String, Object>>>> entry : groupedData.entrySet()) {
+            String sourceId = entry.getKey();
+            if (orderingSourceId != null && sourceId.equals(orderingSourceId)) {
+                continue;
+            }
+            Map<String, List<Map<String, Object>>> sourceGroup = entry.getValue();
+            if (sourceGroup != null) {
+                for (String matchKey : sourceGroup.keySet()) {
+                    if (!allMatchKeys.contains(matchKey)) {
+                        allMatchKeys.add(matchKey);
+                    }
+                }
+            }
+        }
+
+        return allMatchKeys;
+    }
+
+    private Map<String, Object> createMissingRecord(String matchKey, List<String> matchKeyFields) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        if (matchKeyFields == null || matchKeyFields.isEmpty()) {
+            values.put("key", matchKey);
+            return values;
+        }
+
+        String[] parts = matchKey.split("-\\|-", -1);
+        for (int i = 0; i < matchKeyFields.size(); i++) {
+            values.put(matchKeyFields.get(i), i < parts.length ? parts[i] : null);
+        }
+        return values;
     }
 
     private Map<String, Object> parseMatchKeyValues(String matchKey, List<String> matchKeyFields) {
@@ -166,7 +173,7 @@ public class DataComparator {
             return values;
         }
 
-        String[] parts = matchKey.split("-\\|-");
+        String[] parts = matchKey.split("-\\|-", -1);
         for (int i = 0; i < Math.min(parts.length, matchKeyFields.size()); i++) {
             values.put(matchKeyFields.get(i), parts[i]);
         }
@@ -203,9 +210,7 @@ public class DataComparator {
             return null;
         }
 
-
         return messages.getMessage("comparison.different.values", field);
-
     }
 
     private boolean isNumericField(Set<Object> values) {

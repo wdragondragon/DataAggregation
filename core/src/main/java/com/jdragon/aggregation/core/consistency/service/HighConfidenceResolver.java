@@ -56,7 +56,7 @@ public class HighConfidenceResolver extends BaseConflictResolver {
         double maxWeight = -1.0;
         
         for (String sourceId : differenceRecord.getSourceValues().keySet()) {
-            if (isMissingSource(differenceRecord.getSourceValues().get(sourceId))) {
+            if (isMissingSource(differenceRecord, sourceId)) {
                 continue;
             }
             double weight = getSourceWeight(sourceId);
@@ -73,15 +73,6 @@ public class HighConfidenceResolver extends BaseConflictResolver {
         }
         
         return winningSource;
-    }
-    
-    private boolean isMissingSource(Map<String, Object> record) {
-        for (Object value : record.values()) {
-            if (value != null) {
-                return false;
-            }
-        }
-        return true;
     }
     
     private Set<String> getConflictFields(DifferenceRecord differenceRecord) {

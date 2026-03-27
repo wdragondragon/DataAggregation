@@ -19,6 +19,7 @@ import java.text.MessageFormat;
 import java.text.SimpleDateFormat;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.function.Consumer;
 
 @Getter
 @Slf4j
@@ -226,6 +227,53 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
         }
         table.setBodies(resultList);
         return table;
+    }
+
+    @Override
+    public void scanQuery(BaseDataSourceDTO dataSource, String sql, boolean columnLabel, Consumer<Map<String, Object>> rowConsumer) {
+        ResultSet resultSet = null;
+        Statement statement = null;
+        Connection connection = null;
+        try {
+            connection = getConnection(dataSource);
+            statement = connection.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+            statement.setEscapeProcessing(false);
+
+            String fetchSizeValue = dataSource.getExtraParams() != null ? dataSource.getExtraParams().get("fetchSize") : null;
+            if (StringUtils.isNotBlank(fetchSizeValue)) {
+                try {
+                    statement.setFetchSize(Integer.parseInt(fetchSizeValue));
+                } catch (NumberFormatException ignored) {
+                    log.warn("Invalid fetchSize configured for source {}: {}", dataSource.getName(), fetchSizeValue);
+                }
+            }
+
+            String queryTimeoutValue = dataSource.getExtraParams() != null ? dataSource.getExtraParams().get("queryTimeout") : null;
+            if (StringUtils.isNotBlank(queryTimeoutValue)) {
+                try {
+                    statement.setQueryTimeout(Integer.parseInt(queryTimeoutValue));
+                } catch (NumberFormatException ignored) {
+                    log.warn("Invalid queryTimeout configured for source {}: {}", dataSource.getName(), queryTimeoutValue);
+                }
+            }
+
+            log.info("stream execute query: {}", sql);
+            resultSet = statement.executeQuery(sql);
+            ResultSetMetaData metaData = resultSet.getMetaData();
+            int columnCount = metaData.getColumnCount();
+            String encoding = dataSource.getExtraParams() != null
+                    ? dataSource.getExtraParams().getOrDefault("mandatoryEncoding", "utf-8")
+                    : "utf-8";
+            while (resultSet.next()) {
+                rowConsumer.accept(buildRecord(resultSet, metaData, columnCount, encoding, columnLabel));
+            }
+        } catch (Exception e) {
+            log.info(sql);
+            log.error("stream execute query sql fail", e);
+            throw new RuntimeException(e.getMessage(), e);
+        } finally {
+            closeResource(resultSet, statement, connection);
+        }
     }
 
     protected Map<String, Object> buildRecord(ResultSet rs, ResultSetMetaData metaData, int columnNumber, String mandatoryEncoding, boolean columnLabel) {

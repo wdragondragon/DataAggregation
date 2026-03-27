@@ -10,6 +10,7 @@ import com.jdragon.aggregation.core.fusion.config.FieldMapping;
 import com.jdragon.aggregation.core.fusion.config.DirectFieldMapping;
 import com.jdragon.aggregation.core.fusion.config.ExpressionFieldMapping;
 import com.jdragon.aggregation.core.fusion.config.ConditionalFieldMapping;
+import com.jdragon.aggregation.core.fusion.config.SourceConfig;
 import com.jdragon.aggregation.core.fusion.strategy.FusionStrategy;
 import com.jdragon.aggregation.core.fusion.strategy.FusionStrategyFactory;
 import com.jdragon.aggregation.core.fusion.detail.FusionDetail;
