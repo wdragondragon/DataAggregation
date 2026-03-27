@@ -2,6 +2,7 @@ package com.jdragon.aggregation.core.fusion.config;
 
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.fusion.config.FieldMapping;
+import com.jdragon.aggregation.core.sortmerge.AdaptiveMergeConfig;
 import lombok.Data;
 
 import java.util.ArrayList;
@@ -52,6 +53,8 @@ public class FusionConfig {
     
     // 融合详情配置
     private FusionDetailConfig detailConfig = new FusionDetailConfig();
+
+    private AdaptiveMergeConfig adaptiveMergeConfig = new AdaptiveMergeConfig();
     
     /**
      * 从Configuration解析FusionConfig
@@ -120,7 +123,15 @@ public class FusionConfig {
         if (perfConfig != null) {
             fusionConfig.setPerformanceConfig(PerformanceConfig.fromConfig(perfConfig));
         }
-        
+
+        Configuration adaptiveMergeConfig = config.getConfiguration("adaptiveMerge");
+        fusionConfig.setAdaptiveMergeConfig(AdaptiveMergeConfig.fromConfig(
+                adaptiveMergeConfig,
+                fusionConfig.getPerformanceConfig().getMemoryLimitMB(),
+                fusionConfig.getCacheConfig().getPartitionCount(),
+                null
+        ));
+
         // 解析融合详情配置
         Configuration detailConfig = config.getConfiguration("detailConfig");
         if (detailConfig != null) {

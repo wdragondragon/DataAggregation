@@ -69,6 +69,7 @@ public class FileResultRecorder implements ResultRecorder {
             simplifiedResult.put("ruleId", result.getRuleId());
             simplifiedResult.put("executionTime", result.getExecutionTime());
             simplifiedResult.put("status", result.getStatus());
+            simplifiedResult.put("executionEngine", result.getExecutionEngine());
             simplifiedResult.put("totalRecords", result.getTotalRecords());
             simplifiedResult.put("consistentRecords", result.getConsistentRecords());
             simplifiedResult.put("inconsistentRecords", result.getInconsistentRecords());
@@ -77,6 +78,7 @@ public class FileResultRecorder implements ResultRecorder {
             simplifiedResult.put("summary", result.getSummary());
             simplifiedResult.put("reportPath", result.getReportPath());
             simplifiedResult.put("metadata", result.getMetadata());
+            simplifiedResult.put("sourceDataCount", result.getSourceDataCount());
 
             // Include update result if available
             if (result.getUpdateResult() != null) {

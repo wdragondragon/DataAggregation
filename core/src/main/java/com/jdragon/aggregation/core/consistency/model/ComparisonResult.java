@@ -52,6 +52,8 @@ public class ComparisonResult {
 
     private String resolutionOutputAbsPath;
 
+    private String executionEngine;
+
     public ComparisonResult() {
         this.executionTime = new Date();
         this.fieldDiscrepancies = new HashMap<>();

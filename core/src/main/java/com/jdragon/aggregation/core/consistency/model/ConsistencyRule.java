@@ -2,6 +2,7 @@ package com.jdragon.aggregation.core.consistency.model;
 
 import com.alibaba.fastjson.JSONObject;
 import com.jdragon.aggregation.commons.util.Configuration;
+import com.jdragon.aggregation.core.sortmerge.AdaptiveMergeConfig;
 import lombok.Data;
 
 import java.util.ArrayList;
@@ -59,6 +60,8 @@ public class ConsistencyRule {
 
     private StreamPerformanceConfig performanceConfig = new StreamPerformanceConfig();
 
+    private AdaptiveMergeConfig adaptiveMergeConfig = new AdaptiveMergeConfig();
+
     public static ConsistencyRule fromConfig(Configuration config) {
         ConsistencyRule rule = new ConsistencyRule();
         rule.setRuleId(config.getString("ruleId"));
@@ -112,6 +115,14 @@ public class ConsistencyRule {
             rule.setPerformanceConfig(StreamPerformanceConfig.fromConfig(performanceConfig));
         }
 
+        Configuration adaptiveMergeConfig = config.getConfiguration("adaptiveMerge");
+        rule.setAdaptiveMergeConfig(AdaptiveMergeConfig.fromConfig(
+                adaptiveMergeConfig,
+                rule.getPerformanceConfig().getMemoryLimitMB(),
+                rule.getCacheConfig().getPartitionCount(),
+                rule.getCacheConfig().getSpillPath()
+        ));
+
         rule.setUpdateTargetSourceId(config.getString("updateTargetSourceId"));
         rule.setAutoApplyResolutions(config.getBool("autoApplyResolutions", false));
         rule.setValidateBeforeUpdate(config.getBool("validateBeforeUpdate", false));
@@ -142,6 +153,7 @@ public class ConsistencyRule {
         config.set("outputConfig", outputConfig);
         config.set("cache", cacheConfig);
         config.set("performance", performanceConfig);
+        config.set("adaptiveMerge", adaptiveMergeConfig);
         config.set("updateTargetSourceId", updateTargetSourceId);
         config.set("autoApplyResolutions", autoApplyResolutions);
         config.set("validateBeforeUpdate", validateBeforeUpdate);

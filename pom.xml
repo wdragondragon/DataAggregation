@@ -12,6 +12,7 @@
         <module>plugins-loader-center</module>
         <module>commons</module>
         <module>core</module>
+        <module>data-mock</module>
         <module>job-plugins</module>
         <module>data-source-plugins</module>
     </modules>
