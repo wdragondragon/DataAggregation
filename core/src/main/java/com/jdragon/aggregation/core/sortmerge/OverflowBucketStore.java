@@ -6,6 +6,12 @@ import lombok.Getter;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * 供自适应 sort-merge 使用的溢写桶存储。
+ *
+ * <p>只有无法继续留在内存窗口中的未决 key，或已经切入 bucketMode 后的新数据，
+ * 才会写入这里。最终回放仍复用既有 partition processor，因此功能语义与旧桶链路保持一致。
+ */
 public class OverflowBucketStore implements AutoCloseable {
 
     @Getter

@@ -33,6 +33,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * consistency 的自适应 sort-merge 执行器。
+ *
+ * <p>key 在内存窗口内一旦可判定就立即参与比对；差异结果、resolved rows 等较大输出
+ * 则放在 spill-backed list 中。若等待窗口溢出，剩余工作会退回既有 partition processor，
+ * 以保持当前规则语义不变。
+ */
 @Slf4j
 public class AdaptiveSortMergeConsistencyExecutor {
 

@@ -14,6 +14,12 @@ import com.jdragon.aggregation.core.plugin.spi.Reader;
 
 import java.util.List;
 
+/**
+ * 实验模式 {@code consistency-sortmerge} 的 reader 入口。
+ *
+ * <p>负责使用现有规则配置启动自适应 sort-merge consistency 执行器，并把差异结果
+ * 投影到 writer 侧。
+ */
 public class SortMergeConsistencyReader extends Reader.Job {
 
     private ConsistencyRule rule;

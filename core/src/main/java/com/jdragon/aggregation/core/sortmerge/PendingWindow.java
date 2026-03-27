@@ -8,8 +8,17 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 
+/**
+ * 尚未可判定 key 的有序内存等待区。
+ *
+ * <p>每个 entry 只保存“每个 source 的首条记录”和一个轻量级大小估算，不会持有完整
+ * 的 source 流数据。某个 key 一旦可判定，或被溢写到桶中，对应内存即可立即释放。
+ */
 public class PendingWindow {
 
+    /**
+     * 当前等待窗口中的一个未决 key。
+     */
     public static class PendingEntry {
         private final OrderedKey key;
         private final Map<String, Map<String, Object>> firstRowsBySource = new LinkedHashMap<String, Map<String, Object>>();

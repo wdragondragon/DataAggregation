@@ -12,6 +12,12 @@ import com.jdragon.aggregation.core.sortmerge.SortMergeStats;
 
 import java.util.List;
 
+/**
+ * 实验模式 {@code fusion-sortmerge} 的 reader 入口。
+ *
+ * <p>负责把现有 fusion 配置转换为自适应 sort-merge 执行参数，并把执行统计回写到
+ * job 上下文。
+ */
 public class SortMergeFusionReader extends Reader.Job {
 
     private FusionConfig fusionConfig;

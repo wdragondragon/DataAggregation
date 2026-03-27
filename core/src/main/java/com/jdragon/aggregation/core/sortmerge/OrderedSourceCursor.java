@@ -12,8 +12,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
 
+/**
+ * 负责按 key 顺序流式读取单个 source，并把连续同 key 的多行折叠成一个
+ * {@link OrderedKeyGroup}。
+ *
+ * <p>该 cursor 只保留当前聚合中的 group 和一个很小的事件队列，因此不会把整个
+ * source 全量放进内存。数据库来源可尝试自动包 ORDER BY；文件来源则依赖输入天然有序。
+ */
 public class OrderedSourceCursor {
 
+    /**
+     * cursor 工作线程投递给调度线程的事件载体。
+     */
     @Getter
     public static class CursorEvent {
         private final String sourceId;
@@ -45,7 +55,8 @@ public class OrderedSourceCursor {
     private final DataSourceConfig dataSourceConfig;
     private final SourceRowScanner rowScanner;
     private final List<String> keyFields;
-    private final LinkedBlockingQueue<CursorEvent> queue = new LinkedBlockingQueue<CursorEvent>(4);
+    // 有界队列用于在生产线程和调度线程之间建立背压，避免 source 侧无限制预读。
+    private final LinkedBlockingQueue<CursorEvent> queue = new LinkedBlockingQueue<>(4);
     private final boolean preferOrderedQuery;
 
     @Getter
@@ -54,8 +65,10 @@ public class OrderedSourceCursor {
     private volatile long producedGroups;
     @Getter
     @Setter
+    // 由调度线程在消费到 end 事件后置为 true，之后该来源会被视为“不会再产出新 key”。
     private volatile boolean finished;
     @Getter
+    // 由生产线程在 finally 中置为 true，用于表达“worker 已彻底退出”。
     private volatile boolean producerDone;
     private Thread worker;
 
@@ -65,7 +78,7 @@ public class OrderedSourceCursor {
                                boolean preferOrderedQuery) {
         this.rowScanner = rowScanner;
         this.dataSourceConfig = dataSourceConfig;
-        this.keyFields = keyFields != null ? keyFields : new ArrayList<String>();
+        this.keyFields = keyFields != null ? keyFields : new ArrayList<>();
         this.sourceId = dataSourceConfig.getSourceId();
         this.preferOrderedQuery = preferOrderedQuery;
     }
@@ -78,12 +91,8 @@ public class OrderedSourceCursor {
         if (worker != null) {
             return;
         }
-        worker = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                produceGroups();
-            }
-        }, "sortmerge-cursor-" + sourceId);
+        // source 的读取与 group 折叠在独立线程中完成，主线程只负责消费 queue 中的事件。
+        worker = new Thread(this::produceGroups, "sortmerge-cursor-" + sourceId);
         worker.setDaemon(true);
         worker.start();
     }
@@ -99,17 +108,17 @@ public class OrderedSourceCursor {
     private void produceGroups() {
         final GroupAccumulator accumulator = new GroupAccumulator();
         try {
-            rowScanner.scan(buildScanConfig(), new java.util.function.Consumer<Map<String, Object>>() {
-                @Override
-                public void accept(Map<String, Object> row) {
-                    scannedRecords++;
-                    accumulator.accept(row);
-                }
+            rowScanner.scan(buildScanConfig(), row -> {
+                scannedRecords++;
+                accumulator.accept(row);
             });
             accumulator.flush();
+            // 结束事件一旦入队，调度线程就会把该 source 标记为 finished，
+            // 某些还在等待它“补齐”的 pending key 也可能因此立刻变为可判定。
             queue.put(CursorEvent.end(sourceId));
         } catch (Throwable throwable) {
             try {
+                // 错误通过事件队列传回调度线程，由调度线程统一终止整条归并链路。
                 queue.put(CursorEvent.error(sourceId, throwable));
             } catch (InterruptedException interruptedException) {
                 Thread.currentThread().interrupt();
@@ -220,7 +229,7 @@ public class OrderedSourceCursor {
 
         private void startGroup(OrderedKey key, Map<String, Object> row) {
             this.currentKey = key;
-            this.firstRow = row != null ? new LinkedHashMap<String, Object>(row) : new LinkedHashMap<String, Object>();
+            this.firstRow = row != null ? new LinkedHashMap<>(row) : new LinkedHashMap<>();
             this.duplicateCount = 0;
             this.groupRecords = 1L;
         }
@@ -229,11 +238,13 @@ public class OrderedSourceCursor {
             OrderedKeyGroup group = new OrderedKeyGroup();
             group.setSourceId(sourceId);
             group.setKey(currentKey);
-            group.setFirstRow(firstRow != null ? new LinkedHashMap<String, Object>(firstRow) : new LinkedHashMap<String, Object>());
+            group.setFirstRow(firstRow != null ? new LinkedHashMap<>(firstRow) : new LinkedHashMap<>());
             group.setDuplicateCount(duplicateCount);
             group.setScannedRecords(groupRecords);
             producedGroups++;
             try {
+                // group 事件入队后，调度线程就能据此推进 pendingWindow、判定可归并 key，
+                // 队列满时这里会阻塞，从而把背压直接传回 source 读取线程。
                 queue.put(CursorEvent.group(sourceId, group));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

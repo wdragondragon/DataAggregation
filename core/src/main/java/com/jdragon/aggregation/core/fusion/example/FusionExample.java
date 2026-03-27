@@ -12,8 +12,6 @@ public class FusionExample {
         Configuration config = Configuration.from(new File("C:\\dev\\ideaProject\\DataAggregation\\core\\src\\main\\resources\\fusion-mysql-demo.json"));
         // 解析配置
         JobContainer jobContainer = new JobContainer(config);
-        jobContainer.addConsumerPlugin(PluginType.READER, ((configuration, peerConfiguration) -> new FusionReader()));
-
         jobContainer.start();
     }
 }

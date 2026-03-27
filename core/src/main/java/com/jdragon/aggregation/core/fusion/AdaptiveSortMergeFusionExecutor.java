@@ -33,6 +33,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * fusion 的自适应 sort-merge 执行器。
+ *
+ * <p>它优先走有序内存归并，只有在等待窗口过大或输入顺序不再可靠时，才把剩余 key
+ * 交给 overflow bucket 并通过既有 partition processor 回放，从而保持与旧实现兼容。
+ */
 public class AdaptiveSortMergeFusionExecutor {
 
     private static final int MAX_REBALANCE_DEPTH = 3;
@@ -54,7 +60,7 @@ public class AdaptiveSortMergeFusionExecutor {
         AdaptiveMergeConfig adaptiveMergeConfig = fusionConfig.getAdaptiveMergeConfig();
         List<DataSourceConfig> dataSourceConfigs = convertToDataSourceConfigs();
         OrderedKeySchema keySchema = new OrderedKeySchema(fusionConfig.getJoinKeys(), adaptiveMergeConfig.getKeyTypes());
-        List<OrderedSourceCursor> cursors = new ArrayList<OrderedSourceCursor>();
+        List<OrderedSourceCursor> cursors = new ArrayList<>();
         SourceRowScanner rowScanner = new SourceRowScanner(pluginManager);
         for (DataSourceConfig dataSourceConfig : dataSourceConfigs) {
             cursors.add(new OrderedSourceCursor(rowScanner, dataSourceConfig, fusionConfig.getJoinKeys(), true));
@@ -64,19 +70,12 @@ public class AdaptiveSortMergeFusionExecutor {
         try {
             FusionPartitionProcessor processor = new FusionPartitionProcessor(fusionConfig, fusionContext, recordSender);
             AdaptiveMergeCoordinator coordinator = new AdaptiveMergeCoordinator(adaptiveMergeConfig, keySchema, collectSourceOrder());
-            AdaptiveMergeCoordinator.Result result = coordinator.execute(cursors, new AdaptiveMergeCoordinator.ResolvedGroupHandler() {
-                @Override
-                public void handle(OrderedKey key, Map<String, Map<String, Object>> firstRowsBySource) {
-                    updateIncrementalValues(firstRowsBySource);
-                    Map<String, LinkedHashMap<String, Map<String, Object>>> groups =
-                            new LinkedHashMap<String, LinkedHashMap<String, Map<String, Object>>>();
-                    LinkedHashMap<String, Map<String, Object>> sourceRows = new LinkedHashMap<String, Map<String, Object>>();
-                    for (Map.Entry<String, Map<String, Object>> entry : firstRowsBySource.entrySet()) {
-                        sourceRows.put(entry.getKey(), entry.getValue());
-                    }
-                    groups.put(key.getEncoded(), sourceRows);
-                    processor.processGroups(groups);
-                }
+            AdaptiveMergeCoordinator.Result result = coordinator.execute(cursors, (key, firstRowsBySource) -> {
+                updateIncrementalValues(firstRowsBySource);
+                Map<String, LinkedHashMap<String, Map<String, Object>>> groups = new LinkedHashMap<>();
+                LinkedHashMap<String, Map<String, Object>> sourceRows = new LinkedHashMap<>(firstRowsBySource);
+                groups.put(key.getEncoded(), sourceRows);
+                processor.processGroups(groups);
             });
             overflowBucketStore = result.getOverflowBucketStore();
             if (overflowBucketStore != null && overflowBucketStore.getSpilledRows() > 0) {

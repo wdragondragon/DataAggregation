@@ -11,11 +11,17 @@
 1. `validation-reports/part1/session-summary-20260327.md`
 2. `validation-reports/part2/implementation-progress.md`
 3. `validation-reports/part2/testing-usage-and-conclusion.md`
+4. `validation-reports/part2/sortmerge-memory-flow.md`
 
 其中：
 
 - `session-summary-20260327.md` 记录的是上一阶段“流式分桶 / spill / planner”方向的整体重构背景
 - 本文件记录的是本次新增的“排序归并 + 超阈值降级文件桶”实验实现
+
+配套文档：
+
+- `sortmerge-memory-flow.md`
+  - 专门描述 `sortmerge` 链路里数据在内存中的流转，以及 spill / hybrid 路径的切换方式
 
 ## 2. 本次会话目标
 
@@ -258,4 +264,3 @@
 下次可以直接引用下面这段上下文继续：
 
 > 我们已经在 `core.sortmerge` 下实现了自适应排序归并实验链路，并在 `fusion-sortmerge`、`consistency-sortmerge` reader 中接入。`data-mock` 模块已经基于 `fusion-mysql-demo.json` 跑过百条、万条、百万条 MySQL 实测。当前结论是：小中数据量可纯 sortmerge，百万级会进入 hybrid，内容正确但输出顺序不再全局有序。请在此基础上继续推进。
-
