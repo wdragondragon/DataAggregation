@@ -1,0 +1,6 @@
+{
+  "name": "date_transformer",
+  "class": "com.jdragon.aggregation.transformer.impl.DateTransformer",
+  "description": "",
+  "developer": "jdragon"
+}

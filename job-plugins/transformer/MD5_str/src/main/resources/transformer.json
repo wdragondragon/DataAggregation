@@ -1,0 +1,6 @@
+{
+  "name": "MD5_str",
+  "class": "com.jdragon.aggregation.transformer.impl.MD5Str",
+  "description": "",
+  "developer": "jdragon"
+}

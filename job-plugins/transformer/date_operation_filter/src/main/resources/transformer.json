@@ -1,0 +1,6 @@
+{
+  "name": "date_operation_filter",
+  "class": "com.jdragon.aggregation.transformer.impl.DateOperationFilter",
+  "description": "",
+  "developer": "jdragon"
+}

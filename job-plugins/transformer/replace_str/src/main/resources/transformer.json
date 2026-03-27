@@ -1,0 +1,6 @@
+{
+  "name": "replace_str",
+  "class": "com.jdragon.aggregation.transformer.impl.ReplaceStr",
+  "description": "",
+  "developer": "jdragon"
+}

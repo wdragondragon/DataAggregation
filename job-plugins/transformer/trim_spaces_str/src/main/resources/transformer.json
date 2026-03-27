@@ -1,0 +1,6 @@
+{
+  "name": "trim_spaces_str",
+  "class": "com.jdragon.aggregation.transformer.impl.TrimSpacesStr",
+  "description": "",
+  "developer": "jdragon"
+}

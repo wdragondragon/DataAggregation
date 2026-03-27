@@ -1,0 +1,6 @@
+{
+  "name": "insert_sys_time",
+  "class": "com.jdragon.aggregation.transformer.impl.InsertSysTime",
+  "description": "",
+  "developer": "jdragon"
+}

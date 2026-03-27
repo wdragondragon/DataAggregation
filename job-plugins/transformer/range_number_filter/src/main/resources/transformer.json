@@ -1,0 +1,6 @@
+{
+  "name": "range_number_filter",
+  "class": "com.jdragon.aggregation.transformer.impl.RangeNumberFilter",
+  "description": "",
+  "developer": "jdragon"
+}

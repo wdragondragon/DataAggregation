@@ -1,0 +1,6 @@
+{
+  "name": "rsa_str",
+  "class": "com.jdragon.aggregation.transformer.impl.RsaStr",
+  "description": "",
+  "developer": "jdragon"
+}

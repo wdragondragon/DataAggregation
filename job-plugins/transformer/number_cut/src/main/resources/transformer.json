@@ -1,0 +1,6 @@
+{
+  "name": "number_cut",
+  "class": "com.jdragon.aggregation.transformer.impl.NumberCut",
+  "description": "",
+  "developer": "jdragon"
+}

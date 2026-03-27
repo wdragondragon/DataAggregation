@@ -1,0 +1,6 @@
+{
+  "name": "underline_toCamel_str",
+  "class": "com.jdragon.aggregation.transformer.impl.UnderlineToCamelStr",
+  "description": "",
+  "developer": "jdragon"
+}

@@ -14,6 +14,32 @@
 
     <modules>
         <module>custom_batch_replace</module>
+        <module>date_filter</module>
+        <module>add_default_value</module>
+        <module>date_operation_filter</module>
+        <module>date_transformer</module>
+        <module>trim_spaces_str</module>
+        <module>range_number_filter</module>
+        <module>string_operation_filter</module>
+        <module>number_operation_filter</module>
+        <module>null_value_filter</module>
+        <module>null_value_replace</module>
+        <module>insert_sys_time</module>
+        <module>camel_toUnderline_str</module>
+        <module>number_cut</module>
+        <module>SHA256_str</module>
+        <module>string_cut</module>
+        <module>date_mask</module>
+        <module>MD5_str</module>
+        <module>sm2_str</module>
+        <module>rsa_str</module>
+        <module>idea_str</module>
+        <module>3des_str</module>
+        <module>des_str</module>
+        <module>aes_str</module>
+        <module>underline_toCamel_str</module>
+        <module>value_filter</module>
+        <module>replace_str</module>
     </modules>
 
     <properties>

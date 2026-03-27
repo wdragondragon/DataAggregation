@@ -1,0 +1,6 @@
+{
+  "name": "string_cut",
+  "class": "com.jdragon.aggregation.transformer.impl.StringCut",
+  "description": "",
+  "developer": "jdragon"
+}

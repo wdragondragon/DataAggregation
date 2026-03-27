@@ -1,0 +1,6 @@
+{
+  "name": "aes_str",
+  "class": "com.jdragon.aggregation.transformer.impl.AesStr",
+  "description": "",
+  "developer": "jdragon"
+}

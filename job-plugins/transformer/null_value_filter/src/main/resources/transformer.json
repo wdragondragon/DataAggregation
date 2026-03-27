@@ -1,0 +1,6 @@
+{
+  "name": "null_value_filter",
+  "class": "com.jdragon.aggregation.transformer.impl.NullValueFilter",
+  "description": "",
+  "developer": "jdragon"
+}

@@ -1,0 +1,6 @@
+{
+  "name": "des_str",
+  "class": "com.jdragon.aggregation.transformer.impl.DesStr",
+  "description": "",
+  "developer": "jdragon"
+}

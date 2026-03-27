@@ -1,0 +1,6 @@
+{
+  "name": "date_filter",
+  "class": "com.jdragon.aggregation.transformer.impl.DateFilter",
+  "description": "",
+  "developer": "jdragon"
+}

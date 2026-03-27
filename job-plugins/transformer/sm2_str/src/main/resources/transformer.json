@@ -1,0 +1,6 @@
+{
+  "name": "sm2_str",
+  "class": "com.jdragon.aggregation.transformer.impl.Sm2Str",
+  "description": "",
+  "developer": "jdragon"
+}

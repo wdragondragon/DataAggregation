@@ -1,0 +1,6 @@
+{
+  "name": "date_mask",
+  "class": "com.jdragon.aggregation.transformer.impl.DataMask",
+  "description": "",
+  "developer": "jdragon"
+}

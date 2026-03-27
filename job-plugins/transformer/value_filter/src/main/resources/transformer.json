@@ -1,0 +1,6 @@
+{
+  "name": "value_filter",
+  "class": "com.jdragon.aggregation.transformer.impl.ValueFilter",
+  "description": "",
+  "developer": "jdragon"
+}

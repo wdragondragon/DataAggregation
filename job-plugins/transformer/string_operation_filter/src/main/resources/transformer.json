@@ -1,0 +1,6 @@
+{
+  "name": "string_operation_filter",
+  "class": "com.jdragon.aggregation.transformer.impl.StringOperationFilter",
+  "description": "",
+  "developer": "jdragon"
+}

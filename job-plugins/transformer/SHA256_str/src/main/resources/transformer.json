@@ -1,0 +1,6 @@
+{
+  "name": "SHA256_str",
+  "class": "com.jdragon.aggregation.transformer.impl.SHA256Str",
+  "description": "",
+  "developer": "jdragon"
+}

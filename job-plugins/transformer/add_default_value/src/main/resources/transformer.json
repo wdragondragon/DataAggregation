@@ -1,0 +1,6 @@
+{
+  "name": "add_default_value",
+  "class": "com.jdragon.aggregation.transformer.impl.AddDefaultValue",
+  "description": "",
+  "developer": "jdragon"
+}

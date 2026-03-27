@@ -1,0 +1,6 @@
+{
+  "name": "3des_str",
+  "class": "com.jdragon.aggregation.transformer.impl.Des3Str",
+  "description": "",
+  "developer": "jdragon"
+}

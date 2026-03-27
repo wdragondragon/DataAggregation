@@ -1,0 +1,6 @@
+{
+  "name": "null_value_replace",
+  "class": "com.jdragon.aggregation.transformer.impl.NullValueReplace",
+  "description": "",
+  "developer": "jdragon"
+}
