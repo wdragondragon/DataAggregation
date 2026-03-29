@@ -1,6 +1,7 @@
 package com.jdragon.aggregation.core.sortmerge;
 
 import com.jdragon.aggregation.core.streaming.RowCodec;
+import com.jdragon.aggregation.core.streaming.SpillGuard;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -9,18 +10,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * sort-merge 实验链路的共享调度器。
+ * Shared coordinator for adaptive sort-merge execution.
  *
- * <p>它负责消费多个有序来源产出的 key group，只把暂时无法判定的 key 留在
- * {@link PendingWindow} 中；一旦所有来源都已经读到该 key，或明确越过该 key，
- * 就立即触发业务侧处理。若等待窗口超出阈值，则把未决 key 写入
- * {@link OverflowBucketStore}，让执行流程退化为 hybrid/bucket 模式继续完成。
+ * <p>It consumes ordered key groups from multiple sources, keeps only unresolved
+ * keys in memory, and spills unresolved prefixes to overflow when memory,
+ * disorder, or routing rules require it.
  */
 public class AdaptiveMergeCoordinator {
 
-    /**
-     * 某个 key 在内存窗口内已经可以确定最终参与方时，回调业务处理逻辑。
-     */
     public interface ResolvedGroupHandler {
         void handle(OrderedKey key, Map<String, Map<String, Object>> firstRowsBySource) throws Exception;
     }
@@ -51,34 +48,35 @@ public class AdaptiveMergeCoordinator {
     private final OrderedKeySchema schema;
     private final List<String> sourceOrder;
     private final PendingWindow pendingWindow;
+    private final SpillGuard spillGuard;
     private final SortMergeStats stats = new SortMergeStats();
-    private final Map<String, OrderedKey> lastReadKeyBySource = new LinkedHashMap<String, OrderedKey>();
+    private final Map<String, OrderedKey> maxObservedKeyBySource = new LinkedHashMap<String, OrderedKey>();
     private final Map<String, OrderedSourceCursor> cursorIndex = new LinkedHashMap<String, OrderedSourceCursor>();
 
     private OverflowBucketStore overflowBucketStore;
-    /**
-     * 已经转入桶处理的 key 上界。后续如果又读到不大于该上界的 key，也必须直接进桶，
-     * 否则同一段 key 可能一部分走内存归并、一部分走桶回放，导致语义不一致。
-     */
     private OrderedKey bucketUpperBound;
-    /**
-     * 一旦置为 true，后续事件不再尝试进入 pendingWindow，而是直接写入 overflow bucket。
-     */
     private boolean bucketMode;
 
     public AdaptiveMergeCoordinator(AdaptiveMergeConfig config,
                                     OrderedKeySchema schema,
                                     List<String> sourceOrder) {
+        this(config, schema, sourceOrder, null);
+    }
+
+    public AdaptiveMergeCoordinator(AdaptiveMergeConfig config,
+                                    OrderedKeySchema schema,
+                                    List<String> sourceOrder,
+                                    SpillGuard spillGuard) {
         this.config = config;
         this.schema = schema;
         this.sourceOrder = sourceOrder;
+        this.spillGuard = spillGuard;
         this.pendingWindow = new PendingWindow(schema);
     }
 
     public Result execute(List<OrderedSourceCursor> cursors, ResolvedGroupHandler handler) throws Exception {
         for (OrderedSourceCursor cursor : cursors) {
             cursorIndex.put(cursor.getSourceId(), cursor);
-            // 每个 source 启动一个生产线程，持续把 group 投递到自己的事件队列中。
             cursor.start();
         }
 
@@ -123,6 +121,12 @@ public class AdaptiveMergeCoordinator {
         for (OrderedSourceCursor cursor : cursors) {
             stats.getSourceRecordCounts().put(cursor.getSourceId(), cursor.getScannedRecords());
             stats.getSourceGroupCounts().put(cursor.getSourceId(), cursor.getProducedGroups());
+            stats.setLocalReorderedGroupCount(
+                    stats.getLocalReorderedGroupCount() + cursor.getLocalReorderedGroupCount()
+            );
+            stats.setLocalMergedDuplicateGroupCount(
+                    stats.getLocalMergedDuplicateGroupCount() + cursor.getLocalMergedDuplicateGroupCount()
+            );
         }
         if (overflowBucketStore != null) {
             overflowBucketStore.close();
@@ -140,8 +144,6 @@ public class AdaptiveMergeCoordinator {
         if (event.isEndOfStream()) {
             OrderedSourceCursor cursor = cursorIndex.get(event.getSourceId());
             if (cursor != null) {
-                // 这里把 cursor 标记为 finished 后，当前调度线程在 isResolvable 中就会把
-                // “该来源不会再产出更小 key” 视为已知事实，从而释放部分 pending key。
                 cursor.setFinished(true);
             }
             return resolveReadyKeys(handler);
@@ -149,15 +151,26 @@ public class AdaptiveMergeCoordinator {
 
         OrderedKeyGroup group = event.getGroup();
         stats.setDuplicateIgnoredCount(stats.getDuplicateIgnoredCount() + group.getDuplicateCount());
-        OrderedKey previous = lastReadKeyBySource.get(group.getSourceId());
-        if (previous != null && schema.compare(group.getKey(), previous) < 0) {
-            String reason = "Detected out-of-order key for source " + group.getSourceId();
+
+        OrderedKey previousMax = maxObservedKeyBySource.get(group.getSourceId());
+        if (config.isValidateSourceOrder()
+                && previousMax != null
+                && schema.compare(group.getKey(), previousMax) < 0) {
+            String reason = "Detected out-of-order key for source " + group.getSourceId()
+                    + ", key=" + group.getKey().getEncoded()
+                    + ", previousMax=" + previousMax.getEncoded();
             if (config.getOnOrderViolation() == AdaptiveMergeConfig.OrderViolationAction.FAIL) {
                 throw new IllegalStateException(reason);
             }
-            switchToBucketMode(reason);
+            if (config.getOnOrderViolation() == AdaptiveMergeConfig.OrderViolationAction.BUCKET) {
+                switchToBucketMode(reason);
+            } else {
+                recoverLocalOrderViolation(group, previousMax, reason);
+                return resolveReadyKeys(handler);
+            }
         }
-        lastReadKeyBySource.put(group.getSourceId(), group.getKey());
+
+        updateMaxObservedKey(group.getSourceId(), group.getKey());
 
         if (bucketMode || shouldRouteDirectlyToBucket(group.getKey())) {
             appendGroupToBucket(group);
@@ -201,13 +214,48 @@ public class AdaptiveMergeCoordinator {
             if (cursor == null || cursor.isFinished()) {
                 continue;
             }
-            OrderedKey lastReadKey = lastReadKeyBySource.get(sourceId);
-            if (lastReadKey != null && schema.compare(lastReadKey, entry.getKey()) > 0) {
+            OrderedKey maxObservedKey = maxObservedKeyBySource.get(sourceId);
+            if (maxObservedKey != null && schema.compare(maxObservedKey, entry.getKey()) > 0) {
                 continue;
             }
             return false;
         }
         return true;
+    }
+
+    private void updateMaxObservedKey(String sourceId, OrderedKey key) {
+        OrderedKey current = maxObservedKeyBySource.get(sourceId);
+        if (current == null || schema.compare(key, current) > 0) {
+            maxObservedKeyBySource.put(sourceId, key);
+        } else if (current == null) {
+            maxObservedKeyBySource.put(sourceId, key);
+        }
+    }
+
+    private void recoverLocalOrderViolation(OrderedKeyGroup group,
+                                            OrderedKey recoveryUpperBound,
+                                            String reason) {
+        ensureOverflowStore();
+        stats.setExecutionEngine("hybrid");
+        stats.setOrderRecoveryCount(stats.getOrderRecoveryCount() + 1);
+        if (stats.getFallbackReason() == null) {
+            stats.setFallbackReason(reason);
+        }
+        spillPendingUpTo(recoveryUpperBound);
+        appendGroupToBucket(group);
+        advanceBucketUpperBound(recoveryUpperBound);
+    }
+
+    private void spillPendingUpTo(OrderedKey upperBound) {
+        while (!pendingWindow.isEmpty()) {
+            PendingWindow.PendingEntry entry = pendingWindow.firstEntry();
+            if (entry == null || schema.compare(entry.getKey(), upperBound) > 0) {
+                break;
+            }
+            pendingWindow.remove(entry.getKey());
+            spillEntry(entry);
+            stats.setMergeSpilledKeyCount(stats.getMergeSpilledKeyCount() + 1);
+        }
     }
 
     private void spillOldestPending() {
@@ -233,8 +281,6 @@ public class AdaptiveMergeCoordinator {
         if (stats.getFallbackReason() == null) {
             stats.setFallbackReason(reason);
         }
-        // 一旦切到 bucketMode，后续主线程消费到的新 group 都会直接落桶；
-        // 与此同时，各 source 的生产线程仍会继续往事件队列投递数据，直到读完。
         bucketMode = true;
         flushAllPendingToBucket();
     }
@@ -256,8 +302,15 @@ public class AdaptiveMergeCoordinator {
         for (Map.Entry<String, Map<String, Object>> sourceEntry : entry.getFirstRowsBySource().entrySet()) {
             overflowBucketStore.append(sourceEntry.getKey(), entry.getKey(), sourceEntry.getValue());
         }
-        if (bucketUpperBound == null || schema.compare(entry.getKey(), bucketUpperBound) > 0) {
-            bucketUpperBound = entry.getKey();
+        advanceBucketUpperBound(entry.getKey());
+    }
+
+    private void advanceBucketUpperBound(OrderedKey key) {
+        if (key == null) {
+            return;
+        }
+        if (bucketUpperBound == null || schema.compare(key, bucketUpperBound) > 0) {
+            bucketUpperBound = key;
         }
     }
 
@@ -268,9 +321,7 @@ public class AdaptiveMergeCoordinator {
     private void appendGroupToBucket(OrderedKeyGroup group) {
         ensureOverflowStore();
         overflowBucketStore.append(group.getSourceId(), group.getKey(), group.getFirstRow());
-        if (bucketUpperBound == null || schema.compare(group.getKey(), bucketUpperBound) > 0) {
-            bucketUpperBound = group.getKey();
-        }
+        advanceBucketUpperBound(group.getKey());
     }
 
     private void ensureOverflowStore() {
@@ -279,7 +330,8 @@ public class AdaptiveMergeCoordinator {
                     "sortmerge-overflow",
                     config.getOverflowSpillPath(),
                     config.getOverflowPartitionCount(),
-                    false
+                    false,
+                    spillGuard
             );
         }
     }

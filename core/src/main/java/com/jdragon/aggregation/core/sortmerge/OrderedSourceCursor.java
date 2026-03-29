@@ -2,27 +2,32 @@ package com.jdragon.aggregation.core.sortmerge;
 
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.consistency.model.DataSourceConfig;
+import com.jdragon.aggregation.core.streaming.RowCodec;
 import com.jdragon.aggregation.core.streaming.SourceRowScanner;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.LinkedBlockingQueue;
 
 /**
- * 负责按 key 顺序流式读取单个 source，并把连续同 key 的多行折叠成一个
- * {@link OrderedKeyGroup}。
+ * Streams one source in ordered-group form.
  *
- * <p>该 cursor 只保留当前聚合中的 group 和一个很小的事件队列，因此不会把整个
- * source 全量放进内存。数据库来源可尝试自动包 ORDER BY；文件来源则依赖输入天然有序。
+ * <p>The cursor collapses consecutive rows with the same key into an
+ * {@link OrderedKeyGroup}. When local disorder buffering is enabled, those
+ * groups first pass through a bounded source-side reorder buffer so that small
+ * local key regressions can be absorbed before they reach the coordinator.
  */
 public class OrderedSourceCursor {
 
     /**
-     * cursor 工作线程投递给调度线程的事件载体。
+     * Event exchanged between the producer thread and the merge coordinator.
      */
     @Getter
     public static class CursorEvent {
@@ -54,9 +59,10 @@ public class OrderedSourceCursor {
     private final String sourceId;
     private final DataSourceConfig dataSourceConfig;
     private final SourceRowScanner rowScanner;
+    private final OrderedKeySchema keySchema;
+    private final AdaptiveMergeConfig adaptiveMergeConfig;
     private final List<String> keyFields;
-    // 有界队列用于在生产线程和调度线程之间建立背压，避免 source 侧无限制预读。
-    private final LinkedBlockingQueue<CursorEvent> queue = new LinkedBlockingQueue<>(4);
+    private final LinkedBlockingQueue<CursorEvent> queue = new LinkedBlockingQueue<CursorEvent>(4);
     private final boolean preferOrderedQuery;
 
     @Getter
@@ -64,11 +70,13 @@ public class OrderedSourceCursor {
     @Getter
     private volatile long producedGroups;
     @Getter
+    private volatile long localReorderedGroupCount;
+    @Getter
+    private volatile long localMergedDuplicateGroupCount;
+    @Getter
     @Setter
-    // 由调度线程在消费到 end 事件后置为 true，之后该来源会被视为“不会再产出新 key”。
     private volatile boolean finished;
     @Getter
-    // 由生产线程在 finally 中置为 true，用于表达“worker 已彻底退出”。
     private volatile boolean producerDone;
     private Thread worker;
 
@@ -76,9 +84,29 @@ public class OrderedSourceCursor {
                                DataSourceConfig dataSourceConfig,
                                List<String> keyFields,
                                boolean preferOrderedQuery) {
+        this(
+                rowScanner,
+                dataSourceConfig,
+                new OrderedKeySchema(keyFields, Collections.<String, OrderedKeyType>emptyMap()),
+                keyFields,
+                preferOrderedQuery,
+                disabledLocalDisorderConfig()
+        );
+    }
+
+    public OrderedSourceCursor(SourceRowScanner rowScanner,
+                               DataSourceConfig dataSourceConfig,
+                               OrderedKeySchema keySchema,
+                               List<String> keyFields,
+                               boolean preferOrderedQuery,
+                               AdaptiveMergeConfig adaptiveMergeConfig) {
         this.rowScanner = rowScanner;
         this.dataSourceConfig = dataSourceConfig;
-        this.keyFields = keyFields != null ? keyFields : new ArrayList<>();
+        this.keySchema = keySchema != null
+                ? keySchema
+                : new OrderedKeySchema(keyFields, Collections.<String, OrderedKeyType>emptyMap());
+        this.adaptiveMergeConfig = adaptiveMergeConfig != null ? adaptiveMergeConfig : disabledLocalDisorderConfig();
+        this.keyFields = keyFields != null ? new ArrayList<String>(keyFields) : new ArrayList<String>();
         this.sourceId = dataSourceConfig.getSourceId();
         this.preferOrderedQuery = preferOrderedQuery;
     }
@@ -91,7 +119,6 @@ public class OrderedSourceCursor {
         if (worker != null) {
             return;
         }
-        // source 的读取与 group 折叠在独立线程中完成，主线程只负责消费 queue 中的事件。
         worker = new Thread(this::produceGroups, "sortmerge-cursor-" + sourceId);
         worker.setDaemon(true);
         worker.start();
@@ -106,19 +133,18 @@ public class OrderedSourceCursor {
     }
 
     private void produceGroups() {
-        final GroupAccumulator accumulator = new GroupAccumulator();
+        final LocalDisorderBuffer disorderBuffer = new LocalDisorderBuffer();
+        final GroupAccumulator accumulator = new GroupAccumulator(disorderBuffer);
         try {
             rowScanner.scan(buildScanConfig(), row -> {
                 scannedRecords++;
                 accumulator.accept(row);
             });
             accumulator.flush();
-            // 结束事件一旦入队，调度线程就会把该 source 标记为 finished，
-            // 某些还在等待它“补齐”的 pending key 也可能因此立刻变为可判定。
+            disorderBuffer.flush();
             queue.put(CursorEvent.end(sourceId));
         } catch (Throwable throwable) {
             try {
-                // 错误通过事件队列传回调度线程，由调度线程统一终止整条归并链路。
                 queue.put(CursorEvent.error(sourceId, throwable));
             } catch (InterruptedException interruptedException) {
                 Thread.currentThread().interrupt();
@@ -147,7 +173,7 @@ public class OrderedSourceCursor {
                 : Configuration.newDefault());
         scanConfig.setUpdateTarget(dataSourceConfig.getUpdateTarget());
 
-        if (preferOrderedQuery && !isFileSource(scanConfig) && keyFields != null && !keyFields.isEmpty()) {
+        if (preferOrderedQuery && !isFileSource(scanConfig) && !keyFields.isEmpty()) {
             String orderedQuery = buildOrderedQuery(scanConfig);
             if (orderedQuery != null) {
                 scanConfig.setQuerySql(orderedQuery);
@@ -198,11 +224,86 @@ public class OrderedSourceCursor {
                 || lowerName.equals("localfile");
     }
 
+    private int compareKeys(OrderedKey left, OrderedKey right) {
+        if (left == right) {
+            return 0;
+        }
+        if (left == null) {
+            return -1;
+        }
+        if (right == null) {
+            return 1;
+        }
+        return keySchema.compare(left, right);
+    }
+
+    private boolean localDisorderEnabled() {
+        return adaptiveMergeConfig != null && adaptiveMergeConfig.isLocalDisorderEnabled();
+    }
+
+    private long localDisorderMaxMemoryBytes() {
+        return adaptiveMergeConfig != null
+                ? Math.max(1L, adaptiveMergeConfig.getLocalDisorderMaxMemoryBytes())
+                : 1L;
+    }
+
+    private int localDisorderMaxGroups() {
+        return adaptiveMergeConfig != null
+                ? Math.max(1, adaptiveMergeConfig.getLocalDisorderMaxGroups())
+                : 1;
+    }
+
+    private long estimateGroupBytes(OrderedKeyGroup group) {
+        int rowBytes = RowCodec.encode(group.getFirstRow()).getBytes(StandardCharsets.UTF_8).length;
+        int keyBytes = group.getKey() != null
+                ? group.getKey().getEncoded().getBytes(StandardCharsets.UTF_8).length
+                : 0;
+        return rowBytes + keyBytes + 128L;
+    }
+
+    private OrderedKeyGroup copyGroup(OrderedKeyGroup group) {
+        OrderedKeyGroup copy = new OrderedKeyGroup();
+        copy.setSourceId(group.getSourceId());
+        copy.setKey(group.getKey());
+        copy.setFirstRow(group.getFirstRow() != null
+                ? new LinkedHashMap<String, Object>(group.getFirstRow())
+                : new LinkedHashMap<String, Object>());
+        copy.setDuplicateCount(group.getDuplicateCount());
+        copy.setScannedRecords(group.getScannedRecords());
+        return copy;
+    }
+
+    private int toDuplicateCount(long scannedRecords) {
+        long duplicates = Math.max(0L, scannedRecords - 1L);
+        return duplicates > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) duplicates;
+    }
+
+    private void publishGroup(OrderedKeyGroup group) {
+        producedGroups++;
+        try {
+            queue.put(CursorEvent.group(sourceId, group));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while publishing ordered group", e);
+        }
+    }
+
+    private static AdaptiveMergeConfig disabledLocalDisorderConfig() {
+        AdaptiveMergeConfig config = new AdaptiveMergeConfig();
+        config.setLocalDisorderEnabled(false);
+        return config;
+    }
+
     private class GroupAccumulator {
+        private final LocalDisorderBuffer disorderBuffer;
         private OrderedKey currentKey;
         private Map<String, Object> firstRow;
         private int duplicateCount;
         private long groupRecords;
+
+        private GroupAccumulator(LocalDisorderBuffer disorderBuffer) {
+            this.disorderBuffer = disorderBuffer;
+        }
 
         void accept(Map<String, Object> row) {
             OrderedKey rowKey = OrderedKey.fromRow(row, keyFields);
@@ -224,32 +325,97 @@ public class OrderedSourceCursor {
                 emitCurrent();
                 currentKey = null;
                 firstRow = null;
+                duplicateCount = 0;
+                groupRecords = 0L;
             }
         }
 
         private void startGroup(OrderedKey key, Map<String, Object> row) {
-            this.currentKey = key;
-            this.firstRow = row != null ? new LinkedHashMap<>(row) : new LinkedHashMap<>();
-            this.duplicateCount = 0;
-            this.groupRecords = 1L;
+            currentKey = key;
+            firstRow = row != null ? new LinkedHashMap<String, Object>(row) : new LinkedHashMap<String, Object>();
+            duplicateCount = 0;
+            groupRecords = 1L;
         }
 
         private void emitCurrent() {
             OrderedKeyGroup group = new OrderedKeyGroup();
             group.setSourceId(sourceId);
             group.setKey(currentKey);
-            group.setFirstRow(firstRow != null ? new LinkedHashMap<>(firstRow) : new LinkedHashMap<>());
+            group.setFirstRow(firstRow != null
+                    ? new LinkedHashMap<String, Object>(firstRow)
+                    : new LinkedHashMap<String, Object>());
             group.setDuplicateCount(duplicateCount);
             group.setScannedRecords(groupRecords);
-            producedGroups++;
-            try {
-                // group 事件入队后，调度线程就能据此推进 pendingWindow、判定可归并 key，
-                // 队列满时这里会阻塞，从而把背压直接传回 source 读取线程。
-                queue.put(CursorEvent.group(sourceId, group));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new RuntimeException("Interrupted while publishing ordered group", e);
+            disorderBuffer.accept(group);
+        }
+    }
+
+    private class LocalDisorderBuffer {
+        private final TreeMap<OrderedKey, BufferedGroup> bufferedGroups =
+                new TreeMap<OrderedKey, BufferedGroup>((left, right) -> compareKeys(left, right));
+        private OrderedKey lastObservedKey;
+        private long estimatedBytes;
+
+        void accept(OrderedKeyGroup group) {
+            if (!localDisorderEnabled()) {
+                publishGroup(group);
+                return;
             }
+            if (lastObservedKey != null && compareKeys(group.getKey(), lastObservedKey) < 0) {
+                localReorderedGroupCount++;
+            }
+            lastObservedKey = group.getKey();
+
+            BufferedGroup existing = bufferedGroups.get(group.getKey());
+            if (existing == null) {
+                OrderedKeyGroup copied = copyGroup(group);
+                long bytes = estimateGroupBytes(copied);
+                bufferedGroups.put(copied.getKey(), new BufferedGroup(copied, bytes));
+                estimatedBytes += bytes;
+            } else {
+                estimatedBytes -= existing.estimatedBytes;
+                long totalScannedRecords = existing.group.getScannedRecords() + group.getScannedRecords();
+                existing.group.setScannedRecords(totalScannedRecords);
+                existing.group.setDuplicateCount(toDuplicateCount(totalScannedRecords));
+                existing.estimatedBytes = estimateGroupBytes(existing.group);
+                estimatedBytes += existing.estimatedBytes;
+                localMergedDuplicateGroupCount++;
+            }
+
+            releaseOverflowIfNeeded();
+        }
+
+        void flush() {
+            while (!bufferedGroups.isEmpty()) {
+                releaseSmallest();
+            }
+        }
+
+        private void releaseOverflowIfNeeded() {
+            while (bufferedGroups.size() > localDisorderMaxGroups()
+                    || estimatedBytes > localDisorderMaxMemoryBytes()) {
+                releaseSmallest();
+            }
+        }
+
+        private void releaseSmallest() {
+            Map.Entry<OrderedKey, BufferedGroup> firstEntry = bufferedGroups.firstEntry();
+            if (firstEntry == null) {
+                return;
+            }
+            bufferedGroups.remove(firstEntry.getKey());
+            estimatedBytes -= firstEntry.getValue().estimatedBytes;
+            publishGroup(firstEntry.getValue().group);
+        }
+    }
+
+    private static class BufferedGroup {
+        private final OrderedKeyGroup group;
+        private long estimatedBytes;
+
+        private BufferedGroup(OrderedKeyGroup group, long estimatedBytes) {
+            this.group = group;
+            this.estimatedBytes = estimatedBytes;
         }
     }
 }

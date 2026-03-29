@@ -22,6 +22,7 @@ import com.jdragon.aggregation.core.sortmerge.OverflowBucketStore;
 import com.jdragon.aggregation.core.sortmerge.SortMergeStats;
 import com.jdragon.aggregation.core.streaming.PartitionReader;
 import com.jdragon.aggregation.core.streaming.PartitionedSpillStore;
+import com.jdragon.aggregation.core.streaming.SpillGuard;
 import com.jdragon.aggregation.core.streaming.SourceRowScanner;
 import com.jdragon.aggregation.core.streaming.StreamExecutionOptions;
 
@@ -58,18 +59,34 @@ public class AdaptiveSortMergeFusionExecutor {
     public SortMergeStats execute(RecordSender recordSender) throws Exception {
         StreamExecutionOptions options = StreamExecutionOptions.fromFusionConfig(fusionConfig);
         AdaptiveMergeConfig adaptiveMergeConfig = fusionConfig.getAdaptiveMergeConfig();
+        SpillGuard spillGuard = new SpillGuard(
+                adaptiveMergeConfig.getMaxSpillBytes(),
+                adaptiveMergeConfig.getMinFreeDiskBytes()
+        );
         List<DataSourceConfig> dataSourceConfigs = convertToDataSourceConfigs();
         OrderedKeySchema keySchema = new OrderedKeySchema(fusionConfig.getJoinKeys(), adaptiveMergeConfig.getKeyTypes());
         List<OrderedSourceCursor> cursors = new ArrayList<>();
         SourceRowScanner rowScanner = new SourceRowScanner(pluginManager);
         for (DataSourceConfig dataSourceConfig : dataSourceConfigs) {
-            cursors.add(new OrderedSourceCursor(rowScanner, dataSourceConfig, fusionConfig.getJoinKeys(), true));
+            cursors.add(new OrderedSourceCursor(
+                    rowScanner,
+                    dataSourceConfig,
+                    keySchema,
+                    fusionConfig.getJoinKeys(),
+                    adaptiveMergeConfig.isPreferOrderedQuery(),
+                    adaptiveMergeConfig
+            ));
         }
 
         OverflowBucketStore overflowBucketStore = null;
         try {
             FusionPartitionProcessor processor = new FusionPartitionProcessor(fusionConfig, fusionContext, recordSender);
-            AdaptiveMergeCoordinator coordinator = new AdaptiveMergeCoordinator(adaptiveMergeConfig, keySchema, collectSourceOrder());
+            AdaptiveMergeCoordinator coordinator = new AdaptiveMergeCoordinator(
+                    adaptiveMergeConfig,
+                    keySchema,
+                    collectSourceOrder(),
+                    spillGuard
+            );
             AdaptiveMergeCoordinator.Result result = coordinator.execute(cursors, (key, firstRowsBySource) -> {
                 updateIncrementalValues(firstRowsBySource);
                 Map<String, LinkedHashMap<String, Map<String, Object>>> groups = new LinkedHashMap<>();
@@ -79,9 +96,10 @@ public class AdaptiveSortMergeFusionExecutor {
             });
             overflowBucketStore = result.getOverflowBucketStore();
             if (overflowBucketStore != null && overflowBucketStore.getSpilledRows() > 0) {
-                processOverflowStore(overflowBucketStore, options, processor);
+                processOverflowStore(overflowBucketStore, options, processor, spillGuard);
             }
             publishIncrementalValues();
+            result.getStats().setSpillBytes(spillGuard.getTotalReservedBytes());
             return result.getStats();
         } finally {
             if (overflowBucketStore != null) {
@@ -92,14 +110,17 @@ public class AdaptiveSortMergeFusionExecutor {
 
     private void processOverflowStore(OverflowBucketStore overflowBucketStore,
                                       StreamExecutionOptions options,
-                                      FusionPartitionProcessor processor) throws IOException {
+                                      FusionPartitionProcessor processor,
+                                      SpillGuard spillGuard) throws IOException {
         PartitionedSpillStore spillStore = overflowBucketStore.getStore();
         spillStore.close();
         for (int partition = 0; partition < spillStore.getPartitionCount(); partition++) {
             if (!spillStore.partitionExists(partition)) {
                 continue;
             }
-            processPartitionPath(spillStore.getPartitionPath(partition), options, processor, partition, 0);
+            // 这里的 partition 是 hash 桶顺序，不是全局 key 顺序；
+            // 因此如果后续调整遍历策略，会直接影响 writer 侧最终看到的输出顺序。
+            processPartitionPath(spillStore.getPartitionPath(partition), options, processor, partition, 0, spillGuard);
         }
     }
 
@@ -107,7 +128,8 @@ public class AdaptiveSortMergeFusionExecutor {
                                       StreamExecutionOptions options,
                                       FusionPartitionProcessor processor,
                                       int partition,
-                                      int depth) throws IOException {
+                                      int depth,
+                                      SpillGuard spillGuard) throws IOException {
         Map<String, LinkedHashMap<String, Map<String, Object>>> groups = new LinkedHashMap<String, LinkedHashMap<String, Map<String, Object>>>();
         PartitionedSpillStore rebalanceStore = null;
 
@@ -115,6 +137,8 @@ public class AdaptiveSortMergeFusionExecutor {
             final PartitionedSpillStore[] rebalanceHolder = new PartitionedSpillStore[1];
             reader.readAll(row -> {
                 if (rebalanceHolder[0] != null) {
+                    // 一旦 rebalanceHolder 被置上，当前 partition 剩余数据就不再参与本轮内存聚合，
+                    // 而是统一转发到下一层 spill store，后续推进路径随之切到递归 rebalance。
                     rebalanceHolder[0].append(row);
                     return;
                 }
@@ -130,7 +154,8 @@ public class AdaptiveSortMergeFusionExecutor {
                             "fusion-sortmerge-overflow-p" + partition + "-d" + depth,
                             options.getSpillPath(),
                             Math.max(4, options.getPartitionCount()),
-                            false
+                            false,
+                            spillGuard
                     );
                     for (Map.Entry<String, LinkedHashMap<String, Map<String, Object>>> groupEntry : groups.entrySet()) {
                         com.jdragon.aggregation.core.streaming.CompositeKey key =
@@ -139,6 +164,7 @@ public class AdaptiveSortMergeFusionExecutor {
                             rebalanceHolder[0].append(sourceEntry.getKey(), key, sourceEntry.getValue());
                         }
                     }
+                    // 已搬运到下一层后必须清空；否则同一批 key 会在当前层和子层各处理一次。
                     groups.clear();
                 }
             });
@@ -152,7 +178,14 @@ public class AdaptiveSortMergeFusionExecutor {
                     if (!rebalanceStore.partitionExists(childPartition)) {
                         continue;
                     }
-                    processPartitionPath(rebalanceStore.getPartitionPath(childPartition), options, processor, childPartition, depth + 1);
+                    processPartitionPath(
+                            rebalanceStore.getPartitionPath(childPartition),
+                            options,
+                            processor,
+                            childPartition,
+                            depth + 1,
+                            spillGuard
+                    );
                 }
                 return;
             } finally {

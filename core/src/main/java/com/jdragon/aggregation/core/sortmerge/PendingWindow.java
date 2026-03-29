@@ -49,6 +49,7 @@ public class PendingWindow {
     }
 
     private final NavigableMap<OrderedKey, PendingEntry> entries;
+    // 协调器直接用它决定何时 spill / 切 hybrid；它增长得越快，后续 key 越早改走 overflow。
     private long estimatedBytes;
 
     public PendingWindow(final OrderedKeySchema schema) {
@@ -96,6 +97,8 @@ public class PendingWindow {
             if (entry == null) {
                 break;
             }
+            // 始终优先移除最小 key，这样保留下来的窗口仍然对应“更靠后的未决区间”，
+            // 调度线程可以继续基于当前扫描进度向前推进。
             removed.add(remove(entry.getKey()));
         }
         return removed;

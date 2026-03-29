@@ -11,6 +11,12 @@ public class SortMergeStats {
     private long mergeResolvedKeyCount;
     private long mergeSpilledKeyCount;
     private long duplicateIgnoredCount;
+    private long localReorderedGroupCount;
+    private long localMergedDuplicateGroupCount;
+    private long orderRecoveryCount;
+    private long spillBytes;
+    private boolean spillGuardTriggered;
+    private String spillGuardReason;
     private String fallbackReason;
     private Map<String, Long> sourceRecordCounts = new LinkedHashMap<String, Long>();
     private Map<String, Long> sourceGroupCounts = new LinkedHashMap<String, Long>();

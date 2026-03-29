@@ -1,6 +1,7 @@
 package com.jdragon.aggregation.core.sortmerge;
 
 import com.jdragon.aggregation.core.streaming.PartitionedSpillStore;
+import com.jdragon.aggregation.core.streaming.SpillGuard;
 import lombok.Getter;
 
 import java.util.LinkedHashMap;
@@ -20,7 +21,15 @@ public class OverflowBucketStore implements AutoCloseable {
     private long spilledRows;
 
     public OverflowBucketStore(String jobId, String spillPath, int partitionCount, boolean keepTempFiles) {
-        this.store = new PartitionedSpillStore(jobId, spillPath, partitionCount, keepTempFiles);
+        this(jobId, spillPath, partitionCount, keepTempFiles, null);
+    }
+
+    public OverflowBucketStore(String jobId,
+                               String spillPath,
+                               int partitionCount,
+                               boolean keepTempFiles,
+                               SpillGuard spillGuard) {
+        this.store = new PartitionedSpillStore(jobId, spillPath, partitionCount, keepTempFiles, spillGuard);
     }
 
     public void append(String sourceId, OrderedKey key, Map<String, Object> row) {

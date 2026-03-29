@@ -86,12 +86,20 @@ final class AdaptiveSortMergeTestSupport {
                                       int rowCount,
                                       Path scenarioRoot,
                                       boolean keepArtifacts) throws Exception {
+        return runScenario(label, rowCount, scenarioRoot, keepArtifacts, ScenarioOptions.defaults());
+    }
+
+    static ScenarioResult runScenario(String label,
+                                      int rowCount,
+                                      Path scenarioRoot,
+                                      boolean keepArtifacts,
+                                      ScenarioOptions options) throws Exception {
         cleanupPath(scenarioRoot);
         Files.createDirectories(scenarioRoot);
 
         DatasetContext dataset = null;
         try {
-            dataset = createDataset(label, rowCount, scenarioRoot);
+            dataset = createDataset(label, rowCount, scenarioRoot, options != null ? options : ScenarioOptions.defaults());
             DatasetExpectations expectations = calculateExpectations(rowCount);
             ConsistencyExecution consistencyExecution = executeConsistency(dataset);
             FusionExecution fusionExecution = executeFusion(dataset);
@@ -144,11 +152,15 @@ final class AdaptiveSortMergeTestSupport {
                 });
     }
 
-    private static DatasetContext createDataset(String label, int rowCount, Path scenarioRoot) throws Exception {
+    private static DatasetContext createDataset(String label,
+                                                int rowCount,
+                                                Path scenarioRoot,
+                                                ScenarioOptions options) throws Exception {
         DatasetContext dataset = new DatasetContext();
         dataset.setLabel(label);
         dataset.setRowCount(rowCount);
         dataset.setScenarioRoot(scenarioRoot);
+        dataset.setScenarioOptions(options);
         dataset.setTableNames(buildTableNames(label));
         dataset.setConnectionConfig(loadMysqlConnectionConfig());
         dataset.setBaseDataSourceDTO(buildBaseDataSourceDTO(dataset.getConnectionConfig()));
@@ -331,7 +343,13 @@ final class AdaptiveSortMergeTestSupport {
         execution.setMergeResolvedKeyCount(getLongSummary(comparisonResult, "mergeResolvedKeyCount"));
         execution.setMergeSpilledKeyCount(getLongSummary(comparisonResult, "mergeSpilledKeyCount"));
         execution.setDuplicateIgnoredCount(getLongSummary(comparisonResult, "duplicateIgnoredCount"));
+        execution.setLocalReorderedGroupCount(getLongSummary(comparisonResult, "localReorderedGroupCount"));
+        execution.setOrderRecoveryCount(getLongSummary(comparisonResult, "orderRecoveryCount"));
+        execution.setSpillBytes(getLongSummary(comparisonResult, "spillBytes"));
+        execution.setSpillGuardTriggered(getBooleanSummary(comparisonResult, "spillGuardTriggered"));
+        execution.setSpillGuardReason(getStringSummary(comparisonResult, "spillGuardReason"));
         execution.setFallbackReason(getStringSummary(comparisonResult, "fallbackReason"));
+        execution.setErrorMessage(getStringSummary(comparisonResult, "error"));
         return execution;
     }
 
@@ -348,7 +366,8 @@ final class AdaptiveSortMergeTestSupport {
         HeapUsageSampler sampler = new HeapUsageSampler();
         long start = System.nanoTime();
         sampler.start();
-        SortMergeStats stats;
+        SortMergeStats stats = null;
+        String errorMessage = null;
         try {
             AdaptiveSortMergeFusionExecutor executor = new AdaptiveSortMergeFusionExecutor(
                     pluginManager,
@@ -356,6 +375,8 @@ final class AdaptiveSortMergeTestSupport {
                     fusionBundle.getFusionContext()
             );
             stats = executor.execute(recordSender);
+        } catch (Exception e) {
+            errorMessage = e.getMessage();
         } finally {
             sampler.stop();
         }
@@ -372,6 +393,7 @@ final class AdaptiveSortMergeTestSupport {
         execution.setOutputOrdered(recordSender.isOutputOrdered());
         execution.setOrderViolationSample(recordSender.getOrderViolationSample());
         execution.setStats(stats);
+        execution.setErrorMessage(errorMessage);
         return execution;
     }
 
@@ -386,9 +408,9 @@ final class AdaptiveSortMergeTestSupport {
         rule.setMatchKeys(Collections.singletonList("biz_id"));
         rule.setCompareFields(Arrays.asList("age", "salary", "department", "status"));
         rule.setDataSources(Arrays.asList(
-                buildConsistencySource("sourceA", dataset.getTableNames().get("sourceA"), dataset.getConnectionConfig(), 1.0, 10),
-                buildConsistencySource("sourceB", dataset.getTableNames().get("sourceB"), dataset.getConnectionConfig(), 0.9, 30),
-                buildConsistencySource("sourceC", dataset.getTableNames().get("sourceC"), dataset.getConnectionConfig(), 0.8, 20)
+                buildConsistencySource(dataset, "sourceA", dataset.getTableNames().get("sourceA"), dataset.getConnectionConfig(), 1.0, 10),
+                buildConsistencySource(dataset, "sourceB", dataset.getTableNames().get("sourceB"), dataset.getConnectionConfig(), 0.9, 30),
+                buildConsistencySource(dataset, "sourceC", dataset.getTableNames().get("sourceC"), dataset.getConnectionConfig(), 0.8, 20)
         ));
 
         OutputConfig outputConfig = new OutputConfig();
@@ -408,18 +430,15 @@ final class AdaptiveSortMergeTestSupport {
         performanceConfig.setMemoryLimitMB(256);
         rule.setPerformanceConfig(performanceConfig);
 
-        AdaptiveMergeConfig adaptiveMergeConfig = new AdaptiveMergeConfig();
-        adaptiveMergeConfig.setEnabled(true);
-        adaptiveMergeConfig.setPendingKeyThreshold(2048);
-        adaptiveMergeConfig.setPendingMemoryMB(64);
-        adaptiveMergeConfig.setOverflowPartitionCount(8);
-        adaptiveMergeConfig.setOverflowSpillPath(dataset.getScenarioRoot().resolve("consistency-overflow").toAbsolutePath().normalize().toString());
-        adaptiveMergeConfig.getKeyTypes().put("biz_id", OrderedKeyType.NUMBER);
-        rule.setAdaptiveMergeConfig(adaptiveMergeConfig);
+        rule.setAdaptiveMergeConfig(buildAdaptiveMergeConfig(
+                dataset,
+                dataset.getScenarioRoot().resolve("consistency-overflow").toAbsolutePath().normalize().toString()
+        ));
         return rule;
     }
 
-    private static DataSourceConfig buildConsistencySource(String sourceId,
+    private static DataSourceConfig buildConsistencySource(DatasetContext dataset,
+                                                           String sourceId,
                                                            String tableName,
                                                            Configuration connectionConfig,
                                                            double confidence,
@@ -429,7 +448,7 @@ final class AdaptiveSortMergeTestSupport {
         sourceConfig.setSourceName(sourceId);
         sourceConfig.setPluginName(TEST_PLUGIN_NAME);
         sourceConfig.setConnectionConfig(connectionConfig.clone());
-        sourceConfig.setQuerySql("SELECT biz_id, fusion_name, age, salary, department, status, updated_at FROM " + tableName);
+        sourceConfig.setQuerySql(buildSourceQuery(dataset, sourceId, tableName));
         sourceConfig.setConfidenceWeight(confidence);
         sourceConfig.setPriority(priority);
         sourceConfig.setExtConfig(buildScanExtConfig());
@@ -442,9 +461,9 @@ final class AdaptiveSortMergeTestSupport {
         fusionConfig.setJoinKeys(Collections.singletonList("biz_id"));
         fusionConfig.setDefaultStrategy("PRIORITY");
         fusionConfig.setSources(Arrays.asList(
-                buildFusionSource("sourceA", dataset.getTableNames().get("sourceA"), dataset.getConnectionConfig(), 1.0, 10),
-                buildFusionSource("sourceB", dataset.getTableNames().get("sourceB"), dataset.getConnectionConfig(), 0.9, 30),
-                buildFusionSource("sourceC", dataset.getTableNames().get("sourceC"), dataset.getConnectionConfig(), 0.8, 20)
+                buildFusionSource(dataset, "sourceA", dataset.getTableNames().get("sourceA"), dataset.getConnectionConfig(), 1.0, 10),
+                buildFusionSource(dataset, "sourceB", dataset.getTableNames().get("sourceB"), dataset.getConnectionConfig(), 0.9, 30),
+                buildFusionSource(dataset, "sourceC", dataset.getTableNames().get("sourceC"), dataset.getConnectionConfig(), 0.8, 20)
         ));
 
         List<FieldMapping> fieldMappings = new ArrayList<FieldMapping>();
@@ -466,14 +485,10 @@ final class AdaptiveSortMergeTestSupport {
         performanceConfig.setMemoryLimitMB(256);
         fusionConfig.setPerformanceConfig(performanceConfig);
 
-        AdaptiveMergeConfig adaptiveMergeConfig = new AdaptiveMergeConfig();
-        adaptiveMergeConfig.setEnabled(true);
-        adaptiveMergeConfig.setPendingKeyThreshold(2048);
-        adaptiveMergeConfig.setPendingMemoryMB(64);
-        adaptiveMergeConfig.setOverflowPartitionCount(8);
-        adaptiveMergeConfig.setOverflowSpillPath(dataset.getScenarioRoot().resolve("fusion-overflow").toAbsolutePath().normalize().toString());
-        adaptiveMergeConfig.getKeyTypes().put("biz_id", OrderedKeyType.NUMBER);
-        fusionConfig.setAdaptiveMergeConfig(adaptiveMergeConfig);
+        fusionConfig.setAdaptiveMergeConfig(buildAdaptiveMergeConfig(
+                dataset,
+                dataset.getScenarioRoot().resolve("fusion-overflow").toAbsolutePath().normalize().toString()
+        ));
 
         FusionDetailConfig detailConfig = new FusionDetailConfig();
         detailConfig.setEnabled(false);
@@ -486,7 +501,8 @@ final class AdaptiveSortMergeTestSupport {
         return new FusionBundle(fusionConfig, fusionContext, targetColumns);
     }
 
-    private static SourceConfig buildFusionSource(String sourceId,
+    private static SourceConfig buildFusionSource(DatasetContext dataset,
+                                                  String sourceId,
                                                   String tableName,
                                                   Configuration connectionConfig,
                                                   double confidence,
@@ -496,12 +512,71 @@ final class AdaptiveSortMergeTestSupport {
         sourceConfig.setSourceName(sourceId);
         sourceConfig.setPluginType(TEST_PLUGIN_NAME);
         sourceConfig.setPluginConfig(connectionConfig.clone());
-        sourceConfig.setQuerySql("SELECT biz_id, fusion_name, age, salary, department, status, updated_at FROM " + tableName);
+        sourceConfig.setQuerySql(buildSourceQuery(dataset, sourceId, tableName));
         sourceConfig.setConfidence(confidence);
         sourceConfig.setWeight(confidence);
         sourceConfig.setPriority(priority);
         sourceConfig.setExtConfig(buildScanExtConfig());
         return sourceConfig;
+    }
+
+    private static AdaptiveMergeConfig buildAdaptiveMergeConfig(DatasetContext dataset, String overflowSpillPath) {
+        ScenarioOptions options = dataset.getScenarioOptions() != null
+                ? dataset.getScenarioOptions()
+                : ScenarioOptions.defaults();
+
+        AdaptiveMergeConfig adaptiveMergeConfig = new AdaptiveMergeConfig();
+        adaptiveMergeConfig.setEnabled(true);
+        adaptiveMergeConfig.setPendingKeyThreshold(options.getPendingKeyThreshold() != null
+                ? options.getPendingKeyThreshold()
+                : 2048);
+        adaptiveMergeConfig.setPendingMemoryMB(options.getPendingMemoryMB() != null
+                ? options.getPendingMemoryMB()
+                : 64);
+        adaptiveMergeConfig.setOverflowPartitionCount(options.getOverflowPartitionCount() != null
+                ? options.getOverflowPartitionCount()
+                : 8);
+        adaptiveMergeConfig.setOverflowSpillPath(overflowSpillPath);
+        adaptiveMergeConfig.setPreferOrderedQuery(options.getPreferOrderedQuery() == null || options.getPreferOrderedQuery());
+        adaptiveMergeConfig.setValidateSourceOrder(options.getValidateSourceOrder() == null || options.getValidateSourceOrder());
+        adaptiveMergeConfig.setLocalDisorderEnabled(options.getLocalDisorderEnabled() == null || options.getLocalDisorderEnabled());
+        if (options.getLocalDisorderMaxGroups() != null) {
+            adaptiveMergeConfig.setLocalDisorderMaxGroups(options.getLocalDisorderMaxGroups());
+        }
+        if (options.getLocalDisorderMaxMemoryMB() != null) {
+            adaptiveMergeConfig.setLocalDisorderMaxMemoryMB(options.getLocalDisorderMaxMemoryMB());
+        }
+        if (options.getMaxSpillBytesMB() != null) {
+            adaptiveMergeConfig.setMaxSpillBytesMB(options.getMaxSpillBytesMB());
+        }
+        if (options.getMinFreeDiskMB() != null) {
+            adaptiveMergeConfig.setMinFreeDiskMB(options.getMinFreeDiskMB());
+        }
+        if (options.getOnOrderViolation() != null) {
+            adaptiveMergeConfig.setOnOrderViolation(options.getOnOrderViolation());
+        }
+        if (options.getOnMemoryExceeded() != null) {
+            adaptiveMergeConfig.setOnMemoryExceeded(options.getOnMemoryExceeded());
+        }
+        adaptiveMergeConfig.getKeyTypes().put("biz_id", OrderedKeyType.NUMBER);
+        return adaptiveMergeConfig;
+    }
+
+    private static String buildSourceQuery(DatasetContext dataset, String sourceId, String tableName) {
+        ScenarioOptions options = dataset.getScenarioOptions();
+        if (options != null && options.hasSparseLocalDisorder(sourceId)) {
+            return buildSparseLocalDisorderQuery(tableName, options.getSparseLocalDisorderEvery());
+        }
+        return "SELECT biz_id, fusion_name, age, salary, department, status, updated_at FROM " + tableName;
+    }
+
+    private static String buildSparseLocalDisorderQuery(String tableName, long disorderEvery) {
+        long effectiveDisorderEvery = Math.max(2L, disorderEvery);
+        return "SELECT biz_id, fusion_name, age, salary, department, status, updated_at FROM " + tableName
+                + " ORDER BY CASE"
+                + " WHEN MOD(biz_id, " + effectiveDisorderEvery + ") = 0 THEN biz_id + 1"
+                + " WHEN MOD(biz_id, " + effectiveDisorderEvery + ") = 1 THEN biz_id - 1"
+                + " ELSE biz_id END, biz_id";
     }
 
     private static DirectFieldMapping directMapping(String targetField, String sourceField, String strategy) {
@@ -691,6 +766,17 @@ final class AdaptiveSortMergeTestSupport {
         return value == null ? null : String.valueOf(value);
     }
 
+    private static boolean getBooleanSummary(ComparisonResult result, String key) {
+        if (result == null || result.getSummary() == null) {
+            return false;
+        }
+        Object value = result.getSummary().get(key);
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        return value != null && Boolean.parseBoolean(String.valueOf(value));
+    }
+
     private static MessageDigest newDigest() {
         try {
             return MessageDigest.getInstance("SHA-256");
@@ -728,6 +814,152 @@ final class AdaptiveSortMergeTestSupport {
         return builder.toString();
     }
 
+    static final class ScenarioOptions {
+        private Integer pendingKeyThreshold;
+        private Integer pendingMemoryMB;
+        private Integer overflowPartitionCount;
+        private Boolean preferOrderedQuery;
+        private Boolean validateSourceOrder;
+        private Boolean localDisorderEnabled;
+        private Integer localDisorderMaxGroups;
+        private Integer localDisorderMaxMemoryMB;
+        private Integer maxSpillBytesMB;
+        private Integer minFreeDiskMB;
+        private AdaptiveMergeConfig.OrderViolationAction onOrderViolation;
+        private AdaptiveMergeConfig.MemoryExceededAction onMemoryExceeded;
+        private final Set<String> sparseLocalDisorderSources = new LinkedHashSet<String>();
+        private long sparseLocalDisorderEvery = 128L;
+
+        static ScenarioOptions defaults() {
+            return new ScenarioOptions();
+        }
+
+        ScenarioOptions withPendingKeyThreshold(Integer pendingKeyThreshold) {
+            this.pendingKeyThreshold = pendingKeyThreshold;
+            return this;
+        }
+
+        ScenarioOptions withPendingMemoryMB(Integer pendingMemoryMB) {
+            this.pendingMemoryMB = pendingMemoryMB;
+            return this;
+        }
+
+        ScenarioOptions withOverflowPartitionCount(Integer overflowPartitionCount) {
+            this.overflowPartitionCount = overflowPartitionCount;
+            return this;
+        }
+
+        ScenarioOptions withPreferOrderedQuery(Boolean preferOrderedQuery) {
+            this.preferOrderedQuery = preferOrderedQuery;
+            return this;
+        }
+
+        ScenarioOptions withValidateSourceOrder(Boolean validateSourceOrder) {
+            this.validateSourceOrder = validateSourceOrder;
+            return this;
+        }
+
+        ScenarioOptions withLocalDisorderEnabled(Boolean localDisorderEnabled) {
+            this.localDisorderEnabled = localDisorderEnabled;
+            return this;
+        }
+
+        ScenarioOptions withLocalDisorderMaxGroups(Integer localDisorderMaxGroups) {
+            this.localDisorderMaxGroups = localDisorderMaxGroups;
+            return this;
+        }
+
+        ScenarioOptions withLocalDisorderMaxMemoryMB(Integer localDisorderMaxMemoryMB) {
+            this.localDisorderMaxMemoryMB = localDisorderMaxMemoryMB;
+            return this;
+        }
+
+        ScenarioOptions withMaxSpillBytesMB(Integer maxSpillBytesMB) {
+            this.maxSpillBytesMB = maxSpillBytesMB;
+            return this;
+        }
+
+        ScenarioOptions withMinFreeDiskMB(Integer minFreeDiskMB) {
+            this.minFreeDiskMB = minFreeDiskMB;
+            return this;
+        }
+
+        ScenarioOptions withOnOrderViolation(AdaptiveMergeConfig.OrderViolationAction onOrderViolation) {
+            this.onOrderViolation = onOrderViolation;
+            return this;
+        }
+
+        ScenarioOptions withOnMemoryExceeded(AdaptiveMergeConfig.MemoryExceededAction onMemoryExceeded) {
+            this.onMemoryExceeded = onMemoryExceeded;
+            return this;
+        }
+
+        ScenarioOptions enableSparseLocalDisorder(long disorderEvery, String... sourceIds) {
+            this.sparseLocalDisorderEvery = disorderEvery;
+            this.sparseLocalDisorderSources.clear();
+            if (sourceIds != null) {
+                this.sparseLocalDisorderSources.addAll(Arrays.asList(sourceIds));
+            }
+            return this;
+        }
+
+        boolean hasSparseLocalDisorder(String sourceId) {
+            return sparseLocalDisorderSources.contains(sourceId);
+        }
+
+        public Integer getPendingKeyThreshold() {
+            return pendingKeyThreshold;
+        }
+
+        public Integer getPendingMemoryMB() {
+            return pendingMemoryMB;
+        }
+
+        public Integer getOverflowPartitionCount() {
+            return overflowPartitionCount;
+        }
+
+        public Boolean getPreferOrderedQuery() {
+            return preferOrderedQuery;
+        }
+
+        public Boolean getValidateSourceOrder() {
+            return validateSourceOrder;
+        }
+
+        public Boolean getLocalDisorderEnabled() {
+            return localDisorderEnabled;
+        }
+
+        public Integer getLocalDisorderMaxGroups() {
+            return localDisorderMaxGroups;
+        }
+
+        public Integer getLocalDisorderMaxMemoryMB() {
+            return localDisorderMaxMemoryMB;
+        }
+
+        public Integer getMaxSpillBytesMB() {
+            return maxSpillBytesMB;
+        }
+
+        public Integer getMinFreeDiskMB() {
+            return minFreeDiskMB;
+        }
+
+        public AdaptiveMergeConfig.OrderViolationAction getOnOrderViolation() {
+            return onOrderViolation;
+        }
+
+        public AdaptiveMergeConfig.MemoryExceededAction getOnMemoryExceeded() {
+            return onMemoryExceeded;
+        }
+
+        public long getSparseLocalDisorderEvery() {
+            return sparseLocalDisorderEvery;
+        }
+    }
+
     static final class DatasetContext {
         private String label;
         private int rowCount;
@@ -736,6 +968,7 @@ final class AdaptiveSortMergeTestSupport {
         private BaseDataSourceDTO baseDataSourceDTO;
         private Map<String, String> tableNames;
         private long setupElapsedMs;
+        private ScenarioOptions scenarioOptions;
 
         public String getLabel() {
             return label;
@@ -791,6 +1024,14 @@ final class AdaptiveSortMergeTestSupport {
 
         public void setSetupElapsedMs(long setupElapsedMs) {
             this.setupElapsedMs = setupElapsedMs;
+        }
+
+        public ScenarioOptions getScenarioOptions() {
+            return scenarioOptions;
+        }
+
+        public void setScenarioOptions(ScenarioOptions scenarioOptions) {
+            this.scenarioOptions = scenarioOptions;
         }
     }
 
@@ -877,7 +1118,13 @@ final class AdaptiveSortMergeTestSupport {
         private long mergeResolvedKeyCount;
         private long mergeSpilledKeyCount;
         private long duplicateIgnoredCount;
+        private long localReorderedGroupCount;
+        private long orderRecoveryCount;
+        private long spillBytes;
+        private boolean spillGuardTriggered;
+        private String spillGuardReason;
         private String fallbackReason;
+        private String errorMessage;
 
         public ComparisonResult getComparisonResult() {
             return comparisonResult;
@@ -935,12 +1182,60 @@ final class AdaptiveSortMergeTestSupport {
             this.duplicateIgnoredCount = duplicateIgnoredCount;
         }
 
+        public long getLocalReorderedGroupCount() {
+            return localReorderedGroupCount;
+        }
+
+        public void setLocalReorderedGroupCount(long localReorderedGroupCount) {
+            this.localReorderedGroupCount = localReorderedGroupCount;
+        }
+
+        public long getOrderRecoveryCount() {
+            return orderRecoveryCount;
+        }
+
+        public void setOrderRecoveryCount(long orderRecoveryCount) {
+            this.orderRecoveryCount = orderRecoveryCount;
+        }
+
+        public long getSpillBytes() {
+            return spillBytes;
+        }
+
+        public void setSpillBytes(long spillBytes) {
+            this.spillBytes = spillBytes;
+        }
+
+        public boolean isSpillGuardTriggered() {
+            return spillGuardTriggered;
+        }
+
+        public void setSpillGuardTriggered(boolean spillGuardTriggered) {
+            this.spillGuardTriggered = spillGuardTriggered;
+        }
+
+        public String getSpillGuardReason() {
+            return spillGuardReason;
+        }
+
+        public void setSpillGuardReason(String spillGuardReason) {
+            this.spillGuardReason = spillGuardReason;
+        }
+
         public String getFallbackReason() {
             return fallbackReason;
         }
 
         public void setFallbackReason(String fallbackReason) {
             this.fallbackReason = fallbackReason;
+        }
+
+        public String getErrorMessage() {
+            return errorMessage;
+        }
+
+        public void setErrorMessage(String errorMessage) {
+            this.errorMessage = errorMessage;
         }
     }
 
@@ -956,6 +1251,7 @@ final class AdaptiveSortMergeTestSupport {
         private boolean outputOrdered = true;
         private String orderViolationSample;
         private SortMergeStats stats;
+        private String errorMessage;
 
         public long getElapsedMs() {
             return elapsedMs;
@@ -1043,6 +1339,14 @@ final class AdaptiveSortMergeTestSupport {
 
         public void setStats(SortMergeStats stats) {
             this.stats = stats;
+        }
+
+        public String getErrorMessage() {
+            return errorMessage;
+        }
+
+        public void setErrorMessage(String errorMessage) {
+            this.errorMessage = errorMessage;
         }
     }
 

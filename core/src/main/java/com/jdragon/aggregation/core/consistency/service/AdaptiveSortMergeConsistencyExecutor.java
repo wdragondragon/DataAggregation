@@ -19,6 +19,8 @@ import com.jdragon.aggregation.core.sortmerge.SortMergeStats;
 import com.jdragon.aggregation.core.streaming.AppendOnlySpillList;
 import com.jdragon.aggregation.core.streaming.PartitionReader;
 import com.jdragon.aggregation.core.streaming.PartitionedSpillStore;
+import com.jdragon.aggregation.core.streaming.SpillGuard;
+import com.jdragon.aggregation.core.streaming.SpillLimitExceededException;
 import com.jdragon.aggregation.core.streaming.SourceRowScanner;
 import com.jdragon.aggregation.core.streaming.StreamExecutionOptions;
 import lombok.extern.slf4j.Slf4j;
@@ -61,6 +63,10 @@ public class AdaptiveSortMergeConsistencyExecutor {
 
         StreamExecutionOptions options = StreamExecutionOptions.fromConsistencyRule(rule);
         AdaptiveMergeConfig adaptiveMergeConfig = rule.getAdaptiveMergeConfig();
+        SpillGuard spillGuard = new SpillGuard(
+                adaptiveMergeConfig.getMaxSpillBytes(),
+                adaptiveMergeConfig.getMinFreeDiskBytes()
+        );
         AppendOnlySpillList<DifferenceRecord> differences = new AppendOnlySpillList<DifferenceRecord>(
                 "consistency-differences",
                 DifferenceRecord.class,
@@ -102,7 +108,14 @@ public class AdaptiveSortMergeConsistencyExecutor {
         OrderedKeySchema keySchema = new OrderedKeySchema(rule.getMatchKeys(), adaptiveMergeConfig.getKeyTypes());
         List<OrderedSourceCursor> cursors = new ArrayList<OrderedSourceCursor>();
         for (DataSourceConfig dataSourceConfig : rule.getDataSources()) {
-            cursors.add(new OrderedSourceCursor(rowScanner, dataSourceConfig, rule.getMatchKeys(), true));
+            cursors.add(new OrderedSourceCursor(
+                    rowScanner,
+                    dataSourceConfig,
+                    keySchema,
+                    rule.getMatchKeys(),
+                    adaptiveMergeConfig.isPreferOrderedQuery(),
+                    adaptiveMergeConfig
+            ));
         }
 
         UpdateResult mergedUpdateResult = null;
@@ -114,7 +127,12 @@ public class AdaptiveSortMergeConsistencyExecutor {
         OverflowBucketStore overflowBucketStore = null;
 
         try {
-            AdaptiveMergeCoordinator coordinator = new AdaptiveMergeCoordinator(adaptiveMergeConfig, keySchema, sourceOrder);
+            AdaptiveMergeCoordinator coordinator = new AdaptiveMergeCoordinator(
+                    adaptiveMergeConfig,
+                    keySchema,
+                    sourceOrder,
+                    spillGuard
+            );
             AdaptiveMergeCoordinator.Result coordinatorResult = coordinator.execute(cursors,
                     new AdaptiveMergeCoordinator.ResolvedGroupHandler() {
                         @Override
@@ -156,6 +174,8 @@ public class AdaptiveSortMergeConsistencyExecutor {
             result.getSummary().put("mergeResolvedKeyCount", stats.getMergeResolvedKeyCount());
             result.getSummary().put("mergeSpilledKeyCount", stats.getMergeSpilledKeyCount());
             result.getSummary().put("duplicateIgnoredCount", stats.getDuplicateIgnoredCount());
+            result.getSummary().put("localReorderedGroupCount", stats.getLocalReorderedGroupCount());
+            result.getSummary().put("orderRecoveryCount", stats.getOrderRecoveryCount());
             if (stats.getFallbackReason() != null) {
                 result.getSummary().put("fallbackReason", stats.getFallbackReason());
             }
@@ -174,7 +194,8 @@ public class AdaptiveSortMergeConsistencyExecutor {
                         processor,
                         targetDataSource,
                         updatePlanningStrategy,
-                        mergedUpdateResult
+                        mergedUpdateResult,
+                        spillGuard
                 );
             }
 
@@ -182,6 +203,7 @@ public class AdaptiveSortMergeConsistencyExecutor {
             result.setStatus(result.getInconsistentRecords() == 0
                     ? ComparisonResult.Status.SUCCESS
                     : ComparisonResult.Status.PARTIAL_SUCCESS);
+            result.getSummary().put("spillBytes", spillGuard.getTotalReservedBytes());
             if (mergedUpdateResult != null) {
                 mergedUpdateResult.setResultId(result.getResultId());
                 result.setUpdateResult(mergedUpdateResult);
@@ -189,10 +211,19 @@ public class AdaptiveSortMergeConsistencyExecutor {
             recordResults(result, differences, resolvedDifferences, rule);
             result.setDifferenceRecords(differences);
             return result;
+        } catch (SpillLimitExceededException e) {
+            log.error("Spill guard blocked adaptive sort-merge consistency rule: {}", rule.getRuleId(), e);
+            result.setStatus(ComparisonResult.Status.FAILED);
+            result.getSummary().put("error", e.getMessage());
+            result.getSummary().put("spillGuardTriggered", true);
+            result.getSummary().put("spillGuardReason", e.getMessage());
+            result.getSummary().put("spillBytes", spillGuard.getTotalReservedBytes());
+            return result;
         } catch (Exception e) {
             log.error("Failed to execute adaptive sort-merge consistency rule: {}", rule.getRuleId(), e);
             result.setStatus(ComparisonResult.Status.FAILED);
             result.getSummary().put("error", e.getMessage());
+            result.getSummary().put("spillBytes", spillGuard.getTotalReservedBytes());
             return result;
         } finally {
             if (overflowBucketStore != null) {
@@ -208,7 +239,8 @@ public class AdaptiveSortMergeConsistencyExecutor {
                                               ConsistencyPartitionProcessor processor,
                                               DataSourceConfig targetDataSource,
                                               UpdatePlanningStrategy updatePlanningStrategy,
-                                              UpdateResult currentUpdateResult) throws IOException {
+                                              UpdateResult currentUpdateResult,
+                                              SpillGuard spillGuard) throws IOException {
         PartitionedSpillStore spillStore = overflowBucketStore.getStore();
         spillStore.close();
         UpdateResult merged = currentUpdateResult;
@@ -216,6 +248,8 @@ public class AdaptiveSortMergeConsistencyExecutor {
             if (!spillStore.partitionExists(partition)) {
                 continue;
             }
+            // consistency 这里同样按 hash partition 顺序回放；
+            // 所以 partition 的遍历次序会直接影响差异输出顺序，以及 auto-apply 时的执行顺序。
             List<DifferenceRecord> partitionResolved = processPartitionPath(
                     spillStore.getPartitionPath(partition),
                     options,
@@ -223,7 +257,8 @@ public class AdaptiveSortMergeConsistencyExecutor {
                     sourceOrder,
                     processor,
                     partition,
-                    0
+                    0,
+                    spillGuard
             );
             if (rule.getAutoApplyResolutions() && targetDataSource != null && !partitionResolved.isEmpty()) {
                 applyUpdatePlans(partitionResolved, rule, targetDataSource, updatePlanningStrategy);
@@ -254,7 +289,8 @@ public class AdaptiveSortMergeConsistencyExecutor {
                                                         List<String> sourceOrder,
                                                         ConsistencyPartitionProcessor processor,
                                                         int partition,
-                                                        int depth) throws IOException {
+                                                        int depth,
+                                                        SpillGuard spillGuard) throws IOException {
         Map<String, LinkedHashMap<String, Map<String, Object>>> groups = new LinkedHashMap<String, LinkedHashMap<String, Map<String, Object>>>();
         PartitionedSpillStore rebalanceStore = null;
 
@@ -262,6 +298,8 @@ public class AdaptiveSortMergeConsistencyExecutor {
             final PartitionedSpillStore[] rebalanceHolder = new PartitionedSpillStore[1];
             reader.readAll(row -> {
                 if (rebalanceHolder[0] != null) {
+                    // rebalanceHolder 一旦初始化，当前 reader 剩余数据就全部改走下一层分桶，
+                    // 当前层只负责把已经收集到的 groups 搬迁出去，不再继续扩张内存窗口。
                     rebalanceHolder[0].append(row);
                     return;
                 }
@@ -278,7 +316,8 @@ public class AdaptiveSortMergeConsistencyExecutor {
                             sanitizeJobId(rule.getRuleId()) + "-overflow-p" + partition + "-d" + depth,
                             options.getSpillPath(),
                             Math.max(4, options.getPartitionCount()),
-                            false
+                            false,
+                            spillGuard
                     );
                     for (Map.Entry<String, LinkedHashMap<String, Map<String, Object>>> groupEntry : groups.entrySet()) {
                         com.jdragon.aggregation.core.streaming.CompositeKey key =
@@ -287,6 +326,7 @@ public class AdaptiveSortMergeConsistencyExecutor {
                             rebalanceHolder[0].append(sourceEntry.getKey(), key, sourceEntry.getValue());
                         }
                     }
+                    // 当前层状态清空后，后续 row 全靠 rebalanceHolder 推进到子分区。
                     groups.clear();
                 }
             });
@@ -308,7 +348,8 @@ public class AdaptiveSortMergeConsistencyExecutor {
                             sourceOrder,
                             processor,
                             childPartition,
-                            depth + 1
+                            depth + 1,
+                            spillGuard
                     ));
                 }
                 return resolved;

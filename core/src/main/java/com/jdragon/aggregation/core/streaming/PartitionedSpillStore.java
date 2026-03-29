@@ -24,12 +24,22 @@ public class PartitionedSpillStore implements AutoCloseable {
     private final Path workingDirectory;
     private final int partitionCount;
     private final boolean keepTempFiles;
+    private final SpillGuard spillGuard;
     private final BufferedWriter[] writers;
     private final Object[] locks;
 
     public PartitionedSpillStore(String jobId, String spillPath, int partitionCount, boolean keepTempFiles) {
+        this(jobId, spillPath, partitionCount, keepTempFiles, null);
+    }
+
+    public PartitionedSpillStore(String jobId,
+                                 String spillPath,
+                                 int partitionCount,
+                                 boolean keepTempFiles,
+                                 SpillGuard spillGuard) {
         this.partitionCount = Math.max(1, partitionCount);
         this.keepTempFiles = keepTempFiles;
+        this.spillGuard = spillGuard;
         this.workingDirectory = initDirectory(jobId, spillPath);
         this.writers = new BufferedWriter[this.partitionCount];
         this.locks = new Object[this.partitionCount];
@@ -67,8 +77,10 @@ public class PartitionedSpillStore implements AutoCloseable {
         int partition = resolvePartition(row.getKey());
         synchronized (locks[partition]) {
             try {
+                String encoded = RowCodec.encode(row);
+                reserveSpill(encoded);
                 BufferedWriter writer = writer(partition);
-                writer.write(RowCodec.encode(row));
+                writer.write(encoded);
                 writer.newLine();
             } catch (IOException e) {
                 throw new RuntimeException("Failed to append partition row", e);
@@ -109,6 +121,10 @@ public class PartitionedSpillStore implements AutoCloseable {
         return workingDirectory;
     }
 
+    public SpillGuard getSpillGuard() {
+        return spillGuard;
+    }
+
     @Override
     public void close() {
         for (BufferedWriter writer : writers) {
@@ -141,6 +157,15 @@ public class PartitionedSpillStore implements AutoCloseable {
             Files.deleteIfExists(path);
         } catch (IOException ignored) {
         }
+    }
+
+    private void reserveSpill(String encoded) {
+        if (spillGuard == null) {
+            return;
+        }
+        long bytes = encoded.getBytes(StandardCharsets.UTF_8).length
+                + System.lineSeparator().getBytes(StandardCharsets.UTF_8).length;
+        spillGuard.reserve(workingDirectory, bytes);
     }
 
     @Data
