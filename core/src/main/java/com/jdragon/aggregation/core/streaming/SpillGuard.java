@@ -9,7 +9,8 @@ public class SpillGuard {
 
     private final long maxSpillBytes;
     private final long minFreeDiskBytes;
-    private long totalReservedBytes;
+    private long activeReservedBytes;
+    private long cumulativeReservedBytes;
 
     public SpillGuard(long maxSpillBytes, long minFreeDiskBytes) {
         this.maxSpillBytes = Math.max(1L, maxSpillBytes);
@@ -18,10 +19,10 @@ public class SpillGuard {
 
     public synchronized void reserve(Path workingDirectory, long bytes) {
         long requestedBytes = Math.max(1L, bytes);
-        if (totalReservedBytes + requestedBytes > maxSpillBytes) {
+        if (activeReservedBytes + requestedBytes > maxSpillBytes) {
             throw new SpillLimitExceededException(
                     "Spill limit exceeded: requested=" + requestedBytes
-                            + ", reserved=" + totalReservedBytes
+                            + ", activeReserved=" + activeReservedBytes
                             + ", max=" + maxSpillBytes
             );
         }
@@ -40,10 +41,20 @@ public class SpillGuard {
             throw new SpillLimitExceededException("Failed to inspect spill filesystem", e);
         }
 
-        totalReservedBytes += requestedBytes;
+        activeReservedBytes += requestedBytes;
+        cumulativeReservedBytes += requestedBytes;
+    }
+
+    public synchronized void release(long bytes) {
+        long releasedBytes = Math.max(0L, bytes);
+        activeReservedBytes = Math.max(0L, activeReservedBytes - releasedBytes);
+    }
+
+    public synchronized long getActiveReservedBytes() {
+        return activeReservedBytes;
     }
 
     public synchronized long getTotalReservedBytes() {
-        return totalReservedBytes;
+        return cumulativeReservedBytes;
     }
 }

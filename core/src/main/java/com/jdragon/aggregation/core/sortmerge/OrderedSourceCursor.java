@@ -6,6 +6,7 @@ import com.jdragon.aggregation.core.streaming.RowCodec;
 import com.jdragon.aggregation.core.streaming.SourceRowScanner;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -24,6 +25,7 @@ import java.util.concurrent.LinkedBlockingQueue;
  * groups first pass through a bounded source-side reorder buffer so that small
  * local key regressions can be absorbed before they reach the coordinator.
  */
+@Slf4j
 public class OrderedSourceCursor {
 
     /**
@@ -386,6 +388,7 @@ public class OrderedSourceCursor {
         }
 
         void flush() {
+//            log.info("{},队列剩余：{}", dataSourceConfig.getSourceId(), bufferedGroups.size());
             while (!bufferedGroups.isEmpty()) {
                 releaseSmallest();
             }

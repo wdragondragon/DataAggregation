@@ -41,7 +41,6 @@ public class FusionConfig {
     private JoinType joinType = JoinType.INNER;              // 连接类型
     private List<FieldMapping> fieldMappings = new ArrayList<>(); // 字段映射规则
     private String defaultStrategy = "WEIGHTED_AVERAGE";     // 默认融合策略
-    private Map<String, String> fieldStrategies = new HashMap<>(); // 字段级策略覆盖
     private ErrorHandlingMode errorMode = ErrorHandlingMode.LENIENT; // 错误处理模式
     private Map<String, ErrorHandlingMode> fieldErrorModes = new HashMap<>(); // 字段级错误模式
     
@@ -146,17 +145,13 @@ public class FusionConfig {
      */
     @Data
     public static class CacheConfig {
-        private String type = "memory";           // 缓存类型：memory, partition, external
-        private int maxSize = 100000;             // 最大缓存记录数
         private int partitionCount = 10;          // 分区数量（分区缓存时使用）
-        private String externalStorageType;       // 外部存储类型：redis, file
+        private int rebalancePartitionMultiplier = 4;
         
         public static CacheConfig fromConfig(Configuration config) {
             CacheConfig cacheConfig = new CacheConfig();
-            cacheConfig.setType(config.getString("type", "memory"));
-            cacheConfig.setMaxSize(config.getInt("maxSize", 100000));
             cacheConfig.setPartitionCount(config.getInt("partitionCount", 10));
-            cacheConfig.setExternalStorageType(config.getString("externalStorageType"));
+            cacheConfig.setRebalancePartitionMultiplier(config.getInt("rebalancePartitionMultiplier", 4));
             return cacheConfig;
         }
     }
@@ -166,16 +161,12 @@ public class FusionConfig {
      */
     @Data
     public static class PerformanceConfig {
-        private int batchSize = 1000;             // 批量处理大小
         private int parallelSourceCount = 2;      // 并行加载的数据源数量
-        private boolean enableLazyLoading = true; // 是否启用懒加载
         private int memoryLimitMB = 1024;         // 内存限制（MB）
         
         public static PerformanceConfig fromConfig(Configuration config) {
             PerformanceConfig perfConfig = new PerformanceConfig();
-            perfConfig.setBatchSize(config.getInt("batchSize", 1000));
             perfConfig.setParallelSourceCount(config.getInt("parallelSourceCount", 2));
-            perfConfig.setEnableLazyLoading(config.getBool("enableLazyLoading", true));
             perfConfig.setMemoryLimitMB(config.getInt("memoryLimitMB", 1024));
             return perfConfig;
         }

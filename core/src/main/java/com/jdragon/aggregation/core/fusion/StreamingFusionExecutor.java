@@ -58,7 +58,14 @@ public class StreamingFusionExecutor {
                 if (!spillStore.partitionExists(partition)) {
                     continue;
                 }
-                processPartitionPath(spillStore.getPartitionPath(partition), options, processor, partition, 0);
+                processPartitionPath(
+                        spillStore.getPartitionPath(partition),
+                        options,
+                        processor,
+                        spillStore.getPartitionCount(),
+                        partition,
+                        0
+                );
             }
         } finally {
             spillStore.cleanup();
@@ -68,6 +75,7 @@ public class StreamingFusionExecutor {
     private void processPartitionPath(Path partitionPath,
                                       StreamExecutionOptions options,
                                       FusionPartitionProcessor processor,
+                                      int currentPartitionCount,
                                       int partition,
                                       int depth) throws IOException {
         Map<String, LinkedHashMap<String, Map<String, Object>>> groups = new LinkedHashMap<>();
@@ -86,10 +94,11 @@ public class StreamingFusionExecutor {
                 sourceRows.putIfAbsent(row.getSourceId(), row.getRow());
 
                 if (groups.size() > options.getMaxKeysPerPartition() && depth < MAX_REBALANCE_DEPTH) {
+                    int childPartitionCount = options.getRebalancePartitionCount(currentPartitionCount);
                     PartitionedSpillStore childStore = new PartitionedSpillStore(
                             "fusion-p" + partition + "-d" + depth,
                             options.getSpillPath(),
-                            Math.max(4, options.getPartitionCount()),
+                            childPartitionCount,
                             options.isKeepTempFiles()
                     );
                     rebalanceStoreHolder[0] = childStore;
@@ -104,6 +113,8 @@ public class StreamingFusionExecutor {
             });
         }
 
+        PartitionedSpillStore.cleanupConsumedPartition(partitionPath, options.isKeepTempFiles(), null);
+
         PartitionedSpillStore rebalanceStore = rebalanceStoreHolder[0];
         if (rebalanceStore != null) {
             rebalanceStore.close();
@@ -112,7 +123,14 @@ public class StreamingFusionExecutor {
                     if (!rebalanceStore.partitionExists(childPartition)) {
                         continue;
                     }
-                    processPartitionPath(rebalanceStore.getPartitionPath(childPartition), options, processor, childPartition, depth + 1);
+                    processPartitionPath(
+                            rebalanceStore.getPartitionPath(childPartition),
+                            options,
+                            processor,
+                            rebalanceStore.getPartitionCount(),
+                            childPartition,
+                            depth + 1
+                    );
                 }
                 return;
             } finally {

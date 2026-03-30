@@ -15,6 +15,7 @@ public class SortMergeStats {
     private long localMergedDuplicateGroupCount;
     private long orderRecoveryCount;
     private long spillBytes;
+    private long activeSpillBytes;
     private boolean spillGuardTriggered;
     private String spillGuardReason;
     private String fallbackReason;

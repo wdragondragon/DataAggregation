@@ -41,3 +41,8 @@
 - 2026-03-30：开始实施。当前已确认：
   - `OverflowBucketStore` 是 coordinator spill 的统一入口
   - `AdaptiveSortMergeFusionExecutor` 与 `AdaptiveSortMergeConsistencyExecutor` 里还有递归 rebalance 的 `PartitionedSpillStore` 分支，需要与 overflow 共享同一 guard
+- 2026-03-30：后续补充实现已落地：
+  - `SpillGuard` 现在区分 `activeReservedBytes` 与累计 `spillBytes`
+  - `PartitionedSpillStore` 在分区文件被完整消费后支持“读完即删”
+  - 删除分区文件时会同步释放 active spill 配额，而不是只减少物理磁盘占用
+  - eager cleanup 默认在 `keepTempFiles=false` 时启用

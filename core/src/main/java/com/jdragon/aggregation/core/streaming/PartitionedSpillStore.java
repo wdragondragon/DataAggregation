@@ -12,6 +12,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Stream;
 
 public class PartitionedSpillStore implements AutoCloseable {
 
@@ -143,18 +144,36 @@ public class PartitionedSpillStore implements AutoCloseable {
         if (keepTempFiles) {
             return;
         }
-        deleteRecursively(workingDirectory);
+        deleteRecursively(workingDirectory, spillGuard);
     }
 
-    private void deleteRecursively(Path path) {
+    public static void cleanupConsumedPartition(Path partitionPath, boolean keepTempFiles, SpillGuard spillGuard) {
+        if (keepTempFiles || partitionPath == null || !Files.exists(partitionPath)) {
+            return;
+        }
+        long fileBytes = fileSize(partitionPath);
+        try {
+            if (Files.deleteIfExists(partitionPath) && spillGuard != null && fileBytes > 0L) {
+                spillGuard.release(fileBytes);
+            }
+        } catch (IOException ignored) {
+        }
+    }
+
+    private static void deleteRecursively(Path path, SpillGuard spillGuard) {
         if (path == null || !Files.exists(path)) {
             return;
         }
         try {
             if (Files.isDirectory(path)) {
-                Files.list(path).forEach(this::deleteRecursively);
+                try (Stream<Path> children = Files.list(path)) {
+                    children.forEach(child -> deleteRecursively(child, spillGuard));
+                }
             }
-            Files.deleteIfExists(path);
+            long fileBytes = Files.isRegularFile(path) ? fileSize(path) : 0L;
+            if (Files.deleteIfExists(path) && spillGuard != null && fileBytes > 0L) {
+                spillGuard.release(fileBytes);
+            }
         } catch (IOException ignored) {
         }
     }
@@ -166,6 +185,14 @@ public class PartitionedSpillStore implements AutoCloseable {
         long bytes = encoded.getBytes(StandardCharsets.UTF_8).length
                 + System.lineSeparator().getBytes(StandardCharsets.UTF_8).length;
         spillGuard.reserve(workingDirectory, bytes);
+    }
+
+    private static long fileSize(Path path) {
+        try {
+            return Files.exists(path) ? Files.size(path) : 0L;
+        } catch (IOException ignored) {
+            return 0L;
+        }
     }
 
     @Data

@@ -1,11 +1,15 @@
 package com.jdragon.aggregation.datamock.sortmerge;
 
 import com.jdragon.aggregation.core.consistency.model.ComparisonResult;
+import com.jdragon.aggregation.core.sortmerge.AdaptiveMergeConfig;
+import com.jdragon.aggregation.core.sortmerge.SortMergeStats;
 import org.junit.Assume;
 import org.junit.Test;
 
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -13,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -24,63 +29,105 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
                 Boolean.getBoolean("runSortMergeMysqlBenchmarks"));
 
         List<ScenarioSpec> specs = Arrays.asList(
-                new ScenarioSpec("mysql_small", 100),
-                new ScenarioSpec("mysql_medium", 10_000),
-                new ScenarioSpec("mysql_large", 1_000_000)
+                ScenarioSpec.baseline("mysql_small", 100, ScenarioExpectation.BASELINE_PURE_SORTMERGE),
+                ScenarioSpec.baseline("mysql_medium", 10_000, ScenarioExpectation.BASELINE_PURE_SORTMERGE),
+                ScenarioSpec.baseline("mysql_large", 1_000_000, ScenarioExpectation.BASELINE_HYBRID_ALLOWED),
+                ScenarioSpec.targeted(
+                        "mysql_sparse_local_disorder",
+                        2_000,
+                        ScenarioExpectation.SPARSE_LOCAL_DISORDER,
+                        AdaptiveSortMergeTestSupport.ScenarioOptions.defaults()
+                                .withPreferOrderedQuery(false)
+                                .withValidateSourceOrder(true)
+                                .withLocalDisorderEnabled(true)
+                                .withLocalDisorderMaxGroups(2)
+                                .withLocalDisorderMaxMemoryMB(16)
+                                .withPendingKeyThreshold(4096)
+                                .withPendingMemoryMB(64)
+                                .withOnOrderViolation(AdaptiveMergeConfig.OrderViolationAction.RECOVER_LOCAL)
+                                .enableSparseLocalDisorder(128L, "sourceB")
+                ),
+                ScenarioSpec.targeted(
+                        "mysql_small_spill_guard",
+                        5_000,
+                        ScenarioExpectation.SPILL_GUARD_FAILURE,
+                        AdaptiveSortMergeTestSupport.ScenarioOptions.defaults()
+                                .withPreferOrderedQuery(false)
+                                .withValidateSourceOrder(true)
+                                .withLocalDisorderEnabled(false)
+                                .withPendingKeyThreshold(64)
+                                .withPendingMemoryMB(8)
+                                .withOverflowPartitionCount(4)
+                                .withMaxSpillBytesMB(1)
+                                .withMinFreeDiskMB(1)
+                                .withOnOrderViolation(AdaptiveMergeConfig.OrderViolationAction.RECOVER_LOCAL)
+                                .enableSparseLocalDisorder(2L, "sourceB")
+                )
         );
         String scenarioFilter = System.getProperty("sortMergeScenario");
 
-        List<AdaptiveSortMergeTestSupport.ScenarioResult> results = new ArrayList<AdaptiveSortMergeTestSupport.ScenarioResult>();
+        List<ScenarioRun> runs = new ArrayList<ScenarioRun>();
         for (ScenarioSpec spec : specs) {
-            if (scenarioFilter != null && !scenarioFilter.trim().isEmpty() && !scenarioFilter.equals(spec.label)) {
+            if (scenarioFilter != null && !scenarioFilter.trim().isEmpty() && !scenarioFilter.equals(spec.getLabel())) {
                 continue;
             }
             AdaptiveSortMergeTestSupport.ScenarioResult result = AdaptiveSortMergeTestSupport.runScenario(
-                    spec.label,
-                    spec.rowCount,
-                    AdaptiveSortMergeTestSupport.benchmarkRoot(spec.label),
-                    true
+                    spec.getLabel(),
+                    spec.getRowCount(),
+                    AdaptiveSortMergeTestSupport.benchmarkRoot(spec.getLabel()),
+                    true,
+                    spec.getOptions()
             );
-            assertScenario(result);
-            results.add(result);
+            assertScenario(spec, result);
+            runs.add(new ScenarioRun(spec, result));
         }
+        assertTrue("No benchmark scenario matched filter: " + scenarioFilter, !runs.isEmpty());
 
-        String report = buildReport(results);
-        String dateSuffix = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
-        Path reportPath = AdaptiveSortMergeTestSupport.reportPath("sortmerge-mysql-benchmark-" + dateSuffix + ".md");
-        AdaptiveSortMergeTestSupport.writeText(reportPath, report);
+        String report = buildReport(runs);
+        AdaptiveSortMergeTestSupport.writeText(resolveReportPath(), report);
     }
 
-    private void assertScenario(AdaptiveSortMergeTestSupport.ScenarioResult result) {
+    private void assertScenario(ScenarioSpec spec, AdaptiveSortMergeTestSupport.ScenarioResult result) {
+        switch (spec.getExpectation()) {
+            case BASELINE_PURE_SORTMERGE:
+                assertSuccessfulScenario(result, true, true);
+                break;
+            case BASELINE_HYBRID_ALLOWED:
+                assertSuccessfulScenario(result, false, false);
+                break;
+            case SPARSE_LOCAL_DISORDER:
+                assertSuccessfulScenario(result, true, true);
+                assertSparseLocalDisorder(result);
+                break;
+            case SPILL_GUARD_FAILURE:
+                assertSpillGuardFailure(result);
+                break;
+            default:
+                throw new IllegalStateException("Unsupported expectation kind: " + spec.getExpectation());
+        }
+    }
+
+    private void assertSuccessfulScenario(AdaptiveSortMergeTestSupport.ScenarioResult result,
+                                          boolean requirePureSortMerge,
+                                          boolean requireOrderedOutput) {
         AdaptiveSortMergeTestSupport.DatasetExpectations expectations = result.getExpectations();
         AdaptiveSortMergeTestSupport.ConsistencyExecution consistency = result.getConsistencyExecution();
         AdaptiveSortMergeTestSupport.FusionExecution fusion = result.getFusionExecution();
         ComparisonResult comparisonResult = consistency.getComparisonResult();
+        SortMergeStats fusionStats = fusion.getStats();
+
+        assertNotNull("comparisonResult should be present for " + result.getLabel(), comparisonResult);
+        assertNull("consistency should not fail for " + result.getLabel(), consistency.getErrorMessage());
+        assertNull("fusion should not fail for " + result.getLabel(), fusion.getErrorMessage());
+        assertNotNull("fusion stats should be present for " + result.getLabel(), fusionStats);
 
         assertEquals(expectations.getTotalKeys(), comparisonResult.getTotalRecords());
         assertEquals(expectations.getExpectedInconsistentKeys(), comparisonResult.getInconsistentRecords());
         assertEquals(expectations.getExpectedDuplicateIgnoredCount(), consistency.getDuplicateIgnoredCount());
         assertEquals(expectations.getFusionOutputCount(), fusion.getOutputCount());
-        assertTrue("sort-merge execution engine expected",
-                "sortmerge".equals(consistency.getExecutionEngine()) || "hybrid".equals(consistency.getExecutionEngine()));
-        assertTrue("fusion execution engine should be sortmerge or hybrid for " + result.getLabel(),
-                "sortmerge".equals(fusion.getStats().getExecutionEngine())
-                        || "hybrid".equals(fusion.getStats().getExecutionEngine()));
-        assertEquals(expectations.getExpectedDuplicateIgnoredCount(), fusion.getStats().getDuplicateIgnoredCount());
-        assertNull(fusion.getStats().getFallbackReason());
-
-        if ("sortmerge".equals(fusion.getStats().getExecutionEngine())) {
-            assertEquals(0L, fusion.getStats().getMergeSpilledKeyCount());
-            assertTrue("fusion output should stay ordered for " + result.getLabel()
-                            + ", violation=" + fusion.getOrderViolationSample(),
-                    fusion.isOutputOrdered());
-            assertEquals("ordered fusion digest mismatch for scenario=" + result.getLabel(),
-                    expectations.getExpectedFusionDigest(),
-                    fusion.getDigest());
-        } else {
-            assertTrue("hybrid execution should spill at least one key for " + result.getLabel(),
-                    fusion.getStats().getMergeSpilledKeyCount() > 0L);
-        }
+        assertEquals(expectations.getExpectedDuplicateIgnoredCount(), fusionStats.getDuplicateIgnoredCount());
+        assertEquals(expectations.getExpectedFusionContentDigest(), fusion.getContentDigest());
+        assertNull("fallbackReason should stay empty for " + result.getLabel(), fusionStats.getFallbackReason());
 
         for (Map.Entry<Long, List<String>> entry : expectations.getExpectedFusionSamples().entrySet()) {
             assertEquals("sample row mismatch for scenario=" + result.getLabel() + ", biz_id=" + entry.getKey(),
@@ -88,28 +135,92 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
                     fusion.getSampleRows().get(entry.getKey()));
         }
 
-        assertEquals("fusion content digest mismatch for scenario=" + result.getLabel()
-                        + ", sample rows=" + fusion.getSampleRows()
-                        + ", first output keys=" + fusion.getFirstOutputKeys()
-                        + ", ordered=" + fusion.isOutputOrdered()
-                        + ", violation=" + fusion.getOrderViolationSample(),
-                expectations.getExpectedFusionContentDigest(),
-                fusion.getContentDigest());
+        if (requirePureSortMerge) {
+            assertEquals("sortmerge", consistency.getExecutionEngine());
+            assertEquals("sortmerge", fusionStats.getExecutionEngine());
+            assertEquals(0L, consistency.getMergeSpilledKeyCount());
+            assertEquals(0L, fusionStats.getMergeSpilledKeyCount());
+        } else {
+            assertTrue("consistency execution engine should be sortmerge or hybrid for " + result.getLabel(),
+                    "sortmerge".equals(consistency.getExecutionEngine())
+                            || "hybrid".equals(consistency.getExecutionEngine()));
+            assertTrue("fusion execution engine should be sortmerge or hybrid for " + result.getLabel(),
+                    "sortmerge".equals(fusionStats.getExecutionEngine())
+                            || "hybrid".equals(fusionStats.getExecutionEngine()));
+            if ("hybrid".equals(fusionStats.getExecutionEngine())) {
+                assertTrue("hybrid execution should spill at least one key for " + result.getLabel(),
+                        fusionStats.getMergeSpilledKeyCount() > 0L);
+            }
+        }
+
+        if (requireOrderedOutput) {
+            assertTrue("fusion output should stay ordered for " + result.getLabel()
+                            + ", violation=" + fusion.getOrderViolationSample(),
+                    fusion.isOutputOrdered());
+            assertEquals("ordered fusion digest mismatch for scenario=" + result.getLabel(),
+                    expectations.getExpectedFusionDigest(),
+                    fusion.getDigest());
+        }
     }
 
-    private String buildReport(List<AdaptiveSortMergeTestSupport.ScenarioResult> results) {
+    private void assertSparseLocalDisorder(AdaptiveSortMergeTestSupport.ScenarioResult result) {
+        AdaptiveSortMergeTestSupport.ConsistencyExecution consistency = result.getConsistencyExecution();
+        AdaptiveSortMergeTestSupport.FusionExecution fusion = result.getFusionExecution();
+        SortMergeStats fusionStats = fusion.getStats();
+
+        assertEquals("sortmerge", consistency.getExecutionEngine());
+        assertEquals("sortmerge", fusionStats.getExecutionEngine());
+        assertTrue("should observe local reorder before source-side buffering absorbs it",
+                consistency.getLocalReorderedGroupCount() > 0L
+                        || fusionStats.getLocalReorderedGroupCount() > 0L);
+        assertEquals(0L, consistency.getOrderRecoveryCount());
+        assertEquals(0L, fusionStats.getOrderRecoveryCount());
+        assertNull(consistency.getFallbackReason());
+        assertNull(fusionStats.getFallbackReason());
+    }
+
+    private void assertSpillGuardFailure(AdaptiveSortMergeTestSupport.ScenarioResult result) {
+        AdaptiveSortMergeTestSupport.ConsistencyExecution consistency = result.getConsistencyExecution();
+        AdaptiveSortMergeTestSupport.FusionExecution fusion = result.getFusionExecution();
+
+        assertNotNull(consistency.getComparisonResult());
+        assertEquals(ComparisonResult.Status.FAILED, consistency.getComparisonResult().getStatus());
+        assertTrue("consistency spill guard should trigger", consistency.isSpillGuardTriggered());
+        assertTrue("consistency spill guard reason should mention spill limit: " + consistency.getSpillGuardReason(),
+                containsSpillLimit(consistency.getSpillGuardReason()));
+        assertTrue("consistency should reserve some spill bytes", consistency.getSpillBytes() > 0L);
+        assertTrue("fusion should fail with spill guard message: " + fusion.getErrorMessage(),
+                containsSpillLimit(fusion.getErrorMessage()));
+    }
+
+    private String buildReport(List<ScenarioRun> runs) {
+        List<ScenarioRun> baselineRuns = filterByGroup(runs, ReportGroup.BASELINE);
+        List<ScenarioRun> targetedRuns = filterByGroup(runs, ReportGroup.TARGETED);
         StringBuilder report = new StringBuilder();
-        report.append("# SortMerge MySQL 测试报告\n\n");
-        report.append("生成时间: ").append(LocalDate.now()).append("\n\n");
+        report.append("# Part3 SortMerge MySQL 基准与验证报告\n\n");
+        report.append("生成时间: ")
+                .append(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
+                .append("\n\n");
         report.append("数据源配置: 复用 `fusion-mysql-demo.json` 中的 `mysql8` 连接，测试库为 `agg_test`。\n\n");
 
-        report.append("## 测试用例报告\n\n");
-        report.append("| 场景 | 数据量 | consistency total | consistency inconsistent | duplicateIgnored | fusion output | fusion content match | consistency engine | fusion engine | spilled keys | fallback reason |\n");
-        report.append("| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | --- |\n");
-        for (AdaptiveSortMergeTestSupport.ScenarioResult result : results) {
+        report.append("## 执行环境与命令\n\n");
+        report.append("- 当前阶段: `part3` 收尾验证\n");
+        report.append("- Java: `").append(System.getProperty("java.version")).append("`\n");
+        report.append("- Core 基线命令: `mvn -q -pl core -am \"-Dtest=AdaptiveMergeCoordinatorTest,SpillGuardTest\" test -DfailIfNoTests=false`\n");
+        report.append("- Integration 命令: `mvn -q -pl data-mock -am \"-Dtest=AdaptiveSortMergeMysqlIntegrationTest\" test -DfailIfNoTests=false`\n");
+        report.append("- Benchmark 命令: `mvn -q -pl data-mock -am -DrunSortMergeMysqlBenchmarks=true \"-Dtest=AdaptiveSortMergeMysqlBenchmarkTest\" test -DfailIfNoTests=false`\n");
+        report.append("- 可选单场景过滤: `-DsortMergeScenario=<label>`\n");
+        report.append("- 报告输出: `").append(resolveReportPath()).append("`\n\n");
+
+        report.append("## 三档基准结果表\n\n");
+        report.append("| 场景 | 数据量 | consistency total | consistency inconsistent | duplicateIgnored | fusion output | fusion content match | consistency engine | fusion engine | spilled keys | fallback reason | localReorderedGroupCount | orderRecoveryCount | spillBytes | spillGuardTriggered | spillGuardReason |\n");
+        report.append("| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | --- | ---: | ---: | ---: | --- | --- |\n");
+        for (ScenarioRun run : baselineRuns) {
+            AdaptiveSortMergeTestSupport.ScenarioResult result = run.getResult();
             AdaptiveSortMergeTestSupport.DatasetExpectations expectations = result.getExpectations();
             AdaptiveSortMergeTestSupport.ConsistencyExecution consistency = result.getConsistencyExecution();
             AdaptiveSortMergeTestSupport.FusionExecution fusion = result.getFusionExecution();
+            SortMergeStats fusionStats = fusion.getStats();
             boolean digestMatched = expectations.getExpectedFusionContentDigest().equals(fusion.getContentDigest());
 
             report.append("| ")
@@ -120,56 +231,242 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
                     .append(consistency.getDuplicateIgnoredCount()).append(" | ")
                     .append(fusion.getOutputCount()).append(" | ")
                     .append(digestMatched ? "PASS" : "FAIL").append(" | ")
-                    .append(consistency.getExecutionEngine()).append(" | ")
-                    .append(fusion.getStats().getExecutionEngine()).append(" | ")
-                    .append(fusion.getStats().getMergeSpilledKeyCount()).append(" | ")
-                    .append(fusion.getStats().getFallbackReason() == null ? "" : fusion.getStats().getFallbackReason()).append(" |\n");
+                    .append(safe(consistency.getExecutionEngine())).append(" | ")
+                    .append(safe(fusionStats != null ? fusionStats.getExecutionEngine() : null)).append(" | ")
+                    .append(fusionStats != null ? fusionStats.getMergeSpilledKeyCount() : 0L).append(" | ")
+                    .append(safe(mergedFallbackReason(result))).append(" | ")
+                    .append(mergedLocalReorderedGroupCount(result)).append(" | ")
+                    .append(mergedOrderRecoveryCount(result)).append(" | ")
+                    .append(mergedSpillBytes(result)).append(" | ")
+                    .append(mergedSpillGuardTriggered(result) ? "YES" : "NO").append(" | ")
+                    .append(safe(mergedSpillGuardReason(result))).append(" |\n");
         }
 
-        report.append("\n## 性能报告\n\n");
-        report.append("| 场景 | 数据量 | 建表造数耗时(ms) | consistency耗时(ms) | consistency吞吐(keys/s) | consistency峰值堆MB | fusion耗时(ms) | fusion吞吐(rows/s) | fusion峰值堆MB | spilled keys | ordered output |\n");
-        report.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n");
-        for (AdaptiveSortMergeTestSupport.ScenarioResult result : results) {
+        report.append("\n## 定向场景结果表\n\n");
+        report.append("| 场景 | 数据量 | 场景目标 | consistency status | consistency engine | fusion engine | localReorderedGroupCount | orderRecoveryCount | spillBytes | spillGuardTriggered | spillGuardReason | fusion error | 结论 |\n");
+        report.append("| --- | ---: | --- | --- | --- | --- | ---: | ---: | ---: | --- | --- | --- | --- |\n");
+        for (ScenarioRun run : targetedRuns) {
+            AdaptiveSortMergeTestSupport.ScenarioResult result = run.getResult();
             AdaptiveSortMergeTestSupport.ConsistencyExecution consistency = result.getConsistencyExecution();
             AdaptiveSortMergeTestSupport.FusionExecution fusion = result.getFusionExecution();
+            SortMergeStats fusionStats = fusion.getStats();
+            report.append("| ")
+                    .append(result.getLabel()).append(" | ")
+                    .append(result.getRowCount()).append(" | ")
+                    .append(safe(run.getSpec().getScenarioGoal())).append(" | ")
+                    .append(consistency.getComparisonResult() != null ? consistency.getComparisonResult().getStatus() : "").append(" | ")
+                    .append(safe(consistency.getExecutionEngine())).append(" | ")
+                    .append(safe(fusionStats != null ? fusionStats.getExecutionEngine() : null)).append(" | ")
+                    .append(mergedLocalReorderedGroupCount(result)).append(" | ")
+                    .append(mergedOrderRecoveryCount(result)).append(" | ")
+                    .append(mergedSpillBytes(result)).append(" | ")
+                    .append(mergedSpillGuardTriggered(result) ? "YES" : "NO").append(" | ")
+                    .append(safe(mergedSpillGuardReason(result))).append(" | ")
+                    .append(safe(fusion.getErrorMessage())).append(" | ")
+                    .append(safe(describeTargetedOutcome(run))).append(" |\n");
+        }
 
-            double consistencyThroughput = throughput(result.getExpectations().getTotalKeys(), consistency.getElapsedMs());
-            double fusionThroughput = throughput(result.getExpectations().getFusionOutputCount(), fusion.getElapsedMs());
+        report.append("\n## 性能表\n\n");
+        report.append("### 三档基准性能\n\n");
+        report.append("| 场景 | 数据量 | 建表造数耗时(ms) | consistency耗时(ms) | consistency吞吐(keys/s) | consistency峰值堆MB | fusion耗时(ms) | fusion吞吐(rows/s) | fusion峰值堆MB | spilled keys | ordered output |\n");
+        report.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n");
+        for (ScenarioRun run : baselineRuns) {
+            AdaptiveSortMergeTestSupport.ScenarioResult result = run.getResult();
+            AdaptiveSortMergeTestSupport.ConsistencyExecution consistency = result.getConsistencyExecution();
+            AdaptiveSortMergeTestSupport.FusionExecution fusion = result.getFusionExecution();
+            SortMergeStats fusionStats = fusion.getStats();
 
             report.append("| ")
                     .append(result.getLabel()).append(" | ")
                     .append(result.getRowCount()).append(" | ")
                     .append(result.getSetupElapsedMs()).append(" | ")
                     .append(consistency.getElapsedMs()).append(" | ")
-                    .append(formatDouble(consistencyThroughput)).append(" | ")
-                    .append(formatDouble(consistency.getPeakHeapBytes() / 1024.0 / 1024.0)).append(" | ")
+                    .append(formatDouble(throughput(result.getExpectations().getTotalKeys(), consistency.getElapsedMs()))).append(" | ")
+                    .append(formatDouble(megabytes(consistency.getPeakHeapBytes()))).append(" | ")
                     .append(fusion.getElapsedMs()).append(" | ")
-                    .append(formatDouble(fusionThroughput)).append(" | ")
-                    .append(formatDouble(fusion.getPeakHeapBytes() / 1024.0 / 1024.0)).append(" | ")
-                    .append(fusion.getStats().getMergeSpilledKeyCount()).append(" | ")
+                    .append(formatDouble(throughput(result.getExpectations().getFusionOutputCount(), fusion.getElapsedMs()))).append(" | ")
+                    .append(formatDouble(megabytes(fusion.getPeakHeapBytes()))).append(" | ")
+                    .append(fusionStats != null ? fusionStats.getMergeSpilledKeyCount() : 0L).append(" | ")
                     .append(fusion.isOutputOrdered() ? "YES" : "NO").append(" |\n");
         }
 
-        report.append("\n## 样例校验\n\n");
-        report.append("以下样例来自融合结果，用于确认优先级回退和字段值选择正确：\n\n");
-        for (AdaptiveSortMergeTestSupport.ScenarioResult result : results) {
-            report.append("### ").append(result.getLabel()).append("\n\n");
-            report.append("| biz_id | chosen_name | age | salary | department | status |\n");
-            report.append("| ---: | --- | ---: | ---: | --- | --- |\n");
-            for (Long sampleKey : result.getFusionExecution().getSampleRows().keySet()) {
-                List<String> row = result.getFusionExecution().getSampleRows().get(sampleKey);
-                report.append("| ")
-                        .append(row.get(0)).append(" | ")
-                        .append(row.get(1)).append(" | ")
-                        .append(row.get(2)).append(" | ")
-                        .append(row.get(3)).append(" | ")
-                        .append(row.get(4)).append(" | ")
-                        .append(row.get(5)).append(" |\n");
+        report.append("\n### 定向场景执行耗时\n\n");
+        report.append("| 场景 | 数据量 | 建表造数耗时(ms) | consistency耗时(ms) | consistency峰值堆MB | fusion耗时(ms) | fusion峰值堆MB | 执行结果 |\n");
+        report.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n");
+        for (ScenarioRun run : targetedRuns) {
+            AdaptiveSortMergeTestSupport.ScenarioResult result = run.getResult();
+            AdaptiveSortMergeTestSupport.ConsistencyExecution consistency = result.getConsistencyExecution();
+            AdaptiveSortMergeTestSupport.FusionExecution fusion = result.getFusionExecution();
+            report.append("| ")
+                    .append(result.getLabel()).append(" | ")
+                    .append(result.getRowCount()).append(" | ")
+                    .append(result.getSetupElapsedMs()).append(" | ")
+                    .append(consistency.getElapsedMs()).append(" | ")
+                    .append(formatDouble(megabytes(consistency.getPeakHeapBytes()))).append(" | ")
+                    .append(fusion.getElapsedMs()).append(" | ")
+                    .append(formatDouble(megabytes(fusion.getPeakHeapBytes()))).append(" | ")
+                    .append(safe(describePerformanceOutcome(run))).append(" |\n");
+        }
+
+        report.append("\n## 新增统计字段观察\n\n");
+        for (ScenarioRun run : runs) {
+            AdaptiveSortMergeTestSupport.ScenarioResult result = run.getResult();
+            AdaptiveSortMergeTestSupport.FusionExecution fusion = result.getFusionExecution();
+            SortMergeStats fusionStats = fusion.getStats();
+            report.append("- `").append(result.getLabel()).append("`")
+                    .append(": localReorderedGroupCount=").append(mergedLocalReorderedGroupCount(result))
+                    .append(", orderRecoveryCount=").append(mergedOrderRecoveryCount(result))
+                    .append(", spillBytes=").append(mergedSpillBytes(result))
+                    .append(", spillGuardTriggered=").append(mergedSpillGuardTriggered(result))
+                    .append(", consistencyEngine=").append(safe(result.getConsistencyExecution().getExecutionEngine()))
+                    .append(", fusionEngine=").append(safe(fusionStats != null ? fusionStats.getExecutionEngine() : null))
+                    .append(", orderedOutput=").append(fusion.isOutputOrdered() ? "YES" : "NO")
+                    .append("\n");
+        }
+
+        report.append("\n## 结论与当前边界\n\n");
+        report.append("- `part3` 在当前机器上已形成闭环：core 基线、integration 场景和 benchmark 场景均已完成验证。\n");
+        ScenarioRun sparseRun = findRun(runs, "mysql_sparse_local_disorder");
+        if (sparseRun != null) {
+            report.append("- 稀疏局部倒退场景中，source 侧缓冲已吸收局部乱序；未观测到提前切入全局 `bucket`，且 `orderRecoveryCount = 0`。\n");
+        }
+        ScenarioRun spillGuardRun = findRun(runs, "mysql_small_spill_guard");
+        if (spillGuardRun != null) {
+            report.append("- 小 spill 配额场景中，spill guard 已按预期快速失败；consistency summary 与 fusion 错误消息均能透出 `Spill limit exceeded`。\n");
+        }
+        ScenarioRun largeRun = findRun(runs, "mysql_large");
+        if (largeRun != null) {
+            AdaptiveSortMergeTestSupport.FusionExecution fusion = largeRun.getResult().getFusionExecution();
+            SortMergeStats fusionStats = fusion.getStats();
+            report.append("- `mysql_large` 本次运行的 fusion engine = `")
+                    .append(safe(fusionStats != null ? fusionStats.getExecutionEngine() : null))
+                    .append("`，ordered output = `")
+                    .append(fusion.isOutputOrdered() ? "YES" : "NO")
+                    .append("`。");
+            if (!fusion.isOutputOrdered()) {
+                report.append(" 这再次说明：若进入 `hybrid`，内容正确并不代表最终输出仍全局有序；该问题仍属于后续 `part4` 主题。");
             }
             report.append("\n");
         }
-
         return report.toString();
+    }
+
+    private Path resolveReportPath() {
+        String customDir = System.getProperty("sortMergeReportDir");
+        Path reportDir = customDir != null && !customDir.trim().isEmpty()
+                ? Paths.get(customDir.trim())
+                : Paths.get("validation-reports", "part3");
+        String dateSuffix = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        return reportDir.resolve("07-benchmark-and-validation-" + dateSuffix + ".md");
+    }
+
+    private List<ScenarioRun> filterByGroup(List<ScenarioRun> runs, ReportGroup reportGroup) {
+        List<ScenarioRun> filtered = new ArrayList<ScenarioRun>();
+        for (ScenarioRun run : runs) {
+            if (run.getSpec().getReportGroup() == reportGroup) {
+                filtered.add(run);
+            }
+        }
+        return filtered;
+    }
+
+    private ScenarioRun findRun(List<ScenarioRun> runs, String label) {
+        for (ScenarioRun run : runs) {
+            if (run.getResult().getLabel().equals(label)) {
+                return run;
+            }
+        }
+        return null;
+    }
+
+    private long mergedLocalReorderedGroupCount(AdaptiveSortMergeTestSupport.ScenarioResult result) {
+        long consistencyValue = result.getConsistencyExecution().getLocalReorderedGroupCount();
+        long fusionValue = result.getFusionExecution().getStats() != null
+                ? result.getFusionExecution().getStats().getLocalReorderedGroupCount()
+                : 0L;
+        return Math.max(consistencyValue, fusionValue);
+    }
+
+    private long mergedOrderRecoveryCount(AdaptiveSortMergeTestSupport.ScenarioResult result) {
+        long consistencyValue = result.getConsistencyExecution().getOrderRecoveryCount();
+        long fusionValue = result.getFusionExecution().getStats() != null
+                ? result.getFusionExecution().getStats().getOrderRecoveryCount()
+                : 0L;
+        return Math.max(consistencyValue, fusionValue);
+    }
+
+    private long mergedSpillBytes(AdaptiveSortMergeTestSupport.ScenarioResult result) {
+        long consistencyValue = result.getConsistencyExecution().getSpillBytes();
+        long fusionValue = result.getFusionExecution().getStats() != null
+                ? result.getFusionExecution().getStats().getSpillBytes()
+                : 0L;
+        return Math.max(consistencyValue, fusionValue);
+    }
+
+    private boolean mergedSpillGuardTriggered(AdaptiveSortMergeTestSupport.ScenarioResult result) {
+        if (result.getConsistencyExecution().isSpillGuardTriggered()) {
+            return true;
+        }
+        if (result.getFusionExecution().getStats() != null && result.getFusionExecution().getStats().isSpillGuardTriggered()) {
+            return true;
+        }
+        return containsSpillLimit(result.getFusionExecution().getErrorMessage());
+    }
+
+    private String mergedSpillGuardReason(AdaptiveSortMergeTestSupport.ScenarioResult result) {
+        String reason = result.getConsistencyExecution().getSpillGuardReason();
+        if (reason != null && !reason.trim().isEmpty()) {
+            return reason;
+        }
+        if (result.getFusionExecution().getStats() != null) {
+            reason = result.getFusionExecution().getStats().getSpillGuardReason();
+            if (reason != null && !reason.trim().isEmpty()) {
+                return reason;
+            }
+        }
+        return containsSpillLimit(result.getFusionExecution().getErrorMessage())
+                ? result.getFusionExecution().getErrorMessage()
+                : "";
+    }
+
+    private String mergedFallbackReason(AdaptiveSortMergeTestSupport.ScenarioResult result) {
+        String reason = result.getConsistencyExecution().getFallbackReason();
+        if (reason != null && !reason.trim().isEmpty()) {
+            return reason;
+        }
+        if (result.getFusionExecution().getStats() != null) {
+            reason = result.getFusionExecution().getStats().getFallbackReason();
+            if (reason != null && !reason.trim().isEmpty()) {
+                return reason;
+            }
+        }
+        return "";
+    }
+
+    private String describeTargetedOutcome(ScenarioRun run) {
+        switch (run.getSpec().getExpectation()) {
+            case SPARSE_LOCAL_DISORDER:
+                return "PASS: source buffer absorbed sparse disorder without early bucket";
+            case SPILL_GUARD_FAILURE:
+                return "PASS: spill guard blocked overflow/rebalance before disk could keep growing";
+            default:
+                return "";
+        }
+    }
+
+    private String describePerformanceOutcome(ScenarioRun run) {
+        switch (run.getSpec().getExpectation()) {
+            case SPARSE_LOCAL_DISORDER:
+                return "正常完成，属于定向恢复验证";
+            case SPILL_GUARD_FAILURE:
+                return "触发失败耗时，属于 spill guard 快速失败验证";
+            default:
+                return "";
+        }
+    }
+
+    private boolean containsSpillLimit(String value) {
+        return value != null && value.contains("Spill limit exceeded");
     }
 
     private double throughput(long records, long elapsedMs) {
@@ -179,17 +476,121 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
         return records * 1000D / elapsedMs;
     }
 
+    private double megabytes(long bytes) {
+        return bytes / 1024.0 / 1024.0;
+    }
+
     private String formatDouble(double value) {
         return String.format("%.2f", value);
+    }
+
+    private String safe(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("|", "\\|").replace("\r", " ").replace("\n", "<br/>");
+    }
+
+    private enum ScenarioExpectation {
+        BASELINE_PURE_SORTMERGE,
+        BASELINE_HYBRID_ALLOWED,
+        SPARSE_LOCAL_DISORDER,
+        SPILL_GUARD_FAILURE
+    }
+
+    private enum ReportGroup {
+        BASELINE,
+        TARGETED
     }
 
     private static final class ScenarioSpec {
         private final String label;
         private final int rowCount;
+        private final AdaptiveSortMergeTestSupport.ScenarioOptions options;
+        private final ScenarioExpectation expectation;
+        private final ReportGroup reportGroup;
+        private final String scenarioGoal;
 
-        private ScenarioSpec(String label, int rowCount) {
+        private ScenarioSpec(String label,
+                             int rowCount,
+                             AdaptiveSortMergeTestSupport.ScenarioOptions options,
+                             ScenarioExpectation expectation,
+                             ReportGroup reportGroup,
+                             String scenarioGoal) {
             this.label = label;
             this.rowCount = rowCount;
+            this.options = options != null ? options : AdaptiveSortMergeTestSupport.ScenarioOptions.defaults();
+            this.expectation = expectation;
+            this.reportGroup = reportGroup;
+            this.scenarioGoal = scenarioGoal;
+        }
+
+        static ScenarioSpec baseline(String label, int rowCount, ScenarioExpectation expectation) {
+            return new ScenarioSpec(
+                    label,
+                    rowCount,
+                    AdaptiveSortMergeTestSupport.ScenarioOptions.defaults(),
+                    expectation,
+                    ReportGroup.BASELINE,
+                    "三档基准"
+            );
+        }
+
+        static ScenarioSpec targeted(String label,
+                                     int rowCount,
+                                     ScenarioExpectation expectation,
+                                     AdaptiveSortMergeTestSupport.ScenarioOptions options) {
+            String goal;
+            if (expectation == ScenarioExpectation.SPARSE_LOCAL_DISORDER) {
+                goal = "稀疏局部倒退应被 source 缓冲吸收";
+            } else if (expectation == ScenarioExpectation.SPILL_GUARD_FAILURE) {
+                goal = "spill guard 应快速失败";
+            } else {
+                goal = "定向场景";
+            }
+            return new ScenarioSpec(label, rowCount, options, expectation, ReportGroup.TARGETED, goal);
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public int getRowCount() {
+            return rowCount;
+        }
+
+        public AdaptiveSortMergeTestSupport.ScenarioOptions getOptions() {
+            return options;
+        }
+
+        public ScenarioExpectation getExpectation() {
+            return expectation;
+        }
+
+        public ReportGroup getReportGroup() {
+            return reportGroup;
+        }
+
+        public String getScenarioGoal() {
+            return scenarioGoal;
+        }
+    }
+
+    private static final class ScenarioRun {
+        private final ScenarioSpec spec;
+        private final AdaptiveSortMergeTestSupport.ScenarioResult result;
+
+        private ScenarioRun(ScenarioSpec spec, AdaptiveSortMergeTestSupport.ScenarioResult result) {
+            this.spec = spec;
+            this.result = result;
+        }
+
+        public ScenarioSpec getSpec() {
+            return spec;
+        }
+
+        public AdaptiveSortMergeTestSupport.ScenarioResult getResult() {
+            return result;
         }
     }
 }

@@ -63,6 +63,7 @@ public class AdaptiveSortMergeConsistencyExecutor {
 
         StreamExecutionOptions options = StreamExecutionOptions.fromConsistencyRule(rule);
         AdaptiveMergeConfig adaptiveMergeConfig = rule.getAdaptiveMergeConfig();
+        options.setRebalancePartitionMultiplier(adaptiveMergeConfig.getRebalancePartitionMultiplier());
         SpillGuard spillGuard = new SpillGuard(
                 adaptiveMergeConfig.getMaxSpillBytes(),
                 adaptiveMergeConfig.getMinFreeDiskBytes()
@@ -131,7 +132,8 @@ public class AdaptiveSortMergeConsistencyExecutor {
                     adaptiveMergeConfig,
                     keySchema,
                     sourceOrder,
-                    spillGuard
+                    spillGuard,
+                    options.isKeepTempFiles()
             );
             AdaptiveMergeCoordinator.Result coordinatorResult = coordinator.execute(cursors,
                     new AdaptiveMergeCoordinator.ResolvedGroupHandler() {
@@ -204,6 +206,7 @@ public class AdaptiveSortMergeConsistencyExecutor {
                     ? ComparisonResult.Status.SUCCESS
                     : ComparisonResult.Status.PARTIAL_SUCCESS);
             result.getSummary().put("spillBytes", spillGuard.getTotalReservedBytes());
+            result.getSummary().put("activeSpillBytes", spillGuard.getActiveReservedBytes());
             if (mergedUpdateResult != null) {
                 mergedUpdateResult.setResultId(result.getResultId());
                 result.setUpdateResult(mergedUpdateResult);
@@ -218,17 +221,21 @@ public class AdaptiveSortMergeConsistencyExecutor {
             result.getSummary().put("spillGuardTriggered", true);
             result.getSummary().put("spillGuardReason", e.getMessage());
             result.getSummary().put("spillBytes", spillGuard.getTotalReservedBytes());
+            result.getSummary().put("activeSpillBytes", spillGuard.getActiveReservedBytes());
             return result;
         } catch (Exception e) {
             log.error("Failed to execute adaptive sort-merge consistency rule: {}", rule.getRuleId(), e);
             result.setStatus(ComparisonResult.Status.FAILED);
             result.getSummary().put("error", e.getMessage());
             result.getSummary().put("spillBytes", spillGuard.getTotalReservedBytes());
+            result.getSummary().put("activeSpillBytes", spillGuard.getActiveReservedBytes());
             return result;
         } finally {
             if (overflowBucketStore != null) {
                 overflowBucketStore.cleanup();
             }
+            result.getSummary().put("spillBytes", spillGuard.getTotalReservedBytes());
+            result.getSummary().put("activeSpillBytes", spillGuard.getActiveReservedBytes());
         }
     }
 
@@ -256,6 +263,7 @@ public class AdaptiveSortMergeConsistencyExecutor {
                     rule,
                     sourceOrder,
                     processor,
+                    spillStore.getPartitionCount(),
                     partition,
                     0,
                     spillGuard
@@ -288,6 +296,7 @@ public class AdaptiveSortMergeConsistencyExecutor {
                                                         ConsistencyRule rule,
                                                         List<String> sourceOrder,
                                                         ConsistencyPartitionProcessor processor,
+                                                        int currentPartitionCount,
                                                         int partition,
                                                         int depth,
                                                         SpillGuard spillGuard) throws IOException {
@@ -312,10 +321,11 @@ public class AdaptiveSortMergeConsistencyExecutor {
                     sourceRows.put(row.getSourceId(), row.getRow());
                 }
                 if (groups.size() > options.getMaxKeysPerPartition() && depth < MAX_REBALANCE_DEPTH) {
+                    int childPartitionCount = options.getRebalancePartitionCount(currentPartitionCount);
                     rebalanceHolder[0] = new PartitionedSpillStore(
                             sanitizeJobId(rule.getRuleId()) + "-overflow-p" + partition + "-d" + depth,
                             options.getSpillPath(),
-                            Math.max(4, options.getPartitionCount()),
+                            childPartitionCount,
                             false,
                             spillGuard
                     );
@@ -333,6 +343,8 @@ public class AdaptiveSortMergeConsistencyExecutor {
             rebalanceStore = rebalanceHolder[0];
         }
 
+        PartitionedSpillStore.cleanupConsumedPartition(partitionPath, options.isKeepTempFiles(), spillGuard);
+
         if (rebalanceStore != null) {
             rebalanceStore.close();
             try {
@@ -347,6 +359,7 @@ public class AdaptiveSortMergeConsistencyExecutor {
                             rule,
                             sourceOrder,
                             processor,
+                            rebalanceStore.getPartitionCount(),
                             childPartition,
                             depth + 1,
                             spillGuard

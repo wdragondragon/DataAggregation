@@ -273,7 +273,7 @@ public class FusionEngine {
 
     /**
      * 选择融合策略
-     * 优先级：FieldMapping.strategy > fieldStrategies > defaultStrategy > PRIORITY
+     * 优先级：FieldMapping.strategy > defaultStrategy > PRIORITY
      */
     private FusionStrategy selectFusionStrategy(String fieldName, FieldMapping fieldMapping) {
         // 1. 优先使用字段映射中定义的策略

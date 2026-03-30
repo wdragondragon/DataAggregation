@@ -6,7 +6,7 @@ import com.jdragon.aggregation.core.fusion.config.FusionConfig;
 public class StreamExecutionOptions {
 
     private int partitionCount = 16;
-    private int batchSize = 1000;
+    private int rebalancePartitionMultiplier = 4;
     private int parallelSourceCount = 1;
     private int memoryLimitMB = 512;
     private boolean keepTempFiles = false;
@@ -22,9 +22,9 @@ public class StreamExecutionOptions {
         FusionConfig.PerformanceConfig performanceConfig = config.getPerformanceConfig();
         if (cacheConfig != null) {
             options.setPartitionCount(cacheConfig.getPartitionCount());
+            options.setRebalancePartitionMultiplier(cacheConfig.getRebalancePartitionMultiplier());
         }
         if (performanceConfig != null) {
-            options.setBatchSize(performanceConfig.getBatchSize());
             options.setParallelSourceCount(performanceConfig.getParallelSourceCount());
             options.setMemoryLimitMB(performanceConfig.getMemoryLimitMB());
         }
@@ -38,11 +38,11 @@ public class StreamExecutionOptions {
         }
         if (rule.getCacheConfig() != null) {
             options.setPartitionCount(rule.getCacheConfig().getPartitionCount());
+            options.setRebalancePartitionMultiplier(rule.getCacheConfig().getRebalancePartitionMultiplier());
             options.setSpillPath(rule.getCacheConfig().getSpillPath());
             options.setKeepTempFiles(rule.getCacheConfig().getKeepTempFiles());
         }
         if (rule.getPerformanceConfig() != null) {
-            options.setBatchSize(rule.getPerformanceConfig().getBatchSize());
             options.setParallelSourceCount(rule.getPerformanceConfig().getParallelSourceCount());
             options.setMemoryLimitMB(rule.getPerformanceConfig().getMemoryLimitMB());
         }
@@ -55,6 +55,13 @@ public class StreamExecutionOptions {
         return Math.max(1024, maxByMemory / Math.max(1, partitionCount));
     }
 
+    public int getRebalancePartitionCount(int currentPartitionCount) {
+        int normalizedCurrent = Math.max(1, currentPartitionCount);
+        long multiplied = (long) normalizedCurrent * Math.max(1, rebalancePartitionMultiplier);
+        long strictlyLarger = Math.max((long) normalizedCurrent + 1L, multiplied);
+        return (int) Math.min(Integer.MAX_VALUE, Math.max(4L, strictlyLarger));
+    }
+
     public int getPartitionCount() {
         return partitionCount;
     }
@@ -63,12 +70,12 @@ public class StreamExecutionOptions {
         this.partitionCount = Math.max(1, partitionCount);
     }
 
-    public int getBatchSize() {
-        return batchSize;
+    public int getRebalancePartitionMultiplier() {
+        return rebalancePartitionMultiplier;
     }
 
-    public void setBatchSize(int batchSize) {
-        this.batchSize = Math.max(1, batchSize);
+    public void setRebalancePartitionMultiplier(int rebalancePartitionMultiplier) {
+        this.rebalancePartitionMultiplier = Math.max(1, rebalancePartitionMultiplier);
     }
 
     public int getParallelSourceCount() {

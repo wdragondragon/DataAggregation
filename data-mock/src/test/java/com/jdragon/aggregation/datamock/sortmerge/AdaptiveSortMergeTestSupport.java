@@ -415,8 +415,6 @@ final class AdaptiveSortMergeTestSupport {
 
         OutputConfig outputConfig = new OutputConfig();
         outputConfig.setGenerateReport(false);
-        outputConfig.setStoreDifferences(false);
-        outputConfig.setStoreResolutionResults(false);
         rule.setOutputConfig(outputConfig);
 
         ConsistencyRule.StreamCacheConfig cacheConfig = new ConsistencyRule.StreamCacheConfig();
@@ -425,7 +423,6 @@ final class AdaptiveSortMergeTestSupport {
         rule.setCacheConfig(cacheConfig);
 
         ConsistencyRule.StreamPerformanceConfig performanceConfig = new ConsistencyRule.StreamPerformanceConfig();
-        performanceConfig.setBatchSize(1000);
         performanceConfig.setParallelSourceCount(3);
         performanceConfig.setMemoryLimitMB(256);
         rule.setPerformanceConfig(performanceConfig);
@@ -480,7 +477,6 @@ final class AdaptiveSortMergeTestSupport {
         fusionConfig.setCacheConfig(cacheConfig);
 
         FusionConfig.PerformanceConfig performanceConfig = new FusionConfig.PerformanceConfig();
-        performanceConfig.setBatchSize(1000);
         performanceConfig.setParallelSourceCount(3);
         performanceConfig.setMemoryLimitMB(256);
         fusionConfig.setPerformanceConfig(performanceConfig);

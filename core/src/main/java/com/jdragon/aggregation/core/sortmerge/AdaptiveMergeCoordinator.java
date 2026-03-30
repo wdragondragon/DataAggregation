@@ -49,6 +49,7 @@ public class AdaptiveMergeCoordinator {
     private final List<String> sourceOrder;
     private final PendingWindow pendingWindow;
     private final SpillGuard spillGuard;
+    private final boolean keepTempFiles;
     private final SortMergeStats stats = new SortMergeStats();
     private final Map<String, OrderedKey> maxObservedKeyBySource = new LinkedHashMap<String, OrderedKey>();
     private final Map<String, OrderedSourceCursor> cursorIndex = new LinkedHashMap<String, OrderedSourceCursor>();
@@ -60,17 +61,26 @@ public class AdaptiveMergeCoordinator {
     public AdaptiveMergeCoordinator(AdaptiveMergeConfig config,
                                     OrderedKeySchema schema,
                                     List<String> sourceOrder) {
-        this(config, schema, sourceOrder, null);
+        this(config, schema, sourceOrder, null, false);
     }
 
     public AdaptiveMergeCoordinator(AdaptiveMergeConfig config,
                                     OrderedKeySchema schema,
                                     List<String> sourceOrder,
                                     SpillGuard spillGuard) {
+        this(config, schema, sourceOrder, spillGuard, false);
+    }
+
+    public AdaptiveMergeCoordinator(AdaptiveMergeConfig config,
+                                    OrderedKeySchema schema,
+                                    List<String> sourceOrder,
+                                    SpillGuard spillGuard,
+                                    boolean keepTempFiles) {
         this.config = config;
         this.schema = schema;
         this.sourceOrder = sourceOrder;
         this.spillGuard = spillGuard;
+        this.keepTempFiles = keepTempFiles;
         this.pendingWindow = new PendingWindow(schema);
     }
 
@@ -330,7 +340,7 @@ public class AdaptiveMergeCoordinator {
                     "sortmerge-overflow",
                     config.getOverflowSpillPath(),
                     config.getOverflowPartitionCount(),
-                    false,
+                    keepTempFiles,
                     spillGuard
             );
         }

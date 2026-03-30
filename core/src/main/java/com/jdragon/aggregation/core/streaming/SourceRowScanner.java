@@ -2,6 +2,7 @@ package com.jdragon.aggregation.core.streaming;
 
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.exception.CommonErrorCode;
+import com.jdragon.aggregation.commons.pagination.Table;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.consistency.model.DataSourceConfig;
 import com.jdragon.aggregation.core.consistency.service.DataSourcePluginManager;
@@ -120,7 +121,13 @@ public class SourceRowScanner {
             AbstractDataSourcePlugin plugin = pluginManager.getDataSourcePlugin(config.getPluginName());
             BaseDataSourceDTO dto = DataSourcePluginManager.createDataSourceDTO(config);
             String query = applyLimitClause(buildQuery(config), config.getMaxRecords());
-            plugin.scanQuery(dto, query, true, row -> consumer.accept(applyFieldMappings(row, config.getFieldMappings())));
+            Table<Map<String, Object>> table = plugin.executeQuerySql(dto, query, true);
+            List<Map<String, Object>> rows = table != null && table.getBodies() != null
+                    ? table.getBodies()
+                    : java.util.Collections.<Map<String, Object>>emptyList();
+            for (Map<String, Object> row : rows) {
+                consumer.accept(applyFieldMappings(row, config.getFieldMappings()));
+            }
         } catch (Exception e) {
             throw AggregationException.asException(
                     CommonErrorCode.RUNTIME_ERROR,

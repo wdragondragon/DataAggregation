@@ -218,12 +218,8 @@ config.setPriority(1);
 ### 输出配置
 | 参数 | 类型 | 说明 | 默认值 |
 |------|------|------|--------|
-| outputType | enum | 输出类型 (FILE, DATABASE, MEMORY) | FILE |
 | outputPath | String | 输出文件路径 | 必填 |
-| storeDifferences | boolean | 是否存储差异数据 | true |
-| storeResolutionResults | boolean | 是否存储解决结果 | true |
 | generateReport | boolean | 是否生成报告 | true |
-| reportFormat | enum | 报告格式 (JSON, HTML, CSV) | JSON |
 | reportLanguage | enum | 报告语言 (ENGLISH, CHINESE, BILINGUAL) | ENGLISH |
 | maxDifferencesToDisplay | Integer | HTML报告中最大显示差异数量 | 100 |
 
@@ -263,10 +259,8 @@ config.setPriority(1);
 ### 配置示例
 ```java
 OutputConfig outputConfig = new OutputConfig();
-outputConfig.setOutputType(OutputConfig.OutputType.FILE);
 outputConfig.setOutputPath("./consistency-results");
 outputConfig.setGenerateReport(true);
-outputConfig.setReportFormat(OutputConfig.ReportFormat.HTML);
 outputConfig.setReportLanguage(OutputConfig.ReportLanguage.CHINESE); // 设置为中文报告
 outputConfig.setMaxDifferencesToDisplay(50); // 限制HTML报告中最多显示50条差异
 ```

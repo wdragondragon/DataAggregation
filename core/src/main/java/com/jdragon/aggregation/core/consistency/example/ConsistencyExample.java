@@ -82,12 +82,8 @@ public class ConsistencyExample {
         rule.setResolutionParams(resolutionParams);
 
         OutputConfig outputConfig = new OutputConfig();
-        outputConfig.setOutputType(OutputConfig.OutputType.FILE);
         outputConfig.setOutputPath("./consistency-results");
-        outputConfig.setStoreDifferences(true);
-        outputConfig.setStoreResolutionResults(true);
         outputConfig.setGenerateReport(true);
-        outputConfig.setReportFormat(OutputConfig.ReportFormat.HTML);
         // 支持三种语言模式: ENGLISH, CHINESE, BILINGUAL (英文/中文双语)
         outputConfig.setReportLanguage(OutputConfig.ReportLanguage.CHINESE);
         rule.setOutputConfig(outputConfig);

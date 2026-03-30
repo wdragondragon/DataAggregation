@@ -178,14 +178,14 @@ public class ConsistencyRule {
     @Data
     public static class StreamCacheConfig {
         private int partitionCount = 16;
-        private int maxSize = 100000;
+        private int rebalancePartitionMultiplier = 4;
         private String spillPath;
         private Boolean keepTempFiles = false;
 
         public static StreamCacheConfig fromConfig(Configuration config) {
             StreamCacheConfig cacheConfig = new StreamCacheConfig();
             cacheConfig.setPartitionCount(config.getInt("partitionCount", 16));
-            cacheConfig.setMaxSize(config.getInt("maxSize", 100000));
+            cacheConfig.setRebalancePartitionMultiplier(config.getInt("rebalancePartitionMultiplier", 4));
             cacheConfig.setSpillPath(config.getString("spillPath"));
             cacheConfig.setKeepTempFiles(config.getBool("keepTempFiles", false));
             return cacheConfig;
@@ -194,13 +194,11 @@ public class ConsistencyRule {
 
     @Data
     public static class StreamPerformanceConfig {
-        private int batchSize = 1000;
         private int parallelSourceCount = 1;
         private int memoryLimitMB = 512;
 
         public static StreamPerformanceConfig fromConfig(Configuration config) {
             StreamPerformanceConfig performanceConfig = new StreamPerformanceConfig();
-            performanceConfig.setBatchSize(config.getInt("batchSize", 1000));
             performanceConfig.setParallelSourceCount(config.getInt("parallelSourceCount", 1));
             performanceConfig.setMemoryLimitMB(config.getInt("memoryLimitMB", 512));
             return performanceConfig;

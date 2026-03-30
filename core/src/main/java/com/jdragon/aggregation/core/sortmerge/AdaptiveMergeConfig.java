@@ -24,6 +24,7 @@ public class AdaptiveMergeConfig {
     private int pendingKeyThreshold = 4096;
     private int pendingMemoryMB = 256;
     private int overflowPartitionCount = 16;
+    private int rebalancePartitionMultiplier = 4;
     private String overflowSpillPath;
     private boolean preferOrderedQuery = true;
     private boolean validateSourceOrder = true;
@@ -52,6 +53,10 @@ public class AdaptiveMergeConfig {
         config.setPendingKeyThreshold(configuration.getInt("pendingKeyThreshold", config.getPendingKeyThreshold()));
         config.setPendingMemoryMB(configuration.getInt("pendingMemoryMB", config.getPendingMemoryMB()));
         config.setOverflowPartitionCount(configuration.getInt("overflowPartitionCount", config.getOverflowPartitionCount()));
+        config.setRebalancePartitionMultiplier(configuration.getInt(
+                "rebalancePartitionMultiplier",
+                config.getRebalancePartitionMultiplier()
+        ));
         config.setOverflowSpillPath(configuration.getString("overflowSpillPath", config.getOverflowSpillPath()));
         config.setPreferOrderedQuery(configuration.getBool("preferOrderedQuery", true));
         config.setValidateSourceOrder(configuration.getBool("validateSourceOrder", true));

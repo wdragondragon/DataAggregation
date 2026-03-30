@@ -59,6 +59,7 @@ public class AdaptiveSortMergeFusionExecutor {
     public SortMergeStats execute(RecordSender recordSender) throws Exception {
         StreamExecutionOptions options = StreamExecutionOptions.fromFusionConfig(fusionConfig);
         AdaptiveMergeConfig adaptiveMergeConfig = fusionConfig.getAdaptiveMergeConfig();
+        options.setRebalancePartitionMultiplier(adaptiveMergeConfig.getRebalancePartitionMultiplier());
         SpillGuard spillGuard = new SpillGuard(
                 adaptiveMergeConfig.getMaxSpillBytes(),
                 adaptiveMergeConfig.getMinFreeDiskBytes()
@@ -79,13 +80,15 @@ public class AdaptiveSortMergeFusionExecutor {
         }
 
         OverflowBucketStore overflowBucketStore = null;
+        SortMergeStats returningStats = null;
         try {
             FusionPartitionProcessor processor = new FusionPartitionProcessor(fusionConfig, fusionContext, recordSender);
             AdaptiveMergeCoordinator coordinator = new AdaptiveMergeCoordinator(
                     adaptiveMergeConfig,
                     keySchema,
                     collectSourceOrder(),
-                    spillGuard
+                    spillGuard,
+                    options.isKeepTempFiles()
             );
             AdaptiveMergeCoordinator.Result result = coordinator.execute(cursors, (key, firstRowsBySource) -> {
                 updateIncrementalValues(firstRowsBySource);
@@ -99,11 +102,17 @@ public class AdaptiveSortMergeFusionExecutor {
                 processOverflowStore(overflowBucketStore, options, processor, spillGuard);
             }
             publishIncrementalValues();
-            result.getStats().setSpillBytes(spillGuard.getTotalReservedBytes());
-            return result.getStats();
+            returningStats = result.getStats();
+            returningStats.setSpillBytes(spillGuard.getTotalReservedBytes());
+            returningStats.setActiveSpillBytes(spillGuard.getActiveReservedBytes());
+            return returningStats;
         } finally {
             if (overflowBucketStore != null) {
                 overflowBucketStore.cleanup();
+            }
+            if (returningStats != null) {
+                returningStats.setSpillBytes(spillGuard.getTotalReservedBytes());
+                returningStats.setActiveSpillBytes(spillGuard.getActiveReservedBytes());
             }
         }
     }
@@ -120,17 +129,26 @@ public class AdaptiveSortMergeFusionExecutor {
             }
             // 这里的 partition 是 hash 桶顺序，不是全局 key 顺序；
             // 因此如果后续调整遍历策略，会直接影响 writer 侧最终看到的输出顺序。
-            processPartitionPath(spillStore.getPartitionPath(partition), options, processor, partition, 0, spillGuard);
+            processPartitionPath(
+                    spillStore.getPartitionPath(partition),
+                    options,
+                    processor,
+                    spillStore.getPartitionCount(),
+                    partition,
+                    0,
+                    spillGuard
+            );
         }
     }
 
     private void processPartitionPath(Path partitionPath,
                                       StreamExecutionOptions options,
                                       FusionPartitionProcessor processor,
+                                      int currentPartitionCount,
                                       int partition,
                                       int depth,
                                       SpillGuard spillGuard) throws IOException {
-        Map<String, LinkedHashMap<String, Map<String, Object>>> groups = new LinkedHashMap<String, LinkedHashMap<String, Map<String, Object>>>();
+        Map<String, LinkedHashMap<String, Map<String, Object>>> groups = new LinkedHashMap<>();
         PartitionedSpillStore rebalanceStore = null;
 
         try (PartitionReader reader = new PartitionReader(partitionPath)) {
@@ -142,18 +160,15 @@ public class AdaptiveSortMergeFusionExecutor {
                     rebalanceHolder[0].append(row);
                     return;
                 }
-                LinkedHashMap<String, Map<String, Object>> sourceRows = groups.get(row.getKey());
-                if (sourceRows == null) {
-                    sourceRows = new LinkedHashMap<String, Map<String, Object>>();
-                    groups.put(row.getKey(), sourceRows);
-                }
+                LinkedHashMap<String, Map<String, Object>> sourceRows = groups.computeIfAbsent(row.getKey(), k -> new LinkedHashMap<>());
                 sourceRows.putIfAbsent(row.getSourceId(), row.getRow());
 
                 if (groups.size() > options.getMaxKeysPerPartition() && depth < MAX_REBALANCE_DEPTH) {
+                    int childPartitionCount = options.getRebalancePartitionCount(currentPartitionCount);
                     rebalanceHolder[0] = new PartitionedSpillStore(
                             "fusion-sortmerge-overflow-p" + partition + "-d" + depth,
                             options.getSpillPath(),
-                            Math.max(4, options.getPartitionCount()),
+                            childPartitionCount,
                             false,
                             spillGuard
                     );
@@ -171,6 +186,8 @@ public class AdaptiveSortMergeFusionExecutor {
             rebalanceStore = rebalanceHolder[0];
         }
 
+        PartitionedSpillStore.cleanupConsumedPartition(partitionPath, options.isKeepTempFiles(), spillGuard);
+
         if (rebalanceStore != null) {
             rebalanceStore.close();
             try {
@@ -182,6 +199,7 @@ public class AdaptiveSortMergeFusionExecutor {
                             rebalanceStore.getPartitionPath(childPartition),
                             options,
                             processor,
+                            rebalanceStore.getPartitionCount(),
                             childPartition,
                             depth + 1,
                             spillGuard
@@ -198,7 +216,7 @@ public class AdaptiveSortMergeFusionExecutor {
     }
 
     private List<DataSourceConfig> convertToDataSourceConfigs() {
-        List<DataSourceConfig> configs = new ArrayList<DataSourceConfig>();
+        List<DataSourceConfig> configs = new ArrayList<>();
         for (SourceConfig source : fusionConfig.getSources()) {
             DataSourceConfig dataSourceConfig = new DataSourceConfig();
             dataSourceConfig.setSourceId(source.getSourceId());

@@ -124,6 +124,7 @@ public class StreamingConsistencyExecutor {
                         rule,
                         sourceOrder,
                         processor,
+                        spillStore.getPartitionCount(),
                         partition,
                         0
                 );
@@ -190,6 +191,7 @@ public class StreamingConsistencyExecutor {
                                                         ConsistencyRule rule,
                                                         List<String> sourceOrder,
                                                         ConsistencyPartitionProcessor processor,
+                                                        int currentPartitionCount,
                                                         int partition,
                                                         int depth) throws IOException {
         Map<String, LinkedHashMap<String, Map<String, Object>>> groups = new LinkedHashMap<>();
@@ -213,10 +215,11 @@ public class StreamingConsistencyExecutor {
                 }
 
                 if (groups.size() > options.getMaxKeysPerPartition() && depth < MAX_REBALANCE_DEPTH) {
+                    int childPartitionCount = options.getRebalancePartitionCount(currentPartitionCount);
                     PartitionedSpillStore childStore = new PartitionedSpillStore(
                             sanitizeJobId(rule.getRuleId()) + "-p" + partition + "-d" + depth,
                             options.getSpillPath(),
-                            Math.max(4, options.getPartitionCount()),
+                            childPartitionCount,
                             options.isKeepTempFiles()
                     );
                     rebalanceStoreHolder[0] = childStore;
@@ -235,6 +238,8 @@ public class StreamingConsistencyExecutor {
             resultDuplicateSummary(processor, duplicateCount);
         }
 
+        PartitionedSpillStore.cleanupConsumedPartition(partitionPath, options.isKeepTempFiles(), null);
+
         PartitionedSpillStore rebalanceStore = rebalanceStoreHolder[0];
         if (rebalanceStore != null) {
             rebalanceStore.close();
@@ -250,6 +255,7 @@ public class StreamingConsistencyExecutor {
                             rule,
                             sourceOrder,
                             processor,
+                            rebalanceStore.getPartitionCount(),
                             childPartition,
                             depth + 1
                     ));

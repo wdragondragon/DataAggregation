@@ -6,6 +6,8 @@
 ## 目标文件
 - `core/src/test/java/com/jdragon/aggregation/core/sortmerge/AdaptiveMergeCoordinatorTest.java`
 - `core/src/test/java/com/jdragon/aggregation/core/streaming/SpillGuardTest.java`
+- `core/src/test/java/com/jdragon/aggregation/core/streaming/StreamExecutionOptionsTest.java`
+- `core/src/test/java/com/jdragon/aggregation/core/streaming/PartitionedSpillStoreTest.java`
 - `core/src/main/java/com/jdragon/aggregation/core/sortmerge/SortMergeStats.java`
 - `core/src/main/java/com/jdragon/aggregation/core/consistency/service/AdaptiveSortMergeConsistencyExecutor.java`
 - `data-mock/src/test/java/com/jdragon/aggregation/datamock/sortmerge/*`
@@ -25,6 +27,7 @@
   - `localReorderedGroupCount`
   - `orderRecoveryCount`
   - `spillBytes`
+  - `activeSpillBytes`
   - `spillGuardTriggered`
   - `spillGuardReason`
 
@@ -54,6 +57,14 @@
 - 2026-03-30：core 层针对性验证已完成。
   - 执行 `AdaptiveMergeCoordinatorTest` 与 `SpillGuardTest`
   - 结果：`AdaptiveMergeCoordinatorTest` 7 个测试通过，`SpillGuardTest` 3 个测试通过，总计 10 个测试全部通过。
+- 2026-03-30：后续补充验证已覆盖 rebalance 倍率与 eager cleanup。
+  - 执行：`AdaptiveMergeCoordinatorTest`、`SpillGuardTest`、`StreamExecutionOptionsTest`、`PartitionedSpillStoreTest`
+  - 结果：7 + 5 + 4 + 3，共 19 个测试通过
+  - 新覆盖点：
+    - `rebalancePartitionMultiplier` 按当前父分区数放大 child 分区
+    - 热点父桶在更大 child 分区下可重新分散
+    - consumed partition 文件可在读取完成后删除
+    - eager cleanup 会同步释放 `activeSpillBytes`
 - 2026-03-30：`data-mock` 集成层本轮未扩跑。当前 core 层语义已覆盖：
   - source 侧局部乱序缓冲
   - `RECOVER_LOCAL`
@@ -70,3 +81,27 @@
   - 在 MySQL integration test 中新增“小 spill 配额触发快速失败”场景
   - 最后按可运行范围补跑 core 与 data-mock 的针对性测试
 - 2026-03-30：根据当前会话约束，本批次只完成代码与交接文档更新，不执行新的 MySQL 验证。
+- 2026-03-30：当前机器已补跑 MySQL integration 验证。
+  - 执行 `mvn -q -pl data-mock -am "-Dtest=AdaptiveSortMergeMysqlIntegrationTest" test -DfailIfNoTests=false`
+  - 结果：3 个场景全部通过
+  - 已验证：
+    - 默认小样本场景
+    - 稀疏局部倒退但不应过早进入 bucket
+    - spill guard 小配额快速失败
+- 2026-03-30：当前机器已补跑 benchmark 小 / 中 / 定向场景，并生成报告：
+  - `validation-reports/part3/07-benchmark-and-validation-20260330.md`
+  - 已完成：
+    - `mysql_small`
+    - `mysql_medium`
+    - `mysql_sparse_local_disorder`
+    - `mysql_small_spill_guard`
+- 2026-03-30：`mysql_large` 在本轮重新扩跑时暴露出新的长尾风险。
+  - full benchmark 进入 `mysql_large` 后，超过 55 分钟仍未自然结束
+  - 当前已确认它会持续写出 `consistency-overflow` 分区文件
+  - 本轮据此将其记录为新的性能问题，不在同一批次继续修改 sortmerge 核心算法
+- 2026-03-30：随后又补跑了一次 `mysql_large` 单场景，用于缩小问题范围。
+  - 命令：`mvn -q -pl data-mock -am -DrunSortMergeMysqlBenchmarks=true "-DsortMergeScenario=mysql_large" "-DsortMergeReportDir=target/part3-report/mysql_large" "-Dtest=AdaptiveSortMergeMysqlBenchmarkTest" test -DfailIfNoTests=false`
+  - 现象：`aggregation-10_05_05.254.log` 在 `10:06:38` 后不再追加，但 `consistency-overflow` 在 `11:36:08 ~ 11:36:09` 仍持续写出 8 个约 `42.4 MB` 的分区文件
+  - 同时 `consistency-spill/consistency-differences-*.spill` 增长到约 `4.0 MB`
+  - 90 分钟窗口内仍未自然结束，且目录下没有出现 fusion 阶段产物
+  - 结论：当前机器上的长尾问题更像是 consistency 阶段 overflow / spill 回放过慢，而不是 benchmark 主流程完全无动作

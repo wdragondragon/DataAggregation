@@ -28,7 +28,6 @@ public class SourceConfig {
     private int priority = 0;              // 优先级：用于优先级融合，数值越大优先级越高
     private double confidence = 1.0;       // 置信度：用于高可信度策略
 
-    private boolean isPrimary = false;     // 是否为主数据源（驱动源）
     private Integer maxRecords;            // 最大记录数限制（可选）
 
     private String incrColumn;
@@ -57,8 +56,6 @@ public class SourceConfig {
         sourceConfig.setWeight(config.getDouble("weight", 1.0));
         sourceConfig.setPriority(config.getInt("priority", 0));
         sourceConfig.setConfidence(config.getDouble("confidence", 1.0));
-
-        sourceConfig.setPrimary(config.getBool("isPrimary", false));
 
         if (config.get("maxRecords") != null) {
             sourceConfig.setMaxRecords(config.getInt("maxRecords"));
