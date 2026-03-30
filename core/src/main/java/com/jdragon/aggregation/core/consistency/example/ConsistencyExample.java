@@ -17,32 +17,48 @@ public class ConsistencyExample {
     public static void main(String[] args) {
         log.info("Starting Data Consistency Example");
 
-        DataConsistencyService service = new DataConsistencyService("./consistency-results");
-
         try {
             ConsistencyRule rule = createSampleRule();
-            service.addRule(rule);
-
-            log.info("Executing consistency rule: {}", rule.getRuleName());
-            ComparisonResult result = service.executeRule(rule.getRuleId());
-
-            log.info("Execution completed. Status: {}", result.getStatus());
-            log.info("Total Records: {}", result.getTotalRecords());
-            log.info("Consistent Records: {}", result.getConsistentRecords());
-            log.info("Inconsistent Records: {}", result.getInconsistentRecords());
-            log.info("Resolved Records: {}", result.getResolvedRecords());
-
-            if (result.getReportPath() != null) {
-                log.info("Report generated: {}", result.getReportPath());
-            }
+            logResult(executeRule(rule, "./consistency-results"));
 
         } catch (Exception e) {
             log.error("Error during consistency check", e);
-        } finally {
-            service.shutdown();
         }
 
         log.info("Example completed");
+    }
+
+    public static ComparisonResult executeRule(ConsistencyRule rule, String outputDirectory) {
+        DataConsistencyService service = new DataConsistencyService(outputDirectory);
+        try {
+            service.addRule(rule);
+            log.info("Executing consistency rule: {}", rule.getRuleName());
+            return service.executeRule(rule.getRuleId());
+        } finally {
+            service.shutdown();
+        }
+    }
+
+    public static void logResult(ComparisonResult result) {
+        if (result == null) {
+            log.warn("Consistency result is null");
+            return;
+        }
+        log.info("Execution completed. Status: {}", result.getStatus());
+        log.info("Total Records: {}", result.getTotalRecords());
+        log.info("Consistent Records: {}", result.getConsistentRecords());
+        log.info("Inconsistent Records: {}", result.getInconsistentRecords());
+        log.info("Resolved Records: {}", result.getResolvedRecords());
+        if (result.getUpdateResult() != null) {
+            log.info("Update Summary: inserts={}, updates={}, deletes={}, skips={}",
+                    result.getUpdateResult().getInsertCount(),
+                    result.getUpdateResult().getUpdateCount(),
+                    result.getUpdateResult().getDeleteCount(),
+                    result.getUpdateResult().getSkipCount());
+        }
+        if (result.getReportPath() != null) {
+            log.info("Report generated: {}", result.getReportPath());
+        }
     }
 
     private static ConsistencyRule createSampleRule() {

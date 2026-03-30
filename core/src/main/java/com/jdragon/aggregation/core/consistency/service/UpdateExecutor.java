@@ -6,8 +6,12 @@ import com.jdragon.aggregation.datasource.AbstractDataSourcePlugin;
 import com.jdragon.aggregation.commons.pagination.Table;
 import lombok.extern.slf4j.Slf4j;
 
+import java.sql.Time;
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -16,6 +20,10 @@ import java.util.Set;
 
 @Slf4j
 public class UpdateExecutor {
+
+    private static final String DATE_PATTERN = "yyyy-MM-dd";
+    private static final String TIME_PATTERN = "HH:mm:ss";
+    private static final String DATETIME_PATTERN = "yyyy-MM-dd HH:mm:ss";
     
     enum OperationType {
         INSERT,
@@ -587,6 +595,18 @@ public class UpdateExecutor {
 
         if (value instanceof Number || value instanceof Boolean) {
             return value.toString();
+        }
+
+        if (value instanceof java.sql.Date) {
+            return "'" + new SimpleDateFormat(DATE_PATTERN).format((java.sql.Date) value) + "'";
+        }
+
+        if (value instanceof Time) {
+            return "'" + new SimpleDateFormat(TIME_PATTERN).format((Time) value) + "'";
+        }
+
+        if (value instanceof Timestamp || value instanceof Date) {
+            return "'" + new SimpleDateFormat(DATETIME_PATTERN).format((Date) value) + "'";
         }
 
         // For other types, convert to string and escape
