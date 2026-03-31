@@ -1,0 +1,63 @@
+{
+  "reader": {
+    "type": "influxdbv1",
+    "config": {
+      "connect": {
+        "type": "influxdbv1",
+        "host": "http://192.168.43.161:8087",
+        "database": "mydb",
+        "userName": "admin",
+        "password": "zhjl951753"
+      },
+      "measurement": "cpu_load_v2",
+      "columns": [
+        "host",
+        "address",
+        "region",
+        "time",
+        "value"
+      ],
+      "selectSql": "",
+      "startTime": "2025-05-30 14:12:00",
+      "endTime": "2025-05-30 14:23:00",
+      "windowSizeMs": "3600000"
+    }
+  },
+  "writer": {
+    "type": "influxdbv1",
+    "config": {
+      "connect": {
+        "type": "influxdbv1",
+        "host": "http://192.168.43.161:8087",
+        "database": "mydb",
+        "userName": "admin",
+        "password": "zhjl951753"
+      },
+      "measurement": "cpu_load_v3",
+      "columns": [
+        {
+          "name": "host",
+          "type": "tag"
+        },
+        {
+          "name": "address",
+          "type": "tag"
+        },
+        {
+          "name": "region",
+          "type": "tag"
+        },
+        {
+          "name": "time",
+          "type": "time"
+        },
+        {
+          "name": "value",
+          "type": "field"
+        }
+      ]
+    }
+  },
+  "transformer": [
+  ]
+}

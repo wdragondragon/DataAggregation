@@ -2,35 +2,29 @@ package com.jdragon.aggregation.core.sortmerge;
 
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.consistency.model.DataSourceConfig;
-import com.jdragon.aggregation.core.streaming.RowCodec;
 import com.jdragon.aggregation.core.streaming.SourceRowScanner;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
 import java.util.concurrent.LinkedBlockingQueue;
 
 /**
- * Streams one source in ordered-group form.
+ * Streams one source in grouped form.
  *
- * <p>The cursor collapses consecutive rows with the same key into an
- * {@link OrderedKeyGroup}. When local disorder buffering is enabled, those
- * groups first pass through a bounded source-side reorder buffer so that small
- * local key regressions can be absorbed before they reach the coordinator.
+ * <p>The cursor only collapses consecutive rows with the same key into an
+ * {@link OrderedKeyGroup}. It may still request an ordered upstream query to
+ * reduce pending-window pressure, but it no longer performs local reorder
+ * buffering or source-side disorder recovery.
  */
 @Slf4j
 public class OrderedSourceCursor {
 
-    /**
-     * Event exchanged between the producer thread and the merge coordinator.
-     */
     @Getter
     public static class CursorEvent {
         private final String sourceId;
@@ -61,8 +55,6 @@ public class OrderedSourceCursor {
     private final String sourceId;
     private final DataSourceConfig dataSourceConfig;
     private final SourceRowScanner rowScanner;
-    private final OrderedKeySchema keySchema;
-    private final AdaptiveMergeConfig adaptiveMergeConfig;
     private final List<String> keyFields;
     private final LinkedBlockingQueue<CursorEvent> queue = new LinkedBlockingQueue<CursorEvent>(4);
     private final boolean preferOrderedQuery;
@@ -71,10 +63,6 @@ public class OrderedSourceCursor {
     private volatile long scannedRecords;
     @Getter
     private volatile long producedGroups;
-    @Getter
-    private volatile long localReorderedGroupCount;
-    @Getter
-    private volatile long localMergedDuplicateGroupCount;
     @Getter
     @Setter
     private volatile boolean finished;
@@ -86,28 +74,8 @@ public class OrderedSourceCursor {
                                DataSourceConfig dataSourceConfig,
                                List<String> keyFields,
                                boolean preferOrderedQuery) {
-        this(
-                rowScanner,
-                dataSourceConfig,
-                new OrderedKeySchema(keyFields, Collections.<String, OrderedKeyType>emptyMap()),
-                keyFields,
-                preferOrderedQuery,
-                disabledLocalDisorderConfig()
-        );
-    }
-
-    public OrderedSourceCursor(SourceRowScanner rowScanner,
-                               DataSourceConfig dataSourceConfig,
-                               OrderedKeySchema keySchema,
-                               List<String> keyFields,
-                               boolean preferOrderedQuery,
-                               AdaptiveMergeConfig adaptiveMergeConfig) {
         this.rowScanner = rowScanner;
         this.dataSourceConfig = dataSourceConfig;
-        this.keySchema = keySchema != null
-                ? keySchema
-                : new OrderedKeySchema(keyFields, Collections.<String, OrderedKeyType>emptyMap());
-        this.adaptiveMergeConfig = adaptiveMergeConfig != null ? adaptiveMergeConfig : disabledLocalDisorderConfig();
         this.keyFields = keyFields != null ? new ArrayList<String>(keyFields) : new ArrayList<String>();
         this.sourceId = dataSourceConfig.getSourceId();
         this.preferOrderedQuery = preferOrderedQuery;
@@ -135,15 +103,13 @@ public class OrderedSourceCursor {
     }
 
     private void produceGroups() {
-        final LocalDisorderBuffer disorderBuffer = new LocalDisorderBuffer();
-        final GroupAccumulator accumulator = new GroupAccumulator(disorderBuffer);
+        final GroupAccumulator accumulator = new GroupAccumulator();
         try {
             rowScanner.scan(buildScanConfig(), row -> {
                 scannedRecords++;
                 accumulator.accept(row);
             });
             accumulator.flush();
-            disorderBuffer.flush();
             queue.put(CursorEvent.end(sourceId));
         } catch (Throwable throwable) {
             try {
@@ -226,86 +192,21 @@ public class OrderedSourceCursor {
                 || lowerName.equals("localfile");
     }
 
-    private int compareKeys(OrderedKey left, OrderedKey right) {
-        if (left == right) {
-            return 0;
-        }
-        if (left == null) {
-            return -1;
-        }
-        if (right == null) {
-            return 1;
-        }
-        return keySchema.compare(left, right);
-    }
-
-    private boolean localDisorderEnabled() {
-        return adaptiveMergeConfig != null && adaptiveMergeConfig.isLocalDisorderEnabled();
-    }
-
-    private long localDisorderMaxMemoryBytes() {
-        return adaptiveMergeConfig != null
-                ? Math.max(1L, adaptiveMergeConfig.getLocalDisorderMaxMemoryBytes())
-                : 1L;
-    }
-
-    private int localDisorderMaxGroups() {
-        return adaptiveMergeConfig != null
-                ? Math.max(1, adaptiveMergeConfig.getLocalDisorderMaxGroups())
-                : 1;
-    }
-
-    private long estimateGroupBytes(OrderedKeyGroup group) {
-        int rowBytes = RowCodec.encode(group.getFirstRow()).getBytes(StandardCharsets.UTF_8).length;
-        int keyBytes = group.getKey() != null
-                ? group.getKey().getEncoded().getBytes(StandardCharsets.UTF_8).length
-                : 0;
-        return rowBytes + keyBytes + 128L;
-    }
-
-    private OrderedKeyGroup copyGroup(OrderedKeyGroup group) {
-        OrderedKeyGroup copy = new OrderedKeyGroup();
-        copy.setSourceId(group.getSourceId());
-        copy.setKey(group.getKey());
-        copy.setFirstRow(group.getFirstRow() != null
-                ? new LinkedHashMap<String, Object>(group.getFirstRow())
-                : new LinkedHashMap<String, Object>());
-        copy.setDuplicateCount(group.getDuplicateCount());
-        copy.setScannedRecords(group.getScannedRecords());
-        return copy;
-    }
-
-    private int toDuplicateCount(long scannedRecords) {
-        long duplicates = Math.max(0L, scannedRecords - 1L);
-        return duplicates > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) duplicates;
-    }
-
     private void publishGroup(OrderedKeyGroup group) {
         producedGroups++;
         try {
             queue.put(CursorEvent.group(sourceId, group));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("Interrupted while publishing ordered group", e);
+            throw new RuntimeException("Interrupted while publishing grouped source rows", e);
         }
     }
 
-    private static AdaptiveMergeConfig disabledLocalDisorderConfig() {
-        AdaptiveMergeConfig config = new AdaptiveMergeConfig();
-        config.setLocalDisorderEnabled(false);
-        return config;
-    }
-
     private class GroupAccumulator {
-        private final LocalDisorderBuffer disorderBuffer;
         private OrderedKey currentKey;
         private Map<String, Object> firstRow;
         private int duplicateCount;
         private long groupRecords;
-
-        private GroupAccumulator(LocalDisorderBuffer disorderBuffer) {
-            this.disorderBuffer = disorderBuffer;
-        }
 
         void accept(Map<String, Object> row) {
             OrderedKey rowKey = OrderedKey.fromRow(row, keyFields);
@@ -348,77 +249,7 @@ public class OrderedSourceCursor {
                     : new LinkedHashMap<String, Object>());
             group.setDuplicateCount(duplicateCount);
             group.setScannedRecords(groupRecords);
-            disorderBuffer.accept(group);
-        }
-    }
-
-    private class LocalDisorderBuffer {
-        private final TreeMap<OrderedKey, BufferedGroup> bufferedGroups =
-                new TreeMap<OrderedKey, BufferedGroup>((left, right) -> compareKeys(left, right));
-        private OrderedKey lastObservedKey;
-        private long estimatedBytes;
-
-        void accept(OrderedKeyGroup group) {
-            if (!localDisorderEnabled()) {
-                publishGroup(group);
-                return;
-            }
-            if (lastObservedKey != null && compareKeys(group.getKey(), lastObservedKey) < 0) {
-                localReorderedGroupCount++;
-            }
-            lastObservedKey = group.getKey();
-
-            BufferedGroup existing = bufferedGroups.get(group.getKey());
-            if (existing == null) {
-                OrderedKeyGroup copied = copyGroup(group);
-                long bytes = estimateGroupBytes(copied);
-                bufferedGroups.put(copied.getKey(), new BufferedGroup(copied, bytes));
-                estimatedBytes += bytes;
-            } else {
-                estimatedBytes -= existing.estimatedBytes;
-                long totalScannedRecords = existing.group.getScannedRecords() + group.getScannedRecords();
-                existing.group.setScannedRecords(totalScannedRecords);
-                existing.group.setDuplicateCount(toDuplicateCount(totalScannedRecords));
-                existing.estimatedBytes = estimateGroupBytes(existing.group);
-                estimatedBytes += existing.estimatedBytes;
-                localMergedDuplicateGroupCount++;
-            }
-
-            releaseOverflowIfNeeded();
-        }
-
-        void flush() {
-//            log.info("{},队列剩余：{}", dataSourceConfig.getSourceId(), bufferedGroups.size());
-            while (!bufferedGroups.isEmpty()) {
-                releaseSmallest();
-            }
-        }
-
-        private void releaseOverflowIfNeeded() {
-            while (bufferedGroups.size() > localDisorderMaxGroups()
-                    || estimatedBytes > localDisorderMaxMemoryBytes()) {
-                releaseSmallest();
-            }
-        }
-
-        private void releaseSmallest() {
-            Map.Entry<OrderedKey, BufferedGroup> firstEntry = bufferedGroups.firstEntry();
-            if (firstEntry == null) {
-                return;
-            }
-            bufferedGroups.remove(firstEntry.getKey());
-            estimatedBytes -= firstEntry.getValue().estimatedBytes;
-            publishGroup(firstEntry.getValue().group);
-        }
-    }
-
-    private static class BufferedGroup {
-        private final OrderedKeyGroup group;
-        private long estimatedBytes;
-
-        private BufferedGroup(OrderedKeyGroup group, long estimatedBytes) {
-            this.group = group;
-            this.estimatedBytes = estimatedBytes;
+            publishGroup(group);
         }
     }
 }

@@ -121,9 +121,6 @@
         "overflowPartitionCount": 10,
         "rebalancePartitionMultiplier": 4,
         "preferOrderedQuery": true,
-        "localDisorderEnabled": true,
-        "localDisorderMaxGroups": 3,
-        "localDisorderMaxMemoryMB": 64,
         "maxSpillBytesMB": 512,
         "minFreeDiskMB": 256
       },

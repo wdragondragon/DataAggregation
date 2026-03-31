@@ -112,10 +112,8 @@ public class AdaptiveSortMergeConsistencyExecutor {
             cursors.add(new OrderedSourceCursor(
                     rowScanner,
                     dataSourceConfig,
-                    keySchema,
                     rule.getMatchKeys(),
-                    adaptiveMergeConfig.isPreferOrderedQuery(),
-                    adaptiveMergeConfig
+                    adaptiveMergeConfig.isPreferOrderedQuery()
             ));
         }
 
@@ -130,7 +128,6 @@ public class AdaptiveSortMergeConsistencyExecutor {
         try {
             AdaptiveMergeCoordinator coordinator = new AdaptiveMergeCoordinator(
                     adaptiveMergeConfig,
-                    keySchema,
                     sourceOrder,
                     spillGuard,
                     options.isKeepTempFiles()
@@ -176,8 +173,10 @@ public class AdaptiveSortMergeConsistencyExecutor {
             result.getSummary().put("mergeResolvedKeyCount", stats.getMergeResolvedKeyCount());
             result.getSummary().put("mergeSpilledKeyCount", stats.getMergeSpilledKeyCount());
             result.getSummary().put("duplicateIgnoredCount", stats.getDuplicateIgnoredCount());
-            result.getSummary().put("localReorderedGroupCount", stats.getLocalReorderedGroupCount());
-            result.getSummary().put("orderRecoveryCount", stats.getOrderRecoveryCount());
+            result.getSummary().put("pendingPeakKeyCount", stats.getPendingPeakKeyCount());
+            result.getSummary().put("windowImmediateResolvedKeyCount", stats.getWindowImmediateResolvedKeyCount());
+            result.getSummary().put("windowEvictedKeyCount", stats.getWindowEvictedKeyCount());
+            result.getSummary().put("spillLateArrivalKeyCount", stats.getSpillLateArrivalKeyCount());
             if (stats.getFallbackReason() != null) {
                 result.getSummary().put("fallbackReason", stats.getFallbackReason());
             }

@@ -40,3 +40,4 @@
   - `AdaptiveMergeConfig.fromConfig(...)` 负责 sortmerge 新配置默认值
   - `AdaptiveSortMergeFusionExecutor` / `AdaptiveSortMergeConsistencyExecutor` 负责把 `keySchema` 与 `adaptiveMergeConfig` 传给 `OrderedSourceCursor`
   - `OrderedSourceCursor.GroupAccumulator.emitCurrent()` 将改为“先进入 `LocalDisorderBuffer`，再按上限释放最小 key”
+> 2026-03-31 注：该设计已淘汰。当前实现不再使用 `LocalDisorderBuffer`，而是由 pending window 按 key 合并并在超窗时整体 spill。本文仅保留为历史记录。

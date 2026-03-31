@@ -122,15 +122,9 @@
 | `adaptiveMerge.overflowPartitionCount` | int | `cache.partitionCount` | overflow 顶层分区数。 |
 | `adaptiveMerge.rebalancePartitionMultiplier` | int | `4` | overflow rebalance 的子分区倍率。 |
 | `adaptiveMerge.overflowSpillPath` | string | 无 | overflow 分区文件目录。 |
-| `adaptiveMerge.preferOrderedQuery` | boolean | `true` | 优先改写 source 查询为带 `ORDER BY`。 |
-| `adaptiveMerge.validateSourceOrder` | boolean | `true` | 是否检查 source 发布顺序。 |
-| `adaptiveMerge.localDisorderEnabled` | boolean | `true` | 启用 source 侧局部乱序缓冲。 |
-| `adaptiveMerge.localDisorderMaxGroups` | int | `min(1024, max(64, pendingKeyThreshold / 4))` | 本地乱序缓冲最大 group 数。 |
-| `adaptiveMerge.localDisorderMaxMemoryMB` | int | `max(16, pendingMemoryMB / 4)` | 本地乱序缓冲内存预算。 |
+| `adaptiveMerge.preferOrderedQuery` | boolean | `true` | 优先改写 source 查询为带 `ORDER BY`，用于降低 pending window 压力，不再作为正确性前提。 |
 | `adaptiveMerge.maxSpillBytesMB` | int | `512` | spill guard 最大累计写入预算。 |
 | `adaptiveMerge.minFreeDiskMB` | int | `256` | spill guard 最小剩余磁盘空间。 |
-| `adaptiveMerge.onOrderViolation` | enum | `RECOVER_LOCAL` | 顺序回退策略：`RECOVER_LOCAL` / `BUCKET` / `FAIL`。 |
-| `adaptiveMerge.onMemoryExceeded` | enum | `SPILL_OLDEST` | pending 内存超限策略：`SPILL_OLDEST` / `BUCKET`。 |
 | `adaptiveMerge.keyTypes.<field>` | map | 空 | 显式指定匹配键类型，值可为 `STRING` / `LONG` / `DOUBLE` / `DATE` / `AUTO` 等。 |
 
 ### 6. `detailConfig` 配置
@@ -331,13 +325,8 @@
         "overflowPartitionCount": 10,
         "rebalancePartitionMultiplier": 4,
         "preferOrderedQuery": true,
-        "localDisorderEnabled": true,
-        "localDisorderMaxGroups": 256,
-        "localDisorderMaxMemoryMB": 64,
         "maxSpillBytesMB": 512,
         "minFreeDiskMB": 256,
-        "onOrderViolation": "RECOVER_LOCAL",
-        "onMemoryExceeded": "SPILL_OLDEST",
         "keyTypes": {
           "user_id": "LONG"
         }
@@ -459,13 +448,8 @@
         "overflowPartitionCount": 16,
         "rebalancePartitionMultiplier": 4,
         "preferOrderedQuery": true,
-        "localDisorderEnabled": true,
-        "localDisorderMaxGroups": 256,
-        "localDisorderMaxMemoryMB": 64,
         "maxSpillBytesMB": 512,
         "minFreeDiskMB": 256,
-        "onOrderViolation": "RECOVER_LOCAL",
-        "onMemoryExceeded": "SPILL_OLDEST",
         "keyTypes": {
           "user_id": "LONG"
         }

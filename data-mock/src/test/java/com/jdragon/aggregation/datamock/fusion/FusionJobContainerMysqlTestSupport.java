@@ -580,13 +580,8 @@ final class FusionJobContainerMysqlTestSupport {
         config.set("reader.config.adaptiveMerge.overflowSpillPath",
                 scenario.getScenarioRoot().resolve("fusion_spill").toAbsolutePath().toString());
         config.set("reader.config.adaptiveMerge.preferOrderedQuery", options.isPreferOrderedQuery());
-        config.set("reader.config.adaptiveMerge.validateSourceOrder", options.isValidateSourceOrder());
-        config.set("reader.config.adaptiveMerge.localDisorderEnabled", options.isLocalDisorderEnabled());
-        config.set("reader.config.adaptiveMerge.localDisorderMaxGroups", options.getLocalDisorderMaxGroups());
-        config.set("reader.config.adaptiveMerge.localDisorderMaxMemoryMB", options.getLocalDisorderMaxMemoryMB());
         config.set("reader.config.adaptiveMerge.maxSpillBytesMB", options.getMaxSpillBytesMB());
         config.set("reader.config.adaptiveMerge.minFreeDiskMB", options.getMinFreeDiskMB());
-        config.set("reader.config.adaptiveMerge.onOrderViolation", options.getOnOrderViolation().name());
     }
 
     private static String buildSourceQuerySql(String tableName, List<String> columns) {
@@ -1329,15 +1324,9 @@ final class FusionJobContainerMysqlTestSupport {
         private int pendingMemoryMB = 256;
         private int overflowPartitionCount = 10;
         private boolean preferOrderedQuery = true;
-        private boolean validateSourceOrder = true;
-        private boolean localDisorderEnabled = true;
-        private int localDisorderMaxGroups = 256;
-        private int localDisorderMaxMemoryMB = 64;
         private int maxSpillBytesMB = 512;
         private int minFreeDiskMB = 256;
         private FusionConfig.JoinType joinType = FusionConfig.JoinType.LEFT;
-        private AdaptiveMergeConfig.OrderViolationAction onOrderViolation =
-                AdaptiveMergeConfig.OrderViolationAction.RECOVER_LOCAL;
         private final Map<String, SourceOrderPlan> sourceOrderPlans =
                 new LinkedHashMap<String, SourceOrderPlan>();
 
@@ -1385,26 +1374,6 @@ final class FusionJobContainerMysqlTestSupport {
             return this;
         }
 
-        ScenarioOptions withValidateSourceOrder(boolean validateSourceOrder) {
-            this.validateSourceOrder = validateSourceOrder;
-            return this;
-        }
-
-        ScenarioOptions withLocalDisorderEnabled(boolean localDisorderEnabled) {
-            this.localDisorderEnabled = localDisorderEnabled;
-            return this;
-        }
-
-        ScenarioOptions withLocalDisorderMaxGroups(int localDisorderMaxGroups) {
-            this.localDisorderMaxGroups = localDisorderMaxGroups;
-            return this;
-        }
-
-        ScenarioOptions withLocalDisorderMaxMemoryMB(int localDisorderMaxMemoryMB) {
-            this.localDisorderMaxMemoryMB = localDisorderMaxMemoryMB;
-            return this;
-        }
-
         ScenarioOptions withMaxSpillBytesMB(int maxSpillBytesMB) {
             this.maxSpillBytesMB = maxSpillBytesMB;
             return this;
@@ -1420,12 +1389,7 @@ final class FusionJobContainerMysqlTestSupport {
             return this;
         }
 
-        ScenarioOptions withOnOrderViolation(AdaptiveMergeConfig.OrderViolationAction onOrderViolation) {
-            this.onOrderViolation = onOrderViolation;
-            return this;
-        }
-
-        ScenarioOptions enableSparseLocalDisorder(String sourceId, int interval) {
+        ScenarioOptions enableSparseOutOfOrder(String sourceId, int interval) {
             this.sourceOrderPlans.put(sourceId, new SourceOrderPlan(SourceOrderPattern.SPARSE_ADJACENT_SWAP, interval));
             return this;
         }
@@ -1467,22 +1431,6 @@ final class FusionJobContainerMysqlTestSupport {
             return preferOrderedQuery;
         }
 
-        boolean isValidateSourceOrder() {
-            return validateSourceOrder;
-        }
-
-        boolean isLocalDisorderEnabled() {
-            return localDisorderEnabled;
-        }
-
-        int getLocalDisorderMaxGroups() {
-            return localDisorderMaxGroups;
-        }
-
-        int getLocalDisorderMaxMemoryMB() {
-            return localDisorderMaxMemoryMB;
-        }
-
         int getMaxSpillBytesMB() {
             return maxSpillBytesMB;
         }
@@ -1493,10 +1441,6 @@ final class FusionJobContainerMysqlTestSupport {
 
         FusionConfig.JoinType getJoinType() {
             return joinType;
-        }
-
-        AdaptiveMergeConfig.OrderViolationAction getOnOrderViolation() {
-            return onOrderViolation;
         }
 
         Map<String, SourceOrderPlan> getSourceOrderPlans() {

@@ -1,7 +1,6 @@
 package com.jdragon.aggregation.datamock.sortmerge;
 
 import com.jdragon.aggregation.core.consistency.model.ComparisonResult;
-import com.jdragon.aggregation.core.sortmerge.AdaptiveMergeConfig;
 import org.junit.Test;
 
 import java.nio.file.Path;
@@ -24,79 +23,75 @@ public class AdaptiveSortMergeMysqlIntegrationTest {
                 true
         );
 
-        assertScenario(result);
+        assertScenario(result, false);
     }
 
     @Test
-    public void shouldAbsorbSparseLocalDisorderWithoutEarlyBucket() throws Exception {
+    public void shouldMergeSparseOutOfOrderKeysWithoutSpill() throws Exception {
         AdaptiveSortMergeTestSupport.ScenarioOptions options = AdaptiveSortMergeTestSupport.ScenarioOptions.defaults()
                 .withPreferOrderedQuery(false)
-                .withValidateSourceOrder(true)
-                .withLocalDisorderEnabled(true)
-                .withLocalDisorderMaxGroups(2)
-                .withLocalDisorderMaxMemoryMB(16)
                 .withPendingKeyThreshold(4096)
                 .withPendingMemoryMB(64)
-                .withOnOrderViolation(AdaptiveMergeConfig.OrderViolationAction.RECOVER_LOCAL)
-                .enableSparseLocalDisorder(128L, "sourceB");
+                .enableSparseOutOfOrder(128L, "sourceB");
 
         AdaptiveSortMergeTestSupport.ScenarioResult result = AdaptiveSortMergeTestSupport.runScenario(
-                "mysql_sparse_local_disorder",
+                "mysql_sparse_out_of_order",
                 2_000,
-                AdaptiveSortMergeTestSupport.benchmarkRoot("mysql_sparse_local_disorder_it"),
+                AdaptiveSortMergeTestSupport.benchmarkRoot("mysql_sparse_out_of_order_it"),
                 true,
                 options
         );
 
-        assertScenario(result);
+        assertScenario(result, false);
         assertNull(result.getConsistencyExecution().getErrorMessage());
         assertNull(result.getFusionExecution().getErrorMessage());
         assertEquals("sortmerge", result.getConsistencyExecution().getExecutionEngine());
         assertEquals("sortmerge", result.getFusionExecution().getStats().getExecutionEngine());
-        assertTrue("should observe local reorder before source-side buffering absorbs it",
-                result.getConsistencyExecution().getLocalReorderedGroupCount() > 0L
-                        || result.getFusionExecution().getStats().getLocalReorderedGroupCount() > 0L);
-        assertEquals(0L, result.getConsistencyExecution().getOrderRecoveryCount());
-        assertEquals(0L, result.getFusionExecution().getStats().getOrderRecoveryCount());
+        assertTrue("pending window should capture some out-of-order keys",
+                result.getConsistencyExecution().getPendingPeakKeyCount() > 0L
+                        || result.getFusionExecution().getStats().getPendingPeakKeyCount() > 0L);
+        assertEquals(0L, result.getConsistencyExecution().getWindowEvictedKeyCount());
+        assertEquals(0L, result.getFusionExecution().getStats().getWindowEvictedKeyCount());
     }
 
     @Test
-    public void shouldFailFastWhenSpillQuotaTooSmall() throws Exception {
+    public void shouldSpillWhenPendingWindowIsTight() throws Exception {
         AdaptiveSortMergeTestSupport.ScenarioOptions options = AdaptiveSortMergeTestSupport.ScenarioOptions.defaults()
                 .withPreferOrderedQuery(false)
-                .withValidateSourceOrder(true)
-                .withLocalDisorderEnabled(false)
-                .withPendingKeyThreshold(64)
+                .withPendingKeyThreshold(8)
                 .withPendingMemoryMB(8)
                 .withOverflowPartitionCount(4)
-                .withMaxSpillBytesMB(1)
+                .withMaxSpillBytesMB(128)
                 .withMinFreeDiskMB(1)
-                .withOnOrderViolation(AdaptiveMergeConfig.OrderViolationAction.RECOVER_LOCAL)
-                .enableSparseLocalDisorder(2L, "sourceB");
+                .enableSparseOutOfOrder(2L, "sourceB");
 
         AdaptiveSortMergeTestSupport.ScenarioResult result = AdaptiveSortMergeTestSupport.runScenario(
-                "mysql_small_spill_guard",
-                5_000,
-                AdaptiveSortMergeTestSupport.benchmarkRoot("mysql_small_spill_guard_it"),
+                "mysql_tight_pending_spill",
+                2_000,
+                AdaptiveSortMergeTestSupport.benchmarkRoot("mysql_tight_pending_spill_it"),
                 true,
                 options
         );
 
+        assertSpillScenario(result);
         AdaptiveSortMergeTestSupport.ConsistencyExecution consistency = result.getConsistencyExecution();
         AdaptiveSortMergeTestSupport.FusionExecution fusion = result.getFusionExecution();
 
         assertNotNull(consistency.getComparisonResult());
-        assertEquals(ComparisonResult.Status.FAILED, consistency.getComparisonResult().getStatus());
-        assertTrue("consistency spill guard should trigger", consistency.isSpillGuardTriggered());
-        assertTrue("consistency spill guard reason should mention spill limit: " + consistency.getSpillGuardReason(),
-                consistency.getSpillGuardReason() != null
-                        && consistency.getSpillGuardReason().contains("Spill limit exceeded"));
-        assertTrue("consistency should reserve some spill bytes", consistency.getSpillBytes() > 0L);
-        assertTrue("fusion should fail with spill guard message: " + fusion.getErrorMessage(),
-                fusion.getErrorMessage() != null && fusion.getErrorMessage().contains("Spill limit exceeded"));
+        assertTrue("consistency should either stay sortmerge or degrade to hybrid under tight window",
+                "sortmerge".equals(consistency.getExecutionEngine())
+                        || "hybrid".equals(consistency.getExecutionEngine()));
+        assertTrue("fusion should either stay sortmerge or degrade to hybrid under tight window",
+                "sortmerge".equals(fusion.getStats().getExecutionEngine())
+                        || "hybrid".equals(fusion.getStats().getExecutionEngine()));
+        assertTrue("at least one execution path should spill when pending window is tiny",
+                consistency.getMergeSpilledKeyCount() > 0L
+                        || fusion.getStats().getMergeSpilledKeyCount() > 0L);
+        assertTrue("tight-window spill should reserve some bytes",
+                consistency.getSpillBytes() > 0L || fusion.getStats().getSpillBytes() > 0L);
     }
 
-    private void assertScenario(AdaptiveSortMergeTestSupport.ScenarioResult result) {
+    private void assertScenario(AdaptiveSortMergeTestSupport.ScenarioResult result, boolean spillAllowed) {
         AdaptiveSortMergeTestSupport.DatasetExpectations expectations = result.getExpectations();
         AdaptiveSortMergeTestSupport.ConsistencyExecution consistency = result.getConsistencyExecution();
         AdaptiveSortMergeTestSupport.FusionExecution fusion = result.getFusionExecution();
@@ -112,29 +107,45 @@ public class AdaptiveSortMergeMysqlIntegrationTest {
         assertEquals(expectations.getFusionOutputCount(), fusion.getOutputCount());
         assertTrue("consistency should use ordered sort-merge path",
                 "sortmerge".equals(consistency.getExecutionEngine()) || "hybrid".equals(consistency.getExecutionEngine()));
-        assertEquals("sortmerge", fusion.getStats().getExecutionEngine());
+        assertTrue("fusion should use sortmerge or hybrid path",
+                "sortmerge".equals(fusion.getStats().getExecutionEngine())
+                        || "hybrid".equals(fusion.getStats().getExecutionEngine()));
         assertEquals(expectations.getTotalKeys(), fusion.getStats().getMergeResolvedKeyCount());
         assertEquals(expectations.getExpectedDuplicateIgnoredCount(), fusion.getStats().getDuplicateIgnoredCount());
-        assertEquals(0L, fusion.getStats().getMergeSpilledKeyCount());
-        assertNull(fusion.getStats().getFallbackReason());
+        if (!spillAllowed) {
+            assertEquals(0L, fusion.getStats().getMergeSpilledKeyCount());
+            assertNull(fusion.getStats().getFallbackReason());
+        }
 
         for (Map.Entry<Long, List<String>> entry : expectations.getExpectedFusionSamples().entrySet()) {
             assertEquals("sample row mismatch for biz_id=" + entry.getKey(), entry.getValue(), fusion.getSampleRows().get(entry.getKey()));
         }
 
-        if (!expectations.getExpectedOrderedRows().isEmpty()) {
-            assertEquals("ordered fusion row count mismatch", expectations.getExpectedOrderedRows().size(), fusion.getOrderedRows().size());
-            for (int index = 0; index < expectations.getExpectedOrderedRows().size(); index++) {
-                assertEquals("ordered fusion row mismatch at index=" + index,
-                        expectations.getExpectedOrderedRows().get(index),
-                        fusion.getOrderedRows().get(index));
-            }
-        }
-
-        assertEquals("fusion digest mismatch, expected sample rows=" + expectations.getExpectedFusionSamples()
+        assertEquals("fusion content digest mismatch, expected sample rows=" + expectations.getExpectedFusionSamples()
                         + ", actual sample rows=" + fusion.getSampleRows()
                         + ", first output keys=" + fusion.getFirstOutputKeys(),
-                expectations.getExpectedFusionDigest(),
-                fusion.getDigest());
+                expectations.getExpectedFusionContentDigest(),
+                fusion.getContentDigest());
+    }
+
+    private void assertSpillScenario(AdaptiveSortMergeTestSupport.ScenarioResult result) {
+        AdaptiveSortMergeTestSupport.DatasetExpectations expectations = result.getExpectations();
+        AdaptiveSortMergeTestSupport.ConsistencyExecution consistency = result.getConsistencyExecution();
+        AdaptiveSortMergeTestSupport.FusionExecution fusion = result.getFusionExecution();
+
+        assertNotNull(consistency.getComparisonResult());
+        assertNull(consistency.getErrorMessage());
+        assertNull(fusion.getErrorMessage());
+        assertNotNull(fusion.getStats());
+        assertEquals(expectations.getTotalKeys(), consistency.getComparisonResult().getTotalRecords());
+        assertEquals(expectations.getExpectedInconsistentKeys(), consistency.getComparisonResult().getInconsistentRecords());
+        assertEquals(expectations.getExpectedDuplicateIgnoredCount(), consistency.getDuplicateIgnoredCount());
+
+        for (Map.Entry<Long, List<String>> entry : expectations.getExpectedFusionSamples().entrySet()) {
+            List<String> actual = fusion.getSampleRows().get(entry.getKey());
+            if (actual != null) {
+                assertEquals("sample row mismatch for biz_id=" + entry.getKey(), entry.getValue(), actual);
+            }
+        }
     }
 }

@@ -1,35 +1,42 @@
 package com.jdragon.aggregation.core.sortmerge;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.NavigableMap;
-import java.util.TreeMap;
 
 /**
- * 尚未可判定 key 的有序内存等待区。
+ * 按 key 聚合的等待窗口。
  *
- * <p>每个 entry 只保存“每个 source 的首条记录”和一个轻量级大小估算，不会持有完整
- * 的 source 流数据。某个 key 一旦可判定，或被溢写到桶中，对应内存即可立即释放。
+ * <p>窗口不再依赖“最小 key 可判定”，而是仅缓存每个 key 当前已到达的 source 首行。
+ * entry 使用首次出现顺序维护，窗口超限时优先溢写最早进入但仍未完成的 key。
  */
 public class PendingWindow {
 
-    /**
-     * 当前等待窗口中的一个未决 key。
-     */
     public static class PendingEntry {
         private final OrderedKey key;
-        private final Map<String, Map<String, Object>> firstRowsBySource = new LinkedHashMap<String, Map<String, Object>>();
+        private final String encodedKey;
+        private final long firstSeenSequence;
+        private final Map<String, Map<String, Object>> firstRowsBySource =
+                new LinkedHashMap<String, Map<String, Object>>();
         private long estimatedBytes;
 
-        PendingEntry(OrderedKey key) {
+        PendingEntry(OrderedKey key, long firstSeenSequence) {
             this.key = key;
+            this.encodedKey = key.getEncoded();
+            this.firstSeenSequence = firstSeenSequence;
         }
 
         public OrderedKey getKey() {
             return key;
+        }
+
+        public String getEncodedKey() {
+            return encodedKey;
+        }
+
+        public long getFirstSeenSequence() {
+            return firstSeenSequence;
         }
 
         public Map<String, Map<String, Object>> getFirstRowsBySource() {
@@ -48,42 +55,29 @@ public class PendingWindow {
         }
     }
 
-    private final NavigableMap<OrderedKey, PendingEntry> entries;
-    // 协调器直接用它决定何时 spill / 切 hybrid；它增长得越快，后续 key 越早改走 overflow。
+    private final LinkedHashMap<String, PendingEntry> entries = new LinkedHashMap<String, PendingEntry>();
     private long estimatedBytes;
-
-    public PendingWindow(final OrderedKeySchema schema) {
-        this.entries = new TreeMap<OrderedKey, PendingEntry>(new Comparator<OrderedKey>() {
-            @Override
-            public int compare(OrderedKey left, OrderedKey right) {
-                int result = schema.compare(left, right);
-                if (result != 0) {
-                    return result;
-                }
-                return left.getEncoded().compareTo(right.getEncoded());
-            }
-        });
-    }
+    private long sequenceGenerator;
 
     public PendingEntry add(OrderedKeyGroup group, long estimatedGroupBytes) {
-        PendingEntry entry = entries.get(group.getKey());
+        String encodedKey = group.getKey().getEncoded();
+        PendingEntry entry = entries.get(encodedKey);
         if (entry == null) {
-            entry = new PendingEntry(group.getKey());
-            entries.put(group.getKey(), entry);
+            entry = new PendingEntry(group.getKey(), ++sequenceGenerator);
+            entries.put(encodedKey, entry);
         }
         long before = entry.getEstimatedBytes();
         entry.add(group.getSourceId(), new LinkedHashMap<String, Object>(group.getFirstRow()), estimatedGroupBytes);
-        estimatedBytes += Math.max(0, entry.getEstimatedBytes() - before);
+        estimatedBytes += Math.max(0L, entry.getEstimatedBytes() - before);
         return entry;
     }
 
-    public PendingEntry firstEntry() {
-        Map.Entry<OrderedKey, PendingEntry> entry = entries.firstEntry();
-        return entry != null ? entry.getValue() : null;
+    public PendingEntry remove(OrderedKey key) {
+        return key == null ? null : remove(key.getEncoded());
     }
 
-    public PendingEntry remove(OrderedKey key) {
-        PendingEntry removed = entries.remove(key);
+    public PendingEntry remove(String encodedKey) {
+        PendingEntry removed = entries.remove(encodedKey);
         if (removed != null) {
             estimatedBytes -= removed.getEstimatedBytes();
         }
@@ -93,15 +87,18 @@ public class PendingWindow {
     public List<PendingEntry> removeOldestUntilBelow(long maxBytes, int maxKeys) {
         List<PendingEntry> removed = new ArrayList<PendingEntry>();
         while (!entries.isEmpty() && (estimatedBytes > maxBytes || entries.size() > maxKeys)) {
-            PendingEntry entry = firstEntry();
-            if (entry == null) {
+            Map.Entry<String, PendingEntry> oldest = entries.entrySet().iterator().next();
+            PendingEntry removedEntry = remove(oldest.getKey());
+            if (removedEntry == null) {
                 break;
             }
-            // 始终优先移除最小 key，这样保留下来的窗口仍然对应“更靠后的未决区间”，
-            // 调度线程可以继续基于当前扫描进度向前推进。
-            removed.add(remove(entry.getKey()));
+            removed.add(removedEntry);
         }
         return removed;
+    }
+
+    public List<PendingEntry> snapshotEntries() {
+        return new ArrayList<PendingEntry>(entries.values());
     }
 
     public boolean isEmpty() {

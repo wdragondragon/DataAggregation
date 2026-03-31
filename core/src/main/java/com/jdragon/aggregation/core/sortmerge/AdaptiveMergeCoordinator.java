@@ -4,17 +4,18 @@ import com.jdragon.aggregation.core.streaming.RowCodec;
 import com.jdragon.aggregation.core.streaming.SpillGuard;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * Shared coordinator for adaptive sort-merge execution.
+ * Shared coordinator for adaptive merge execution.
  *
- * <p>It consumes ordered key groups from multiple sources, keeps only unresolved
- * keys in memory, and spills unresolved prefixes to overflow when memory,
- * disorder, or routing rules require it.
+ * <p>It keeps one pending entry per key, merges source rows as they arrive, and
+ * emits groups immediately once all sources are present. Unfinished keys are
+ * bounded by the pending window and spill to overflow in first-seen order.
  */
 public class AdaptiveMergeCoordinator {
 
@@ -45,43 +46,36 @@ public class AdaptiveMergeCoordinator {
     }
 
     private final AdaptiveMergeConfig config;
-    private final OrderedKeySchema schema;
     private final List<String> sourceOrder;
-    private final PendingWindow pendingWindow;
+    private final PendingWindow pendingWindow = new PendingWindow();
     private final SpillGuard spillGuard;
     private final boolean keepTempFiles;
     private final SortMergeStats stats = new SortMergeStats();
-    private final Map<String, OrderedKey> maxObservedKeyBySource = new LinkedHashMap<String, OrderedKey>();
     private final Map<String, OrderedSourceCursor> cursorIndex = new LinkedHashMap<String, OrderedSourceCursor>();
+    private final Set<String> spilledEncodedKeys = new LinkedHashSet<String>();
+    private final Set<String> lateArrivalEncodedKeys = new LinkedHashSet<String>();
 
     private OverflowBucketStore overflowBucketStore;
-    private OrderedKey bucketUpperBound;
-    private boolean bucketMode;
 
     public AdaptiveMergeCoordinator(AdaptiveMergeConfig config,
-                                    OrderedKeySchema schema,
                                     List<String> sourceOrder) {
-        this(config, schema, sourceOrder, null, false);
+        this(config, sourceOrder, null, false);
     }
 
     public AdaptiveMergeCoordinator(AdaptiveMergeConfig config,
-                                    OrderedKeySchema schema,
                                     List<String> sourceOrder,
                                     SpillGuard spillGuard) {
-        this(config, schema, sourceOrder, spillGuard, false);
+        this(config, sourceOrder, spillGuard, false);
     }
 
     public AdaptiveMergeCoordinator(AdaptiveMergeConfig config,
-                                    OrderedKeySchema schema,
                                     List<String> sourceOrder,
                                     SpillGuard spillGuard,
                                     boolean keepTempFiles) {
         this.config = config;
-        this.schema = schema;
         this.sourceOrder = sourceOrder;
         this.spillGuard = spillGuard;
         this.keepTempFiles = keepTempFiles;
-        this.pendingWindow = new PendingWindow(schema);
     }
 
     public Result execute(List<OrderedSourceCursor> cursors, ResolvedGroupHandler handler) throws Exception {
@@ -92,9 +86,8 @@ public class AdaptiveMergeCoordinator {
 
         int cursorIndexHint = 0;
         while (true) {
-            boolean progressed = resolveReadyKeys(handler);
-
-            if (allCursorsFinished() && pendingWindow.isEmpty()) {
+            if (allCursorsFinished()) {
+                drainRemainingPending(handler);
                 break;
             }
 
@@ -112,31 +105,18 @@ public class AdaptiveMergeCoordinator {
             if (event == null) {
                 OrderedSourceCursor cursor = nextActiveCursor(cursors, cursorIndexHint);
                 if (cursor == null) {
-                    if (!resolveReadyKeys(handler)) {
-                        flushAllPendingToBucket();
-                        break;
-                    }
                     continue;
                 }
                 event = cursor.takeEvent();
                 cursorIndexHint = (cursors.indexOf(cursor) + 1) % Math.max(1, cursors.size());
             }
 
-            progressed = handleEvent(event, handler) || progressed;
-            if (!progressed && allCursorsFinished()) {
-                flushAllPendingToBucket();
-            }
+            handleEvent(event, handler);
         }
 
         for (OrderedSourceCursor cursor : cursors) {
             stats.getSourceRecordCounts().put(cursor.getSourceId(), cursor.getScannedRecords());
             stats.getSourceGroupCounts().put(cursor.getSourceId(), cursor.getProducedGroups());
-            stats.setLocalReorderedGroupCount(
-                    stats.getLocalReorderedGroupCount() + cursor.getLocalReorderedGroupCount()
-            );
-            stats.setLocalMergedDuplicateGroupCount(
-                    stats.getLocalMergedDuplicateGroupCount() + cursor.getLocalMergedDuplicateGroupCount()
-            );
         }
         if (overflowBucketStore != null) {
             overflowBucketStore.close();
@@ -144,194 +124,103 @@ public class AdaptiveMergeCoordinator {
         return new Result(stats, overflowBucketStore);
     }
 
-    private boolean handleEvent(OrderedSourceCursor.CursorEvent event, ResolvedGroupHandler handler) throws Exception {
+    private void handleEvent(OrderedSourceCursor.CursorEvent event, ResolvedGroupHandler handler) throws Exception {
         if (event == null) {
-            return false;
+            return;
         }
         if (event.getError() != null) {
-            throw new RuntimeException("Failed to scan ordered source: " + event.getSourceId(), event.getError());
+            throw new RuntimeException("Failed to scan source: " + event.getSourceId(), event.getError());
         }
         if (event.isEndOfStream()) {
             OrderedSourceCursor cursor = cursorIndex.get(event.getSourceId());
             if (cursor != null) {
                 cursor.setFinished(true);
             }
-            return resolveReadyKeys(handler);
+            return;
         }
 
         OrderedKeyGroup group = event.getGroup();
         stats.setDuplicateIgnoredCount(stats.getDuplicateIgnoredCount() + group.getDuplicateCount());
 
-        OrderedKey previousMax = maxObservedKeyBySource.get(group.getSourceId());
-        if (config.isValidateSourceOrder()
-                && previousMax != null
-                && schema.compare(group.getKey(), previousMax) < 0) {
-            String reason = "Detected out-of-order key for source " + group.getSourceId()
-                    + ", key=" + group.getKey().getEncoded()
-                    + ", previousMax=" + previousMax.getEncoded();
-            if (config.getOnOrderViolation() == AdaptiveMergeConfig.OrderViolationAction.FAIL) {
-                throw new IllegalStateException(reason);
+        String encodedKey = group.getKey().getEncoded();
+        if (spilledEncodedKeys.contains(encodedKey)) {
+            appendGroupToOverflow(group);
+            if (lateArrivalEncodedKeys.add(encodedKey)) {
+                stats.setSpillLateArrivalKeyCount(stats.getSpillLateArrivalKeyCount() + 1L);
             }
-            if (config.getOnOrderViolation() == AdaptiveMergeConfig.OrderViolationAction.BUCKET) {
-                switchToBucketMode(reason);
-            } else {
-                recoverLocalOrderViolation(group, previousMax, reason);
-                return resolveReadyKeys(handler);
-            }
+            return;
         }
 
-        updateMaxObservedKey(group.getSourceId(), group.getKey());
+        PendingWindow.PendingEntry entry = pendingWindow.add(group, estimateGroupBytes(group));
+        stats.setPendingPeakKeyCount(Math.max(stats.getPendingPeakKeyCount(), pendingWindow.size()));
 
-        if (bucketMode || shouldRouteDirectlyToBucket(group.getKey())) {
-            appendGroupToBucket(group);
-            return true;
+        if (isComplete(entry)) {
+            PendingWindow.PendingEntry resolved = pendingWindow.remove(encodedKey);
+            if (resolved != null) {
+                handler.handle(resolved.getKey(), copySourceRows(resolved.getFirstRowsBySource()));
+                stats.setMergeResolvedKeyCount(stats.getMergeResolvedKeyCount() + 1L);
+                stats.setWindowImmediateResolvedKeyCount(stats.getWindowImmediateResolvedKeyCount() + 1L);
+            }
+            return;
         }
 
-        pendingWindow.add(group, estimateGroupBytes(group));
         if (pendingWindow.size() > config.getPendingKeyThreshold()
                 || pendingWindow.getEstimatedBytes() > config.getPendingMemoryBytes()) {
-            if (config.getOnMemoryExceeded() == AdaptiveMergeConfig.MemoryExceededAction.BUCKET) {
-                switchToBucketMode("Pending window exceeded threshold");
-            } else {
-                spillOldestPending();
-                stats.setExecutionEngine("hybrid");
-            }
-        }
-        return resolveReadyKeys(handler);
-    }
-
-    private boolean resolveReadyKeys(ResolvedGroupHandler handler) throws Exception {
-        boolean resolved = false;
-        while (!pendingWindow.isEmpty()) {
-            PendingWindow.PendingEntry entry = pendingWindow.firstEntry();
-            if (entry == null || !isResolvable(entry)) {
-                break;
-            }
-            pendingWindow.remove(entry.getKey());
-            handler.handle(entry.getKey(), copySourceRows(entry.getFirstRowsBySource()));
-            stats.setMergeResolvedKeyCount(stats.getMergeResolvedKeyCount() + 1);
-            resolved = true;
-        }
-        return resolved;
-    }
-
-    private boolean isResolvable(PendingWindow.PendingEntry entry) {
-        for (String sourceId : sourceOrder) {
-            if (entry.getFirstRowsBySource().containsKey(sourceId)) {
-                continue;
-            }
-            OrderedSourceCursor cursor = cursorIndex.get(sourceId);
-            if (cursor == null || cursor.isFinished()) {
-                continue;
-            }
-            OrderedKey maxObservedKey = maxObservedKeyBySource.get(sourceId);
-            if (maxObservedKey != null && schema.compare(maxObservedKey, entry.getKey()) > 0) {
-                continue;
-            }
-            return false;
-        }
-        return true;
-    }
-
-    private void updateMaxObservedKey(String sourceId, OrderedKey key) {
-        OrderedKey current = maxObservedKeyBySource.get(sourceId);
-        if (current == null || schema.compare(key, current) > 0) {
-            maxObservedKeyBySource.put(sourceId, key);
-        } else if (current == null) {
-            maxObservedKeyBySource.put(sourceId, key);
+            spillOldestPending();
         }
     }
 
-    private void recoverLocalOrderViolation(OrderedKeyGroup group,
-                                            OrderedKey recoveryUpperBound,
-                                            String reason) {
-        ensureOverflowStore();
-        stats.setExecutionEngine("hybrid");
-        stats.setOrderRecoveryCount(stats.getOrderRecoveryCount() + 1);
-        if (stats.getFallbackReason() == null) {
-            stats.setFallbackReason(reason);
-        }
-        spillPendingUpTo(recoveryUpperBound);
-        appendGroupToBucket(group);
-        advanceBucketUpperBound(recoveryUpperBound);
-    }
-
-    private void spillPendingUpTo(OrderedKey upperBound) {
-        while (!pendingWindow.isEmpty()) {
-            PendingWindow.PendingEntry entry = pendingWindow.firstEntry();
-            if (entry == null || schema.compare(entry.getKey(), upperBound) > 0) {
-                break;
-            }
-            pendingWindow.remove(entry.getKey());
-            spillEntry(entry);
-            stats.setMergeSpilledKeyCount(stats.getMergeSpilledKeyCount() + 1);
-        }
+    private boolean isComplete(PendingWindow.PendingEntry entry) {
+        return entry != null && entry.getFirstRowsBySource().size() >= sourceOrder.size();
     }
 
     private void spillOldestPending() {
         List<PendingWindow.PendingEntry> removed = pendingWindow.removeOldestUntilBelow(
-                Math.max(1L, config.getPendingMemoryBytes() / 2L),
-                Math.max(1, config.getPendingKeyThreshold() / 2)
+                config.getPendingMemoryBytes(),
+                config.getPendingKeyThreshold()
         );
         if (removed.isEmpty()) {
             return;
         }
         ensureOverflowStore();
+        stats.setExecutionEngine("hybrid");
+        if (stats.getFallbackReason() == null) {
+            stats.setFallbackReason("Pending window exceeded threshold");
+        }
         for (PendingWindow.PendingEntry entry : removed) {
             spillEntry(entry);
-            stats.setMergeSpilledKeyCount(stats.getMergeSpilledKeyCount() + 1);
         }
     }
 
-    private void switchToBucketMode(String reason) {
-        ensureOverflowStore();
-        stats.setExecutionEngine(stats.getMergeResolvedKeyCount() == 0 && stats.getMergeSpilledKeyCount() == 0
-                ? "bucket"
-                : "hybrid");
-        if (stats.getFallbackReason() == null) {
-            stats.setFallbackReason(reason);
-        }
-        bucketMode = true;
-        flushAllPendingToBucket();
-    }
-
-    private void flushAllPendingToBucket() {
-        ensureOverflowStore();
-        while (!pendingWindow.isEmpty()) {
-            PendingWindow.PendingEntry entry = pendingWindow.firstEntry();
-            if (entry == null) {
-                break;
+    private void drainRemainingPending(ResolvedGroupHandler handler) throws Exception {
+        List<PendingWindow.PendingEntry> remaining = pendingWindow.snapshotEntries();
+        for (PendingWindow.PendingEntry entry : remaining) {
+            PendingWindow.PendingEntry removed = pendingWindow.remove(entry.getEncodedKey());
+            if (removed == null) {
+                continue;
             }
-            pendingWindow.remove(entry.getKey());
-            spillEntry(entry);
-            stats.setMergeSpilledKeyCount(stats.getMergeSpilledKeyCount() + 1);
+            handler.handle(removed.getKey(), copySourceRows(removed.getFirstRowsBySource()));
+            stats.setMergeResolvedKeyCount(stats.getMergeResolvedKeyCount() + 1L);
         }
     }
 
     private void spillEntry(PendingWindow.PendingEntry entry) {
+        if (entry == null) {
+            return;
+        }
+        ensureOverflowStore();
+        if (spilledEncodedKeys.add(entry.getEncodedKey())) {
+            stats.setMergeSpilledKeyCount(stats.getMergeSpilledKeyCount() + 1L);
+            stats.setWindowEvictedKeyCount(stats.getWindowEvictedKeyCount() + 1L);
+        }
         for (Map.Entry<String, Map<String, Object>> sourceEntry : entry.getFirstRowsBySource().entrySet()) {
             overflowBucketStore.append(sourceEntry.getKey(), entry.getKey(), sourceEntry.getValue());
         }
-        advanceBucketUpperBound(entry.getKey());
     }
 
-    private void advanceBucketUpperBound(OrderedKey key) {
-        if (key == null) {
-            return;
-        }
-        if (bucketUpperBound == null || schema.compare(key, bucketUpperBound) > 0) {
-            bucketUpperBound = key;
-        }
-    }
-
-    private boolean shouldRouteDirectlyToBucket(OrderedKey key) {
-        return bucketUpperBound != null && schema.compare(key, bucketUpperBound) <= 0;
-    }
-
-    private void appendGroupToBucket(OrderedKeyGroup group) {
+    private void appendGroupToOverflow(OrderedKeyGroup group) {
         ensureOverflowStore();
         overflowBucketStore.append(group.getSourceId(), group.getKey(), group.getFirstRow());
-        advanceBucketUpperBound(group.getKey());
     }
 
     private void ensureOverflowStore() {

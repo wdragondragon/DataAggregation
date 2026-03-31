@@ -204,3 +204,4 @@ mvn -q -pl data-mock -am "-Dtest=AdaptiveSortMergeMysqlIntegrationTest" test -Df
 如果下次继续，可以直接把下面这段上下文贴给新会话：
 
 > `part3` 已在当前机器完成接手并验证。当前 core 层已通过 `AdaptiveMergeCoordinatorTest`、`SpillGuardTest`、`StreamExecutionOptionsTest`、`PartitionedSpillStoreTest` 共 19 个测试；`SourceRowScanner -> scanQuery(...)` 的历史假性编译阻塞已移除。若涉及 sibling module 变更，验证时仍优先使用 `-am`。当前也已通过 `AdaptiveSortMergeMysqlIntegrationTest` 的 3 个场景。
+> 2026-03-31 注：本文档记录的是旧的局部排序恢复方案接手机器说明。当前实现已切换到 pending window 按 key 等待合并，本文仅保留为历史记录。

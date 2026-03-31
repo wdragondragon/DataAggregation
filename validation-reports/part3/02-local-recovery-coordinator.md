@@ -42,3 +42,4 @@
   - `lastReadKeyBySource` 需要升级为单调边界，避免残余乱序把已推进边界向后拉回
   - `RECOVER_LOCAL` 将只 spill `PendingWindow` 的受污染前缀，并保留后续内存 sortmerge 能力
   - 现有 `BUCKET` / `FAIL` 测试会保留，新逻辑额外补 `RECOVER_LOCAL` 场景
+> 2026-03-31 注：该设计已淘汰。当前 coordinator 不再依赖 `RECOVER_LOCAL` / 最小 key 可判定模型，而是改为按 key 等待 source 到齐并按 first-seen 顺序驱逐。本文仅保留为历史记录。

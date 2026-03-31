@@ -343,8 +343,10 @@ final class AdaptiveSortMergeTestSupport {
         execution.setMergeResolvedKeyCount(getLongSummary(comparisonResult, "mergeResolvedKeyCount"));
         execution.setMergeSpilledKeyCount(getLongSummary(comparisonResult, "mergeSpilledKeyCount"));
         execution.setDuplicateIgnoredCount(getLongSummary(comparisonResult, "duplicateIgnoredCount"));
-        execution.setLocalReorderedGroupCount(getLongSummary(comparisonResult, "localReorderedGroupCount"));
-        execution.setOrderRecoveryCount(getLongSummary(comparisonResult, "orderRecoveryCount"));
+        execution.setPendingPeakKeyCount(getLongSummary(comparisonResult, "pendingPeakKeyCount"));
+        execution.setWindowImmediateResolvedKeyCount(getLongSummary(comparisonResult, "windowImmediateResolvedKeyCount"));
+        execution.setWindowEvictedKeyCount(getLongSummary(comparisonResult, "windowEvictedKeyCount"));
+        execution.setSpillLateArrivalKeyCount(getLongSummary(comparisonResult, "spillLateArrivalKeyCount"));
         execution.setSpillBytes(getLongSummary(comparisonResult, "spillBytes"));
         execution.setSpillGuardTriggered(getBooleanSummary(comparisonResult, "spillGuardTriggered"));
         execution.setSpillGuardReason(getStringSummary(comparisonResult, "spillGuardReason"));
@@ -534,25 +536,11 @@ final class AdaptiveSortMergeTestSupport {
                 : 8);
         adaptiveMergeConfig.setOverflowSpillPath(overflowSpillPath);
         adaptiveMergeConfig.setPreferOrderedQuery(options.getPreferOrderedQuery() == null || options.getPreferOrderedQuery());
-        adaptiveMergeConfig.setValidateSourceOrder(options.getValidateSourceOrder() == null || options.getValidateSourceOrder());
-        adaptiveMergeConfig.setLocalDisorderEnabled(options.getLocalDisorderEnabled() == null || options.getLocalDisorderEnabled());
-        if (options.getLocalDisorderMaxGroups() != null) {
-            adaptiveMergeConfig.setLocalDisorderMaxGroups(options.getLocalDisorderMaxGroups());
-        }
-        if (options.getLocalDisorderMaxMemoryMB() != null) {
-            adaptiveMergeConfig.setLocalDisorderMaxMemoryMB(options.getLocalDisorderMaxMemoryMB());
-        }
         if (options.getMaxSpillBytesMB() != null) {
             adaptiveMergeConfig.setMaxSpillBytesMB(options.getMaxSpillBytesMB());
         }
         if (options.getMinFreeDiskMB() != null) {
             adaptiveMergeConfig.setMinFreeDiskMB(options.getMinFreeDiskMB());
-        }
-        if (options.getOnOrderViolation() != null) {
-            adaptiveMergeConfig.setOnOrderViolation(options.getOnOrderViolation());
-        }
-        if (options.getOnMemoryExceeded() != null) {
-            adaptiveMergeConfig.setOnMemoryExceeded(options.getOnMemoryExceeded());
         }
         adaptiveMergeConfig.getKeyTypes().put("biz_id", OrderedKeyType.NUMBER);
         return adaptiveMergeConfig;
@@ -560,13 +548,13 @@ final class AdaptiveSortMergeTestSupport {
 
     private static String buildSourceQuery(DatasetContext dataset, String sourceId, String tableName) {
         ScenarioOptions options = dataset.getScenarioOptions();
-        if (options != null && options.hasSparseLocalDisorder(sourceId)) {
-            return buildSparseLocalDisorderQuery(tableName, options.getSparseLocalDisorderEvery());
+        if (options != null && options.hasSparseOutOfOrder(sourceId)) {
+            return buildSparseOutOfOrderQuery(tableName, options.getSparseOutOfOrderEvery());
         }
         return "SELECT biz_id, fusion_name, age, salary, department, status, updated_at FROM " + tableName;
     }
 
-    private static String buildSparseLocalDisorderQuery(String tableName, long disorderEvery) {
+    private static String buildSparseOutOfOrderQuery(String tableName, long disorderEvery) {
         long effectiveDisorderEvery = Math.max(2L, disorderEvery);
         return "SELECT biz_id, fusion_name, age, salary, department, status, updated_at FROM " + tableName
                 + " ORDER BY CASE"
@@ -815,16 +803,10 @@ final class AdaptiveSortMergeTestSupport {
         private Integer pendingMemoryMB;
         private Integer overflowPartitionCount;
         private Boolean preferOrderedQuery;
-        private Boolean validateSourceOrder;
-        private Boolean localDisorderEnabled;
-        private Integer localDisorderMaxGroups;
-        private Integer localDisorderMaxMemoryMB;
         private Integer maxSpillBytesMB;
         private Integer minFreeDiskMB;
-        private AdaptiveMergeConfig.OrderViolationAction onOrderViolation;
-        private AdaptiveMergeConfig.MemoryExceededAction onMemoryExceeded;
-        private final Set<String> sparseLocalDisorderSources = new LinkedHashSet<String>();
-        private long sparseLocalDisorderEvery = 128L;
+        private final Set<String> sparseOutOfOrderSources = new LinkedHashSet<String>();
+        private long sparseOutOfOrderEvery = 128L;
 
         static ScenarioOptions defaults() {
             return new ScenarioOptions();
@@ -850,26 +832,6 @@ final class AdaptiveSortMergeTestSupport {
             return this;
         }
 
-        ScenarioOptions withValidateSourceOrder(Boolean validateSourceOrder) {
-            this.validateSourceOrder = validateSourceOrder;
-            return this;
-        }
-
-        ScenarioOptions withLocalDisorderEnabled(Boolean localDisorderEnabled) {
-            this.localDisorderEnabled = localDisorderEnabled;
-            return this;
-        }
-
-        ScenarioOptions withLocalDisorderMaxGroups(Integer localDisorderMaxGroups) {
-            this.localDisorderMaxGroups = localDisorderMaxGroups;
-            return this;
-        }
-
-        ScenarioOptions withLocalDisorderMaxMemoryMB(Integer localDisorderMaxMemoryMB) {
-            this.localDisorderMaxMemoryMB = localDisorderMaxMemoryMB;
-            return this;
-        }
-
         ScenarioOptions withMaxSpillBytesMB(Integer maxSpillBytesMB) {
             this.maxSpillBytesMB = maxSpillBytesMB;
             return this;
@@ -880,27 +842,17 @@ final class AdaptiveSortMergeTestSupport {
             return this;
         }
 
-        ScenarioOptions withOnOrderViolation(AdaptiveMergeConfig.OrderViolationAction onOrderViolation) {
-            this.onOrderViolation = onOrderViolation;
-            return this;
-        }
-
-        ScenarioOptions withOnMemoryExceeded(AdaptiveMergeConfig.MemoryExceededAction onMemoryExceeded) {
-            this.onMemoryExceeded = onMemoryExceeded;
-            return this;
-        }
-
-        ScenarioOptions enableSparseLocalDisorder(long disorderEvery, String... sourceIds) {
-            this.sparseLocalDisorderEvery = disorderEvery;
-            this.sparseLocalDisorderSources.clear();
+        ScenarioOptions enableSparseOutOfOrder(long disorderEvery, String... sourceIds) {
+            this.sparseOutOfOrderEvery = disorderEvery;
+            this.sparseOutOfOrderSources.clear();
             if (sourceIds != null) {
-                this.sparseLocalDisorderSources.addAll(Arrays.asList(sourceIds));
+                this.sparseOutOfOrderSources.addAll(Arrays.asList(sourceIds));
             }
             return this;
         }
 
-        boolean hasSparseLocalDisorder(String sourceId) {
-            return sparseLocalDisorderSources.contains(sourceId);
+        boolean hasSparseOutOfOrder(String sourceId) {
+            return sparseOutOfOrderSources.contains(sourceId);
         }
 
         public Integer getPendingKeyThreshold() {
@@ -919,22 +871,6 @@ final class AdaptiveSortMergeTestSupport {
             return preferOrderedQuery;
         }
 
-        public Boolean getValidateSourceOrder() {
-            return validateSourceOrder;
-        }
-
-        public Boolean getLocalDisorderEnabled() {
-            return localDisorderEnabled;
-        }
-
-        public Integer getLocalDisorderMaxGroups() {
-            return localDisorderMaxGroups;
-        }
-
-        public Integer getLocalDisorderMaxMemoryMB() {
-            return localDisorderMaxMemoryMB;
-        }
-
         public Integer getMaxSpillBytesMB() {
             return maxSpillBytesMB;
         }
@@ -943,16 +879,8 @@ final class AdaptiveSortMergeTestSupport {
             return minFreeDiskMB;
         }
 
-        public AdaptiveMergeConfig.OrderViolationAction getOnOrderViolation() {
-            return onOrderViolation;
-        }
-
-        public AdaptiveMergeConfig.MemoryExceededAction getOnMemoryExceeded() {
-            return onMemoryExceeded;
-        }
-
-        public long getSparseLocalDisorderEvery() {
-            return sparseLocalDisorderEvery;
+        public long getSparseOutOfOrderEvery() {
+            return sparseOutOfOrderEvery;
         }
     }
 
@@ -1114,8 +1042,10 @@ final class AdaptiveSortMergeTestSupport {
         private long mergeResolvedKeyCount;
         private long mergeSpilledKeyCount;
         private long duplicateIgnoredCount;
-        private long localReorderedGroupCount;
-        private long orderRecoveryCount;
+        private long pendingPeakKeyCount;
+        private long windowImmediateResolvedKeyCount;
+        private long windowEvictedKeyCount;
+        private long spillLateArrivalKeyCount;
         private long spillBytes;
         private boolean spillGuardTriggered;
         private String spillGuardReason;
@@ -1178,20 +1108,36 @@ final class AdaptiveSortMergeTestSupport {
             this.duplicateIgnoredCount = duplicateIgnoredCount;
         }
 
-        public long getLocalReorderedGroupCount() {
-            return localReorderedGroupCount;
+        public long getPendingPeakKeyCount() {
+            return pendingPeakKeyCount;
         }
 
-        public void setLocalReorderedGroupCount(long localReorderedGroupCount) {
-            this.localReorderedGroupCount = localReorderedGroupCount;
+        public void setPendingPeakKeyCount(long pendingPeakKeyCount) {
+            this.pendingPeakKeyCount = pendingPeakKeyCount;
         }
 
-        public long getOrderRecoveryCount() {
-            return orderRecoveryCount;
+        public long getWindowImmediateResolvedKeyCount() {
+            return windowImmediateResolvedKeyCount;
         }
 
-        public void setOrderRecoveryCount(long orderRecoveryCount) {
-            this.orderRecoveryCount = orderRecoveryCount;
+        public void setWindowImmediateResolvedKeyCount(long windowImmediateResolvedKeyCount) {
+            this.windowImmediateResolvedKeyCount = windowImmediateResolvedKeyCount;
+        }
+
+        public long getWindowEvictedKeyCount() {
+            return windowEvictedKeyCount;
+        }
+
+        public void setWindowEvictedKeyCount(long windowEvictedKeyCount) {
+            this.windowEvictedKeyCount = windowEvictedKeyCount;
+        }
+
+        public long getSpillLateArrivalKeyCount() {
+            return spillLateArrivalKeyCount;
+        }
+
+        public void setSpillLateArrivalKeyCount(long spillLateArrivalKeyCount) {
+            this.spillLateArrivalKeyCount = spillLateArrivalKeyCount;
         }
 
         public long getSpillBytes() {

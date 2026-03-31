@@ -1,6 +1,5 @@
 package com.jdragon.aggregation.datamock.fusion;
 
-import com.jdragon.aggregation.core.sortmerge.AdaptiveMergeConfig;
 import com.jdragon.aggregation.core.sortmerge.SortMergeStats;
 import com.jdragon.aggregation.core.fusion.config.FusionConfig;
 import org.junit.Test;
@@ -15,25 +14,20 @@ import static org.junit.Assert.assertTrue;
 public class FusionJobContainerMysqlAdaptiveBehaviorTest {
 
     @Test
-    public void shouldAbsorbSparseLocalDisorderThroughJobContainer() throws Exception {
+    public void shouldMergeSparseOutOfOrderKeysThroughJobContainer() throws Exception {
         FusionJobContainerMysqlTestSupport.ScenarioOptions options =
                 FusionJobContainerMysqlTestSupport.ScenarioOptions.defaults()
                         .withPreferOrderedQuery(false)
-                        .withValidateSourceOrder(true)
-                        .withLocalDisorderEnabled(true)
-                        .withLocalDisorderMaxGroups(2)
-                        .withLocalDisorderMaxMemoryMB(16)
                         .withPendingKeyThreshold(4096)
                         .withPendingMemoryMB(64)
                         .withOverflowPartitionCount(8)
-                        .withOnOrderViolation(AdaptiveMergeConfig.OrderViolationAction.RECOVER_LOCAL)
-                        .enableSparseLocalDisorder("sourceB", 128);
+                        .enableSparseOutOfOrder("sourceB", 128);
 
         FusionJobContainerMysqlTestSupport.ScenarioResult result =
                 FusionJobContainerMysqlTestSupport.runScenario(
-                        "fusion_job_sparse_local_disorder",
+                        "fusion_job_sparse_out_of_order",
                         2_000,
-                        FusionJobContainerMysqlTestSupport.benchmarkRoot("fusion_job_sparse_local_disorder_it"),
+                        FusionJobContainerMysqlTestSupport.benchmarkRoot("fusion_job_sparse_out_of_order_it"),
                         false,
                         options
                 );
@@ -42,9 +36,10 @@ public class FusionJobContainerMysqlAdaptiveBehaviorTest {
         SortMergeStats stats = result.getSortMergeStats();
         assertNotNull(stats);
         assertEquals("sortmerge", stats.getExecutionEngine());
-        assertTrue("should observe local reordered groups before source-side buffering absorbs them",
-                stats.getLocalReorderedGroupCount() > 0L);
-        assertEquals(0L, stats.getOrderRecoveryCount());
+        assertTrue("pending window should hold at least one key under sparse out-of-order input",
+                stats.getPendingPeakKeyCount() > 0L);
+        assertTrue("complete keys should still resolve during scan",
+                stats.getWindowImmediateResolvedKeyCount() > 0L);
         assertEquals(0L, stats.getMergeSpilledKeyCount());
         assertEquals(0L, stats.getSpillBytes());
     }
@@ -55,14 +50,11 @@ public class FusionJobContainerMysqlAdaptiveBehaviorTest {
                 FusionJobContainerMysqlTestSupport.ScenarioOptions.defaults()
                         .withJoinType(FusionConfig.JoinType.INNER)
                         .withPreferOrderedQuery(false)
-                        .withValidateSourceOrder(true)
-                        .withLocalDisorderEnabled(false)
                         .withPendingKeyThreshold(1)
                         .withPendingMemoryMB(64)
                         .withOverflowPartitionCount(4)
                         .withMaxSpillBytesMB(128)
                         .withMinFreeDiskMB(1)
-                        .withOnOrderViolation(AdaptiveMergeConfig.OrderViolationAction.RECOVER_LOCAL)
                         .enableWindowReverseDisorder("sourceB", 5_000);
 
         FusionJobContainerMysqlTestSupport.ScenarioResult result =
@@ -80,7 +72,7 @@ public class FusionJobContainerMysqlAdaptiveBehaviorTest {
         assertEquals("hybrid", stats.getExecutionEngine());
         assertTrue("spill should reserve bytes", stats.getSpillBytes() > 0L);
         assertTrue("spill should move some keys out of memory", stats.getMergeSpilledKeyCount() > 0L);
-        assertTrue("local recovery should be triggered under severe disorder", stats.getOrderRecoveryCount() > 0L);
+        assertTrue("window eviction count should reflect spilled pending keys", stats.getWindowEvictedKeyCount() > 0L);
     }
 
     @Test
@@ -89,14 +81,11 @@ public class FusionJobContainerMysqlAdaptiveBehaviorTest {
                 FusionJobContainerMysqlTestSupport.ScenarioOptions.defaults()
                         .withJoinType(FusionConfig.JoinType.INNER)
                         .withPreferOrderedQuery(false)
-                        .withValidateSourceOrder(true)
-                        .withLocalDisorderEnabled(false)
                         .withPendingKeyThreshold(1)
                         .withPendingMemoryMB(64)
                         .withOverflowPartitionCount(4)
                         .withMaxSpillBytesMB(128)
                         .withMinFreeDiskMB(1)
-                        .withOnOrderViolation(AdaptiveMergeConfig.OrderViolationAction.RECOVER_LOCAL)
                         .enableWindowReverseDisorder("sourceB", 8_000);
 
         FusionJobContainerMysqlTestSupport.ScenarioResult result =
@@ -112,6 +101,7 @@ public class FusionJobContainerMysqlAdaptiveBehaviorTest {
         SortMergeStats stats = result.getSortMergeStats();
         assertNotNull(stats);
         assertTrue("hybrid spill should reserve cumulative spill bytes", stats.getSpillBytes() > 0L);
+        assertTrue("late rows for spilled keys should bypass memory window", stats.getSpillLateArrivalKeyCount() > 0L);
         assertEquals("active spill quota should be fully released after job cleanup", 0L, stats.getActiveSpillBytes());
     }
 

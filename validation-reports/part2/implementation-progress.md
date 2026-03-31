@@ -264,3 +264,4 @@
 下次可以直接引用下面这段上下文继续：
 
 > 我们已经在 `core.sortmerge` 下实现了自适应排序归并实验链路，并在 `fusion-sortmerge`、`consistency-sortmerge` reader 中接入。`data-mock` 模块已经基于 `fusion-mysql-demo.json` 跑过百条、万条、百万条 MySQL 实测。当前结论是：小中数据量可纯 sortmerge，百万级会进入 hybrid，内容正确但输出顺序不再全局有序。请在此基础上继续推进。
+> 2026-03-31 注：本文档记录的是已淘汰的排序恢复设计阶段。当前实现已切换为 pending window 按 key 等待合并模式，`LocalDisorderBuffer`、`RECOVER_LOCAL` 等内容仅保留为历史记录。

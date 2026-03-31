@@ -177,3 +177,4 @@ mvn -q -pl data-mock -am -DrunSortMergeMysqlBenchmarks=true "-DsortMergeScenario
 
 - 小 / 中 / 定向场景：已闭环
 - 百万级 benchmark：功能历史上已验证，但本轮当前机器重跑存在长尾性能风险，需单独作为下一步排查主题
+> 2026-03-31 注：本文档基于旧的 `LocalDisorderBuffer` / `RECOVER_LOCAL` 指标体系。当前实现已改为 pending window 指标（如 `pendingPeakKeyCount`、`windowEvictedKeyCount`），本文仅保留为历史记录。

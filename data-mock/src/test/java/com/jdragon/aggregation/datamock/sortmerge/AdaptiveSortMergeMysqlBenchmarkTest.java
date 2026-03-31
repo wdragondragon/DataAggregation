@@ -1,7 +1,6 @@
 package com.jdragon.aggregation.datamock.sortmerge;
 
 import com.jdragon.aggregation.core.consistency.model.ComparisonResult;
-import com.jdragon.aggregation.core.sortmerge.AdaptiveMergeConfig;
 import com.jdragon.aggregation.core.sortmerge.SortMergeStats;
 import org.junit.Assume;
 import org.junit.Test;
@@ -33,35 +32,27 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
                 ScenarioSpec.baseline("mysql_medium", 10_000, ScenarioExpectation.BASELINE_PURE_SORTMERGE),
                 ScenarioSpec.baseline("mysql_large", 1_000_000, ScenarioExpectation.BASELINE_HYBRID_ALLOWED),
                 ScenarioSpec.targeted(
-                        "mysql_sparse_local_disorder",
+                        "mysql_sparse_out_of_order",
                         2_000,
-                        ScenarioExpectation.SPARSE_LOCAL_DISORDER,
+                        ScenarioExpectation.SPARSE_OUT_OF_ORDER,
                         AdaptiveSortMergeTestSupport.ScenarioOptions.defaults()
                                 .withPreferOrderedQuery(false)
-                                .withValidateSourceOrder(true)
-                                .withLocalDisorderEnabled(true)
-                                .withLocalDisorderMaxGroups(2)
-                                .withLocalDisorderMaxMemoryMB(16)
                                 .withPendingKeyThreshold(4096)
                                 .withPendingMemoryMB(64)
-                                .withOnOrderViolation(AdaptiveMergeConfig.OrderViolationAction.RECOVER_LOCAL)
-                                .enableSparseLocalDisorder(128L, "sourceB")
+                                .enableSparseOutOfOrder(128L, "sourceB")
                 ),
                 ScenarioSpec.targeted(
-                        "mysql_small_spill_guard",
-                        5_000,
-                        ScenarioExpectation.SPILL_GUARD_FAILURE,
+                        "mysql_tight_pending_spill",
+                        2_000,
+                        ScenarioExpectation.TIGHT_PENDING_SPILL,
                         AdaptiveSortMergeTestSupport.ScenarioOptions.defaults()
                                 .withPreferOrderedQuery(false)
-                                .withValidateSourceOrder(true)
-                                .withLocalDisorderEnabled(false)
-                                .withPendingKeyThreshold(64)
+                                .withPendingKeyThreshold(8)
                                 .withPendingMemoryMB(8)
                                 .withOverflowPartitionCount(4)
-                                .withMaxSpillBytesMB(1)
+                                .withMaxSpillBytesMB(128)
                                 .withMinFreeDiskMB(1)
-                                .withOnOrderViolation(AdaptiveMergeConfig.OrderViolationAction.RECOVER_LOCAL)
-                                .enableSparseLocalDisorder(2L, "sourceB")
+                                .enableSparseOutOfOrder(2L, "sourceB")
                 )
         );
         String scenarioFilter = System.getProperty("sortMergeScenario");
@@ -90,17 +81,17 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
     private void assertScenario(ScenarioSpec spec, AdaptiveSortMergeTestSupport.ScenarioResult result) {
         switch (spec.getExpectation()) {
             case BASELINE_PURE_SORTMERGE:
-                assertSuccessfulScenario(result, true, true);
+                assertSuccessfulScenario(result, true);
                 break;
             case BASELINE_HYBRID_ALLOWED:
-                assertSuccessfulScenario(result, false, false);
+                assertSuccessfulScenario(result, false);
                 break;
-            case SPARSE_LOCAL_DISORDER:
-                assertSuccessfulScenario(result, true, true);
-                assertSparseLocalDisorder(result);
+            case SPARSE_OUT_OF_ORDER:
+                assertSuccessfulScenario(result, true);
+                assertSparseOutOfOrderWindow(result);
                 break;
-            case SPILL_GUARD_FAILURE:
-                assertSpillGuardFailure(result);
+            case TIGHT_PENDING_SPILL:
+                assertTightPendingSpill(result);
                 break;
             default:
                 throw new IllegalStateException("Unsupported expectation kind: " + spec.getExpectation());
@@ -108,8 +99,7 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
     }
 
     private void assertSuccessfulScenario(AdaptiveSortMergeTestSupport.ScenarioResult result,
-                                          boolean requirePureSortMerge,
-                                          boolean requireOrderedOutput) {
+                                          boolean requirePureSortMerge) {
         AdaptiveSortMergeTestSupport.DatasetExpectations expectations = result.getExpectations();
         AdaptiveSortMergeTestSupport.ConsistencyExecution consistency = result.getConsistencyExecution();
         AdaptiveSortMergeTestSupport.FusionExecution fusion = result.getFusionExecution();
@@ -153,44 +143,39 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
             }
         }
 
-        if (requireOrderedOutput) {
-            assertTrue("fusion output should stay ordered for " + result.getLabel()
-                            + ", violation=" + fusion.getOrderViolationSample(),
-                    fusion.isOutputOrdered());
-            assertEquals("ordered fusion digest mismatch for scenario=" + result.getLabel(),
-                    expectations.getExpectedFusionDigest(),
-                    fusion.getDigest());
-        }
     }
 
-    private void assertSparseLocalDisorder(AdaptiveSortMergeTestSupport.ScenarioResult result) {
+    private void assertSparseOutOfOrderWindow(AdaptiveSortMergeTestSupport.ScenarioResult result) {
         AdaptiveSortMergeTestSupport.ConsistencyExecution consistency = result.getConsistencyExecution();
         AdaptiveSortMergeTestSupport.FusionExecution fusion = result.getFusionExecution();
         SortMergeStats fusionStats = fusion.getStats();
 
         assertEquals("sortmerge", consistency.getExecutionEngine());
         assertEquals("sortmerge", fusionStats.getExecutionEngine());
-        assertTrue("should observe local reorder before source-side buffering absorbs it",
-                consistency.getLocalReorderedGroupCount() > 0L
-                        || fusionStats.getLocalReorderedGroupCount() > 0L);
-        assertEquals(0L, consistency.getOrderRecoveryCount());
-        assertEquals(0L, fusionStats.getOrderRecoveryCount());
+        assertTrue("pending window should observe out-of-order keys",
+                consistency.getPendingPeakKeyCount() > 0L
+                        || fusionStats.getPendingPeakKeyCount() > 0L);
+        assertEquals(0L, consistency.getWindowEvictedKeyCount());
+        assertEquals(0L, fusionStats.getWindowEvictedKeyCount());
         assertNull(consistency.getFallbackReason());
         assertNull(fusionStats.getFallbackReason());
     }
 
-    private void assertSpillGuardFailure(AdaptiveSortMergeTestSupport.ScenarioResult result) {
+    private void assertTightPendingSpill(AdaptiveSortMergeTestSupport.ScenarioResult result) {
+        AdaptiveSortMergeTestSupport.DatasetExpectations expectations = result.getExpectations();
         AdaptiveSortMergeTestSupport.ConsistencyExecution consistency = result.getConsistencyExecution();
         AdaptiveSortMergeTestSupport.FusionExecution fusion = result.getFusionExecution();
 
         assertNotNull(consistency.getComparisonResult());
-        assertEquals(ComparisonResult.Status.FAILED, consistency.getComparisonResult().getStatus());
-        assertTrue("consistency spill guard should trigger", consistency.isSpillGuardTriggered());
-        assertTrue("consistency spill guard reason should mention spill limit: " + consistency.getSpillGuardReason(),
-                containsSpillLimit(consistency.getSpillGuardReason()));
-        assertTrue("consistency should reserve some spill bytes", consistency.getSpillBytes() > 0L);
-        assertTrue("fusion should fail with spill guard message: " + fusion.getErrorMessage(),
-                containsSpillLimit(fusion.getErrorMessage()));
+        assertNull(consistency.getErrorMessage());
+        assertNull(fusion.getErrorMessage());
+        assertNotNull(fusion.getStats());
+        assertEquals(expectations.getTotalKeys(), consistency.getComparisonResult().getTotalRecords());
+        assertEquals(expectations.getExpectedInconsistentKeys(), consistency.getComparisonResult().getInconsistentRecords());
+        assertTrue("tight pending window should spill at least one key",
+                consistency.getMergeSpilledKeyCount() > 0L || fusion.getStats().getMergeSpilledKeyCount() > 0L);
+        assertTrue("tight pending window should reserve some spill bytes",
+                consistency.getSpillBytes() > 0L || fusion.getStats().getSpillBytes() > 0L);
     }
 
     private String buildReport(List<ScenarioRun> runs) {
@@ -213,7 +198,7 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
         report.append("- 报告输出: `").append(resolveReportPath()).append("`\n\n");
 
         report.append("## 三档基准结果表\n\n");
-        report.append("| 场景 | 数据量 | consistency total | consistency inconsistent | duplicateIgnored | fusion output | fusion content match | consistency engine | fusion engine | spilled keys | fallback reason | localReorderedGroupCount | orderRecoveryCount | spillBytes | spillGuardTriggered | spillGuardReason |\n");
+        report.append("| 场景 | 数据量 | consistency total | consistency inconsistent | duplicateIgnored | fusion output | fusion content match | consistency engine | fusion engine | spilled keys | fallback reason | pendingPeakKeyCount | windowEvictedKeyCount | spillBytes | spillGuardTriggered | spillGuardReason |\n");
         report.append("| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | --- | ---: | ---: | ---: | --- | --- |\n");
         for (ScenarioRun run : baselineRuns) {
             AdaptiveSortMergeTestSupport.ScenarioResult result = run.getResult();
@@ -235,15 +220,15 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
                     .append(safe(fusionStats != null ? fusionStats.getExecutionEngine() : null)).append(" | ")
                     .append(fusionStats != null ? fusionStats.getMergeSpilledKeyCount() : 0L).append(" | ")
                     .append(safe(mergedFallbackReason(result))).append(" | ")
-                    .append(mergedLocalReorderedGroupCount(result)).append(" | ")
-                    .append(mergedOrderRecoveryCount(result)).append(" | ")
+                    .append(mergedPendingPeakKeyCount(result)).append(" | ")
+                    .append(mergedWindowEvictedKeyCount(result)).append(" | ")
                     .append(mergedSpillBytes(result)).append(" | ")
                     .append(mergedSpillGuardTriggered(result) ? "YES" : "NO").append(" | ")
                     .append(safe(mergedSpillGuardReason(result))).append(" |\n");
         }
 
         report.append("\n## 定向场景结果表\n\n");
-        report.append("| 场景 | 数据量 | 场景目标 | consistency status | consistency engine | fusion engine | localReorderedGroupCount | orderRecoveryCount | spillBytes | spillGuardTriggered | spillGuardReason | fusion error | 结论 |\n");
+        report.append("| 场景 | 数据量 | 场景目标 | consistency status | consistency engine | fusion engine | pendingPeakKeyCount | windowEvictedKeyCount | spillBytes | spillGuardTriggered | spillGuardReason | fusion error | 结论 |\n");
         report.append("| --- | ---: | --- | --- | --- | --- | ---: | ---: | ---: | --- | --- | --- | --- |\n");
         for (ScenarioRun run : targetedRuns) {
             AdaptiveSortMergeTestSupport.ScenarioResult result = run.getResult();
@@ -257,8 +242,8 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
                     .append(consistency.getComparisonResult() != null ? consistency.getComparisonResult().getStatus() : "").append(" | ")
                     .append(safe(consistency.getExecutionEngine())).append(" | ")
                     .append(safe(fusionStats != null ? fusionStats.getExecutionEngine() : null)).append(" | ")
-                    .append(mergedLocalReorderedGroupCount(result)).append(" | ")
-                    .append(mergedOrderRecoveryCount(result)).append(" | ")
+                    .append(mergedPendingPeakKeyCount(result)).append(" | ")
+                    .append(mergedWindowEvictedKeyCount(result)).append(" | ")
                     .append(mergedSpillBytes(result)).append(" | ")
                     .append(mergedSpillGuardTriggered(result) ? "YES" : "NO").append(" | ")
                     .append(safe(mergedSpillGuardReason(result))).append(" | ")
@@ -314,8 +299,8 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
             AdaptiveSortMergeTestSupport.FusionExecution fusion = result.getFusionExecution();
             SortMergeStats fusionStats = fusion.getStats();
             report.append("- `").append(result.getLabel()).append("`")
-                    .append(": localReorderedGroupCount=").append(mergedLocalReorderedGroupCount(result))
-                    .append(", orderRecoveryCount=").append(mergedOrderRecoveryCount(result))
+                    .append(": pendingPeakKeyCount=").append(mergedPendingPeakKeyCount(result))
+                    .append(", windowEvictedKeyCount=").append(mergedWindowEvictedKeyCount(result))
                     .append(", spillBytes=").append(mergedSpillBytes(result))
                     .append(", spillGuardTriggered=").append(mergedSpillGuardTriggered(result))
                     .append(", consistencyEngine=").append(safe(result.getConsistencyExecution().getExecutionEngine()))
@@ -326,13 +311,13 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
 
         report.append("\n## 结论与当前边界\n\n");
         report.append("- `part3` 在当前机器上已形成闭环：core 基线、integration 场景和 benchmark 场景均已完成验证。\n");
-        ScenarioRun sparseRun = findRun(runs, "mysql_sparse_local_disorder");
+        ScenarioRun sparseRun = findRun(runs, "mysql_sparse_out_of_order");
         if (sparseRun != null) {
-            report.append("- 稀疏局部倒退场景中，source 侧缓冲已吸收局部乱序；未观测到提前切入全局 `bucket`，且 `orderRecoveryCount = 0`。\n");
+            report.append("- 稀疏乱序场景中，pending window 已正确等待跨 source 的 key 合并；未发生窗口驱逐，且 fallback reason 仍为空。\n");
         }
-        ScenarioRun spillGuardRun = findRun(runs, "mysql_small_spill_guard");
-        if (spillGuardRun != null) {
-            report.append("- 小 spill 配额场景中，spill guard 已按预期快速失败；consistency summary 与 fusion 错误消息均能透出 `Spill limit exceeded`。\n");
+        ScenarioRun tightPendingRun = findRun(runs, "mysql_tight_pending_spill");
+        if (tightPendingRun != null) {
+            report.append("- 紧窗口场景中，pending window 已按预期驱逐未完成 key 到 spill；两条执行链路都保留了完整 summary，并观测到非零 spillBytes。\n");
         }
         ScenarioRun largeRun = findRun(runs, "mysql_large");
         if (largeRun != null) {
@@ -344,7 +329,7 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
                     .append(fusion.isOutputOrdered() ? "YES" : "NO")
                     .append("`。");
             if (!fusion.isOutputOrdered()) {
-                report.append(" 这再次说明：若进入 `hybrid`，内容正确并不代表最终输出仍全局有序；该问题仍属于后续 `part4` 主题。");
+                report.append(" 这再次说明：无序等待窗口下内容正确并不代表最终输出仍全局有序；当前模式更关注内容正确性与窗口/溢写控制。");
             }
             report.append("\n");
         }
@@ -379,18 +364,18 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
         return null;
     }
 
-    private long mergedLocalReorderedGroupCount(AdaptiveSortMergeTestSupport.ScenarioResult result) {
-        long consistencyValue = result.getConsistencyExecution().getLocalReorderedGroupCount();
+    private long mergedPendingPeakKeyCount(AdaptiveSortMergeTestSupport.ScenarioResult result) {
+        long consistencyValue = result.getConsistencyExecution().getPendingPeakKeyCount();
         long fusionValue = result.getFusionExecution().getStats() != null
-                ? result.getFusionExecution().getStats().getLocalReorderedGroupCount()
+                ? result.getFusionExecution().getStats().getPendingPeakKeyCount()
                 : 0L;
         return Math.max(consistencyValue, fusionValue);
     }
 
-    private long mergedOrderRecoveryCount(AdaptiveSortMergeTestSupport.ScenarioResult result) {
-        long consistencyValue = result.getConsistencyExecution().getOrderRecoveryCount();
+    private long mergedWindowEvictedKeyCount(AdaptiveSortMergeTestSupport.ScenarioResult result) {
+        long consistencyValue = result.getConsistencyExecution().getWindowEvictedKeyCount();
         long fusionValue = result.getFusionExecution().getStats() != null
-                ? result.getFusionExecution().getStats().getOrderRecoveryCount()
+                ? result.getFusionExecution().getStats().getWindowEvictedKeyCount()
                 : 0L;
         return Math.max(consistencyValue, fusionValue);
     }
@@ -445,10 +430,10 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
 
     private String describeTargetedOutcome(ScenarioRun run) {
         switch (run.getSpec().getExpectation()) {
-            case SPARSE_LOCAL_DISORDER:
-                return "PASS: source buffer absorbed sparse disorder without early bucket";
-            case SPILL_GUARD_FAILURE:
-                return "PASS: spill guard blocked overflow/rebalance before disk could keep growing";
+            case SPARSE_OUT_OF_ORDER:
+                return "PASS: pending window merged sparse out-of-order keys without spill";
+            case TIGHT_PENDING_SPILL:
+                return "PASS: tight pending window triggered spill while consistency summary remained complete";
             default:
                 return "";
         }
@@ -456,10 +441,10 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
 
     private String describePerformanceOutcome(ScenarioRun run) {
         switch (run.getSpec().getExpectation()) {
-            case SPARSE_LOCAL_DISORDER:
-                return "正常完成，属于定向恢复验证";
-            case SPILL_GUARD_FAILURE:
-                return "触发失败耗时，属于 spill guard 快速失败验证";
+            case SPARSE_OUT_OF_ORDER:
+                return "正常完成，属于无序等待窗口验证";
+            case TIGHT_PENDING_SPILL:
+                return "正常完成，属于紧窗口 spill 验证";
             default:
                 return "";
         }
@@ -494,8 +479,8 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
     private enum ScenarioExpectation {
         BASELINE_PURE_SORTMERGE,
         BASELINE_HYBRID_ALLOWED,
-        SPARSE_LOCAL_DISORDER,
-        SPILL_GUARD_FAILURE
+        SPARSE_OUT_OF_ORDER,
+        TIGHT_PENDING_SPILL
     }
 
     private enum ReportGroup {
@@ -541,13 +526,13 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
                                      ScenarioExpectation expectation,
                                      AdaptiveSortMergeTestSupport.ScenarioOptions options) {
             String goal;
-            if (expectation == ScenarioExpectation.SPARSE_LOCAL_DISORDER) {
-                goal = "稀疏局部倒退应被 source 缓冲吸收";
-            } else if (expectation == ScenarioExpectation.SPILL_GUARD_FAILURE) {
-                goal = "spill guard 应快速失败";
-            } else {
-                goal = "定向场景";
-            }
+        if (expectation == ScenarioExpectation.SPARSE_OUT_OF_ORDER) {
+            goal = "稀疏乱序应在 pending window 内完成等待合并";
+        } else if (expectation == ScenarioExpectation.TIGHT_PENDING_SPILL) {
+            goal = "pending window 很小时应驱逐未完成 key 到 spill";
+        } else {
+            goal = "定向场景";
+        }
             return new ScenarioSpec(label, rowCount, options, expectation, ReportGroup.TARGETED, goal);
         }
 

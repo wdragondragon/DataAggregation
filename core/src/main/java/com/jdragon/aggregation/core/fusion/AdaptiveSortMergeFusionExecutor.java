@@ -72,10 +72,8 @@ public class AdaptiveSortMergeFusionExecutor {
             cursors.add(new OrderedSourceCursor(
                     rowScanner,
                     dataSourceConfig,
-                    keySchema,
                     fusionConfig.getJoinKeys(),
-                    adaptiveMergeConfig.isPreferOrderedQuery(),
-                    adaptiveMergeConfig
+                    adaptiveMergeConfig.isPreferOrderedQuery()
             ));
         }
 
@@ -85,7 +83,6 @@ public class AdaptiveSortMergeFusionExecutor {
             FusionPartitionProcessor processor = new FusionPartitionProcessor(fusionConfig, fusionContext, recordSender);
             AdaptiveMergeCoordinator coordinator = new AdaptiveMergeCoordinator(
                     adaptiveMergeConfig,
-                    keySchema,
                     collectSourceOrder(),
                     spillGuard,
                     options.isKeepTempFiles()

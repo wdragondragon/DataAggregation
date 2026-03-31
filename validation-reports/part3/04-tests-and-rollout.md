@@ -105,3 +105,4 @@
   - 同时 `consistency-spill/consistency-differences-*.spill` 增长到约 `4.0 MB`
   - 90 分钟窗口内仍未自然结束，且目录下没有出现 fusion 阶段产物
   - 结论：当前机器上的长尾问题更像是 consistency 阶段 overflow / spill 回放过慢，而不是 benchmark 主流程完全无动作
+> 2026-03-31 注：本文档包含的 `RECOVER_LOCAL`、`local disorder` 测试计划属于旧方案。当前实现已改为无序 pending window 等待合并，本文仅保留为历史记录。

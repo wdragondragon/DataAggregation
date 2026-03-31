@@ -11,9 +11,10 @@ public class SortMergeStats {
     private long mergeResolvedKeyCount;
     private long mergeSpilledKeyCount;
     private long duplicateIgnoredCount;
-    private long localReorderedGroupCount;
-    private long localMergedDuplicateGroupCount;
-    private long orderRecoveryCount;
+    private long pendingPeakKeyCount;
+    private long windowImmediateResolvedKeyCount;
+    private long windowEvictedKeyCount;
+    private long spillLateArrivalKeyCount;
     private long spillBytes;
     private long activeSpillBytes;
     private boolean spillGuardTriggered;
