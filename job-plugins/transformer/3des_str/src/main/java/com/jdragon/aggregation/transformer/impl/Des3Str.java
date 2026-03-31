@@ -1,14 +1,13 @@
 package com.jdragon.aggregation.transformer.impl;
 
+import cn.hutool.core.codec.Base64;
 import com.jdragon.aggregation.commons.element.Column;
 import com.jdragon.aggregation.commons.element.Record;
 import com.jdragon.aggregation.commons.element.StringColumn;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.core.plugin.Transformer;
 import com.jdragon.aggregation.transformer.TransformerErrorCode;
-import com.bmsoft.dc.utils.security.encrypt.DESEDEEncryption;
 import lombok.SneakyThrows;
-import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang3.StringUtils;
 
 import java.nio.charset.StandardCharsets;
@@ -21,8 +20,6 @@ import java.util.Arrays;
  * @Date 2026/3/27
  */
 public class Des3Str extends Transformer {
-
-    DESEDEEncryption desedeEncryption = new DESEDEEncryption();
 
     public Des3Str() {
         super.setTransformerName("3des_str");
@@ -69,22 +66,22 @@ public class Des3Str extends Transformer {
     @SneakyThrows
     public static String encrypt(String content, String key) {
         DESEDEEncryption desedeEncryption = new DESEDEEncryption();
-        return Base64.encodeBase64String(desedeEncryption.encrypt(Base64.decodeBase64(key), content.getBytes()));
+        return Base64.encode(desedeEncryption.encrypt(Base64.decode(key), content.getBytes()));
     }
 
     //解密操作
     @SneakyThrows
     public static String decrypt(String content, String key) {
         DESEDEEncryption desedeEncryption = new DESEDEEncryption();
-        byte[] bytes = desedeEncryption.decrypt(Base64.decodeBase64(key), Base64.decodeBase64(content));
+        byte[] bytes = desedeEncryption.decrypt(Base64.decode(key), Base64.decode(content));
         return new String(bytes);
     }
 
     public static void main(String[] args) {
         //key 必须24位
         String key = "123456789012345678901234";
-        key = Base64.encodeBase64String(key.getBytes(StandardCharsets.UTF_8));
-        System.out.println(Arrays.toString(Base64.decodeBase64(key)));
+        key = Base64.encode(key.getBytes(StandardCharsets.UTF_8));
+        System.out.println(Arrays.toString(Base64.decode(key)));
         String encrypt = encrypt("1", key);
         System.out.println(encrypt);
         System.out.println(decrypt(encrypt, key));

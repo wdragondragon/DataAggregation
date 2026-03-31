@@ -1,5 +1,6 @@
 package com.jdragon.aggregation.transformer.impl;
 
+import cn.hutool.core.codec.Base64;
 import cn.hutool.crypto.SecureUtil;
 import cn.hutool.crypto.symmetric.AES;
 import cn.hutool.crypto.symmetric.SymmetricAlgorithm;
@@ -9,7 +10,6 @@ import com.jdragon.aggregation.commons.element.StringColumn;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.core.plugin.Transformer;
 import com.jdragon.aggregation.transformer.TransformerErrorCode;
-import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang3.StringUtils;
 
 import java.nio.charset.StandardCharsets;
@@ -51,7 +51,7 @@ public class AesStr extends Transformer {
             if (StringUtils.isBlank(oriValue)) {
                 return record;
             } else {
-                byte[] keyBytes = Base64.decodeBase64(key);
+                byte[] keyBytes = Base64.decode(key);
                 //加密操作
                 if ("encrypt".equals(option)) {
                     oriValue = encrypt(oriValue, keyBytes);
@@ -72,14 +72,14 @@ public class AesStr extends Transformer {
         byte[] keyByte = SecureUtil.generateKey(SymmetricAlgorithm.AES.getValue(), keyBytes).getEncoded();
         AES aes = SecureUtil.aes(keyByte);
         byte[] encrypt = aes.encrypt(content);
-        return Base64.encodeBase64String(encrypt);
+        return Base64.encode(encrypt);
     }
 
     //解密操作
     public static String decrypt(String content, byte[] keyBytes) {
         byte[] keyByte = SecureUtil.generateKey(SymmetricAlgorithm.AES.getValue(), keyBytes).getEncoded();
         AES aes = SecureUtil.aes(keyByte);
-        byte[] decrypt = aes.decrypt(Base64.decodeBase64(content));
+        byte[] decrypt = aes.decrypt(Base64.decode(content));
         return new String(decrypt);
     }
 

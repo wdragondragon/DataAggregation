@@ -1,14 +1,13 @@
 package com.jdragon.aggregation.transformer.impl;
 
+import cn.hutool.core.codec.Base64;
 import com.jdragon.aggregation.commons.element.Column;
 import com.jdragon.aggregation.commons.element.Record;
 import com.jdragon.aggregation.commons.element.StringColumn;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.core.plugin.Transformer;
 import com.jdragon.aggregation.transformer.TransformerErrorCode;
-import com.bmsoft.dc.utils.security.encrypt.IDEAEncryption;
 import lombok.SneakyThrows;
-import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang3.StringUtils;
 
 import java.nio.charset.StandardCharsets;
@@ -67,20 +66,20 @@ public class IdeaStr extends Transformer {
     @SneakyThrows
     public static String encrypt(String content, String key) {
         IDEAEncryption ideaEncryption = new IDEAEncryption();
-        return Base64.encodeBase64String(ideaEncryption.encrypt(Base64.decodeBase64(key), content.getBytes()));
+        return Base64.encode(ideaEncryption.encrypt(Base64.decode(key), content.getBytes()));
     }
 
     //解密操作
     @SneakyThrows
     public static String decrypt(String content, String key) {
         IDEAEncryption ideaEncryption = new IDEAEncryption();
-        byte[] bytes = ideaEncryption.decrypt(Base64.decodeBase64(key), Base64.decodeBase64(content));
+        byte[] bytes = ideaEncryption.decrypt(Base64.decode(key), Base64.decode(content));
         return new String(bytes);
     }
 
     public static void main(String[] args) {
         //key 16位
-        String key = Base64.encodeBase64String("1234567890123456".getBytes(StandardCharsets.UTF_8));
+        String key = Base64.encode("1234567890123456".getBytes(StandardCharsets.UTF_8));
         String content = "1";
         String encrypt = encrypt(content, key);
         System.out.println(encrypt);

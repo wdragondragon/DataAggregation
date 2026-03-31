@@ -40,12 +40,6 @@
             <artifactId>bcprov-jdk15to18</artifactId>
             <version>1.66</version>
         </dependency>
-        <dependency>
-            <groupId>com.bmsoft</groupId>
-            <artifactId>data-common</artifactId>
-            <version>1.0-SNAPSHOT</version>
-            <scope>compile</scope>
-        </dependency>
     </dependencies>
 
     <build>

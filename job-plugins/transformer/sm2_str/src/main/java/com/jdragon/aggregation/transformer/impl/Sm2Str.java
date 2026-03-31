@@ -1,13 +1,12 @@
 package com.jdragon.aggregation.transformer.impl;
 
+import cn.hutool.core.codec.Base64;
 import com.jdragon.aggregation.commons.element.Column;
 import com.jdragon.aggregation.commons.element.Record;
 import com.jdragon.aggregation.commons.element.StringColumn;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.core.plugin.Transformer;
 import com.jdragon.aggregation.transformer.TransformerErrorCode;
-import com.bmsoft.dc.utils.security.encrypt.SM2Encryption;
-import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.Arrays;
@@ -39,7 +38,7 @@ public class Sm2Str extends Transformer {
             key = paras[1].toString();
             option = paras[2].toString();
         } catch (Exception e) {
-            throw AggregationException.asException(TransformerErrorCode.TRANSFORMER_ILLEGAL_PARAMETER, "paras:" + Arrays.asList(paras).toString() + " => " + e.getMessage());
+            throw AggregationException.asException(TransformerErrorCode.TRANSFORMER_ILLEGAL_PARAMETER, "paras:" + Arrays.asList(paras) + " => " + e.getMessage());
         }
 
         Column column = record.getColumn(columnIndex);
@@ -66,12 +65,12 @@ public class Sm2Str extends Transformer {
     //加密操作
     private static String encrypt(String oriValue, String publicKey) throws Exception {
         //公钥加密
-        return Base64.encodeBase64String(sm2Encryption.encrypt(Base64.decodeBase64(publicKey), oriValue.getBytes()));
+        return Base64.encode(sm2Encryption.encrypt(Base64.decode(publicKey), oriValue.getBytes()));
     }
 
     //解密操作
     private static String decrypt(String oriValue, String privateKey) throws Exception {
-        return new String(sm2Encryption.decrypt(Base64.decodeBase64(privateKey), Base64.decodeBase64(oriValue)));
+        return new String(sm2Encryption.decrypt(Base64.decode(privateKey), Base64.decode(oriValue)));
     }
 
 

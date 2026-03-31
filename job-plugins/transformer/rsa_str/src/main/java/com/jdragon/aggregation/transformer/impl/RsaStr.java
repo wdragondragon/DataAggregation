@@ -1,15 +1,14 @@
 package com.jdragon.aggregation.transformer.impl;
 
 
+import cn.hutool.core.codec.Base64;
 import com.jdragon.aggregation.commons.element.Column;
 import com.jdragon.aggregation.commons.element.Record;
 import com.jdragon.aggregation.commons.element.StringColumn;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.core.plugin.Transformer;
 import com.jdragon.aggregation.transformer.TransformerErrorCode;
-import com.bmsoft.dc.utils.security.encrypt.RSAEncryption;
-import org.apache.commons.codec.binary.Base64;
-import org.apache.commons.lang3.StringUtils;;
+import org.apache.commons.lang3.StringUtils;
 import java.util.Arrays;
 
 /**
@@ -66,12 +65,12 @@ public class RsaStr extends Transformer {
     //加密操作
     private static String encrypt(String oriValue, String publicKey) throws Exception {
         //公钥加密
-        return Base64.encodeBase64String(rsaEncryption.encrypt(Base64.decodeBase64(publicKey), oriValue.getBytes()));
+        return Base64.encode(rsaEncryption.encrypt(Base64.decode(publicKey), oriValue.getBytes()));
     }
 
     //解密操作
     private static String decrypt(String oriValue, String privateKey) throws Exception {
-        return new String(rsaEncryption.decrypt(Base64.decodeBase64(privateKey), Base64.decodeBase64(oriValue)));
+        return new String(rsaEncryption.decrypt(Base64.decode(privateKey), Base64.decode(oriValue)));
     }
 
 
