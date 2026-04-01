@@ -1,6 +1,6 @@
 {
   "reader": {
-    "type": "fusion-sortmerge",
+    "type": "fusion",
     "config": {
       "sources": [
         {

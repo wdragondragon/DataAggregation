@@ -1,0 +1,15 @@
+{
+  "type": "consistency-sortmerge",
+  "config": {
+    "ruleId": "consistency-rule",
+    "ruleName": "consistency sortmerge",
+    "matchKeys": [
+      "biz_id"
+    ],
+    "compareFields": [],
+    "dataSources": [],
+    "outputConfig": {
+      "outputPath": "./consistency-results"
+    }
+  }
+}

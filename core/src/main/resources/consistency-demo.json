@@ -1,0 +1,121 @@
+{
+  "reader": {
+    "type": "consistency",
+    "config": {
+      "autoApplyResolutions": true,
+      "parallelFetch": true,
+      "compareFields": [
+        "age",
+        "salary",
+        "department",
+        "email"
+      ],
+      "conflictResolutionStrategy": "HIGH_CONFIDENCE",
+      "dataSources": [
+        {
+          "confidenceWeight": 1.0,
+          "connectionConfig": {
+            "database": "agg_test",
+            "password": "951753",
+            "other": "{\"serverTimezone\":\"UTC\",\"useSSL\":\"false\"}",
+            "port": "3306",
+            "host": "192.168.188.128",
+            "username": "root"
+          },
+          "extConfig": {
+          },
+          "fieldMappings": {},
+          "pluginName": "mysql8",
+          "priority": 1,
+          "querySql": "SELECT user_id, username, age, salary, department, email FROM users_1",
+          "sourceId": "source-1",
+          "sourceName": "主数据库",
+          "tableName": "users_1"
+        },
+        {
+          "confidenceWeight": 1.8,
+          "connectionConfig": {
+            "database": "agg_test",
+            "password": "951753",
+            "other": "{\"serverTimezone\":\"UTC\",\"useSSL\":\"false\"}",
+            "port": "3306",
+            "host": "192.168.188.128",
+            "username": "root"
+          },
+          "extConfig": {
+          },
+          "fieldMappings": {},
+          "pluginName": "mysql8",
+          "priority": 2,
+          "querySql": "SELECT user_id, username, age, salary, department, email FROM users_2",
+          "sourceId": "source-2",
+          "sourceName": "备份数据库"
+        },
+        {
+          "confidenceWeight": 0.9,
+          "connectionConfig": {
+            "bucket": "test",
+            "endpoint": "http://192.168.188.128:9000",
+            "secretKey": "minioadmin",
+            "accessKey": "minioadmin"
+          },
+          "extConfig": {
+            "file.format": "csv"
+          },
+          "fieldMappings": {
+            "dept": "department"
+          },
+          "pluginName": "minio",
+          "priority": 3,
+          "querySql": "/test/users_3.csv",
+          "sourceId": "source-3",
+          "sourceName": "数据仓库"
+        }
+      ],
+      "description": "检查来自不同系统的用户基本信息一致性",
+      "enabled": true,
+      "matchKeys": [
+        "user_id",
+        "username"
+      ],
+      "outputConfig": {
+        "generateReport": true,
+        "maxDifferencesToDisplay": 100,
+        "outputPath": "./consistency-results",
+        "reportLanguage": "CHINESE"
+      },
+      "performanceConfig": {
+        "memoryLimitMB": 512,
+        "parallelSourceCount": 1
+      },
+      "ruleId": "rule-001",
+      "ruleName": "用户数据一致性检查",
+      "skipUnchangedUpdates": true,
+      "toleranceThreshold": 0.01,
+      "updateBufferSize": 100,
+      "updateRetryAttempts": 0,
+      "updateRetryBackoffMultiplier": 1.5,
+      "updateRetryDelayMs": 1000,
+      "updateTargetSourceId": "source-1",
+      "validateBeforeUpdate": false,
+      "adaptiveMergeConfig": {
+        "enabled": true,
+        "maxSpillBytes": 536870912,
+        "maxSpillBytesMB": 512,
+        "minFreeDiskBytes": 268435456,
+        "minFreeDiskMB": 256,
+        "overflowPartitionCount": 16,
+        "pendingKeyThreshold": 4096,
+        "pendingMemoryBytes": 268435456,
+        "pendingMemoryMB": 256,
+        "preferOrderedQuery": true,
+        "rebalancePartitionMultiplier": 4
+      }
+    }
+  },
+  "writer": {
+    "type": "console",
+    "config": {
+    }
+  }
+}

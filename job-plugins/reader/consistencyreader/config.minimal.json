@@ -1,0 +1,41 @@
+{
+  "reader": {
+    "type": "consistency",
+    "config": {
+      "ruleId": "rule-001",
+      "matchKeys": [
+        "user_id"
+      ],
+      "dataSources": [
+        {
+          "sourceId": "source-1",
+          "pluginName": "mysql8",
+          "connectionConfig": {
+            "host": "127.0.0.1",
+            "port": "3306",
+            "database": "your_db",
+            "userName": "root",
+            "password": "your_password"
+          },
+          "querySql": "SELECT user_id FROM your_table_1"
+        },
+        {
+          "sourceId": "source-2",
+          "pluginName": "mysql8",
+          "connectionConfig": {
+            "host": "127.0.0.1",
+            "port": "3306",
+            "database": "your_db",
+            "userName": "root",
+            "password": "your_password"
+          },
+          "querySql": "SELECT user_id FROM your_table_2"
+        }
+      ]
+    }
+  },
+  "writer": {
+    "type": "console",
+    "config": {}
+  }
+}

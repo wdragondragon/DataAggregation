@@ -12,6 +12,7 @@
     <artifactId>utils</artifactId>
     <packaging>pom</packaging>
     <modules>
+        <module>data-consistency</module>
         <module>plugin-rdbms-util</module>
         <module>plugin-unstructured-storage-util</module>
         <module>plugin-http-dyn-util</module>

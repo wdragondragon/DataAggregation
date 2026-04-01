@@ -1,8 +1,5 @@
 package com.jdragon.aggregation.core.streaming;
 
-import com.jdragon.aggregation.core.consistency.model.ConsistencyRule;
-import com.jdragon.aggregation.core.fusion.config.FusionConfig;
-
 public class StreamExecutionOptions {
 
     private int partitionCount = 16;
@@ -12,42 +9,6 @@ public class StreamExecutionOptions {
     private boolean keepTempFiles = false;
     private String spillPath;
     private int fetchSize = 1000;
-
-    public static StreamExecutionOptions fromFusionConfig(FusionConfig config) {
-        StreamExecutionOptions options = new StreamExecutionOptions();
-        if (config == null) {
-            return options;
-        }
-        FusionConfig.CacheConfig cacheConfig = config.getCacheConfig();
-        FusionConfig.PerformanceConfig performanceConfig = config.getPerformanceConfig();
-        if (cacheConfig != null) {
-            options.setPartitionCount(cacheConfig.getPartitionCount());
-            options.setRebalancePartitionMultiplier(cacheConfig.getRebalancePartitionMultiplier());
-        }
-        if (performanceConfig != null) {
-            options.setParallelSourceCount(performanceConfig.getParallelSourceCount());
-            options.setMemoryLimitMB(performanceConfig.getMemoryLimitMB());
-        }
-        return options;
-    }
-
-    public static StreamExecutionOptions fromConsistencyRule(ConsistencyRule rule) {
-        StreamExecutionOptions options = new StreamExecutionOptions();
-        if (rule == null) {
-            return options;
-        }
-        if (rule.getCacheConfig() != null) {
-            options.setPartitionCount(rule.getCacheConfig().getPartitionCount());
-            options.setRebalancePartitionMultiplier(rule.getCacheConfig().getRebalancePartitionMultiplier());
-            options.setSpillPath(rule.getCacheConfig().getSpillPath());
-            options.setKeepTempFiles(rule.getCacheConfig().getKeepTempFiles());
-        }
-        if (rule.getPerformanceConfig() != null) {
-            options.setParallelSourceCount(rule.getPerformanceConfig().getParallelSourceCount());
-            options.setMemoryLimitMB(rule.getPerformanceConfig().getMemoryLimitMB());
-        }
-        return options;
-    }
 
     public int getMaxKeysPerPartition() {
         int estimatedPerRecordBytes = 1024;

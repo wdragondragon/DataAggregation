@@ -1,0 +1,41 @@
+{
+  "reader": {
+    "type": "fusion",
+    "config": {
+      "sources": [
+        {
+          "id": "main",
+          "type": "mysql8",
+          "config": {
+            "host": "127.0.0.1",
+            "port": "3306",
+            "database": "your_db",
+            "userName": "root",
+            "password": "your_password"
+          },
+          "querySql": "SELECT user_id FROM your_table"
+        }
+      ],
+      "join": {
+        "keys": [
+          "user_id"
+        ]
+      },
+      "fieldMappings": [
+        {
+          "type": "DIRECT",
+          "sourceField": "main.user_id",
+          "targetField": "user_id"
+        }
+      ]
+    }
+  },
+  "writer": {
+    "type": "console",
+    "config": {
+      "columns": [
+        "user_id"
+      ]
+    }
+  }
+}

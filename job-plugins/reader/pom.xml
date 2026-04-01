@@ -13,6 +13,8 @@
     <packaging>pom</packaging>
 
     <modules>
+        <module>fusionreader</module>
+        <module>consistencyreader</module>
         <module>mysql5reader</module>
         <module>mysql8reader</module>
         <module>kafkareader</module>

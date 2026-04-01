@@ -1,0 +1,6 @@
+{
+  "name": "consistencyreader",
+  "class": "com.jdragon.aggregation.core.consistency.SortMergeConsistencyReader",
+  "description": "consistency sortmerge reader",
+  "developer": "jdragon"
+}

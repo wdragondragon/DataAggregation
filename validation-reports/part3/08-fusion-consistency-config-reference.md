@@ -4,8 +4,8 @@
 
 适用入口：
 
-- `reader.type = fusion-sortmerge`
-- `reader.type = consistency-sortmerge`
+- `reader.type = fusion`
+- `reader.type = consistency`
 
 说明：
 
@@ -41,7 +41,7 @@
 ```json
 {
   "reader": {
-    "type": "fusion-sortmerge",
+    "type": "fusion",
     "config": {
     }
   },
@@ -65,7 +65,7 @@
 | `errorModes.fieldOverrides.<targetField>` | map | 无 | 单个目标字段的错误模式覆盖。 |
 | `cache.partitionCount` | int | `10` | 旧 streaming spill 分区数；同时作为 adaptive overflow 的默认分区数来源。 |
 | `cache.rebalancePartitionMultiplier` | int | `4` | rebalance 子分区倍率，子层分区数会严格大于父层。 |
-| `performance.parallelSourceCount` | int | `2` | 旧 `StreamingFusionExecutor` 的并行扫描度；`fusion-sortmerge` 当前不直接消费它。 |
+| `performance.parallelSourceCount` | int | `2` | 旧 `StreamingFusionExecutor` 的并行扫描度；当前 `fusion` reader 不直接消费它。 |
 | `performance.memoryLimitMB` | int | `1024` | 内存预算，驱动 sort-merge pending 窗口和 `maxKeysPerPartition` 估算。 |
 | `adaptiveMerge` | object | 见下表 | 自适应 sort-merge 主配置。 |
 | `detailConfig` | object | 见下表 | 融合详情落盘配置。 |
@@ -147,7 +147,7 @@
 ```json
 {
   "reader": {
-    "type": "consistency-sortmerge",
+    "type": "consistency",
     "config": {
     }
   },
@@ -222,7 +222,7 @@
 | `cache.rebalancePartitionMultiplier` | int | `4` | 子分区倍率。 |
 | `cache.spillPath` | string | 无 | spill 文件目录。 |
 | `cache.keepTempFiles` | boolean | `false` | 是否保留临时 spill 文件。 |
-| `performance.parallelSourceCount` | int | `1` | 旧 `StreamingConsistencyExecutor` 的并行度；`consistency-sortmerge` 当前不直接消费它。 |
+| `performance.parallelSourceCount` | int | `1` | 旧 `StreamingConsistencyExecutor` 的并行度；当前 `consistency` reader 不直接消费它。 |
 | `performance.memoryLimitMB` | int | `512` | 分区 key 数估算和 sort-merge 内存预算来源。 |
 
 ## 三、Fusion 示例 JSON
@@ -230,7 +230,7 @@
 ```json
 {
   "reader": {
-    "type": "fusion-sortmerge",
+    "type": "fusion",
     "config": {
       "sources": [
         {
@@ -375,7 +375,7 @@
 ```json
 {
   "reader": {
-    "type": "consistency-sortmerge",
+    "type": "consistency",
     "config": {
       "ruleId": "user-consistency-rule",
       "ruleName": "用户主数据一致性检查",
@@ -494,7 +494,7 @@
 
 ### Consistency writer 列说明
 
-`consistency-sortmerge` 投给 writer 的常用列名如下：
+`consistency` reader 投给 writer 的常用列名如下：
 
 - `rule_id`
 - `record_id`

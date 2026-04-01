@@ -3,7 +3,6 @@ package com.jdragon.aggregation.datamock.consistency;
 import com.alibaba.fastjson.JSONObject;
 import com.jdragon.aggregation.commons.pagination.Table;
 import com.jdragon.aggregation.commons.util.Configuration;
-import com.jdragon.aggregation.core.consistency.example.ConsistencyExample;
 import com.jdragon.aggregation.core.consistency.model.ComparisonResult;
 import com.jdragon.aggregation.core.consistency.model.ConsistencyRule;
 import com.jdragon.aggregation.core.consistency.model.ConflictResolutionStrategy;
@@ -23,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -35,6 +35,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 
 final class ConsistencyMysqlCrossValidationTestSupport {
 
@@ -167,12 +168,71 @@ final class ConsistencyMysqlCrossValidationTestSupport {
                 });
     }
 
+    private static void copyDirectory(Path source, Path target) {
+        try {
+            deleteDirectory(target);
+            Files.createDirectories(target);
+            try (Stream<Path> stream = Files.walk(source)) {
+                stream.forEach(current -> {
+                    Path relative = source.relativize(current);
+                    Path destination = target.resolve(relative.toString());
+                    try {
+                        if (Files.isDirectory(current)) {
+                            Files.createDirectories(destination);
+                        } else {
+                            if (destination.getParent() != null) {
+                                Files.createDirectories(destination.getParent());
+                            }
+                            Files.copy(current, destination, StandardCopyOption.REPLACE_EXISTING);
+                        }
+                    } catch (IOException e) {
+                        throw new IllegalStateException("Failed to copy plugin directory: " + source, e);
+                    }
+                });
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to prepare plugin directory: " + source, e);
+        }
+    }
+
+    private static void deleteDirectory(Path target) throws IOException {
+        if (!Files.exists(target)) {
+            return;
+        }
+        try (Stream<Path> stream = Files.walk(target)) {
+            stream.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException e) {
+                    throw new IllegalStateException("Failed to clean plugin directory: " + target, e);
+                }
+            });
+        }
+    }
+
     private static void ensureAggregationHome() {
         System.setProperty("aggregation.home", AGGREGATION_HOME);
+        ensureReaderPluginAvailable("consistency");
         Path pluginPath = Paths.get(AGGREGATION_HOME, "plugin", "writer", "mysql8writer", "plugin.json");
         if (!Files.exists(pluginPath)) {
             throw new IllegalStateException("mysql8 writer plugin not found under aggregation.home: " + pluginPath);
         }
+    }
+
+    private static void ensureReaderPluginAvailable(String pluginName) {
+        String pluginDirectoryName = pluginName + "reader";
+        Path pluginHome = Paths.get(AGGREGATION_HOME, "plugin", "reader", pluginDirectoryName);
+        List<Path> candidates = Arrays.asList(
+                Paths.get("..", "job-plugins", "reader", "consistencyreader", "target", "aggregation-bin", "plugin", "reader", pluginDirectoryName).normalize(),
+                Paths.get("job-plugins", "reader", "consistencyreader", "target", "aggregation-bin", "plugin", "reader", pluginDirectoryName).normalize()
+        );
+        for (Path candidate : candidates) {
+            if (Files.exists(candidate.resolve("plugin.json"))) {
+                copyDirectory(candidate, pluginHome);
+                return;
+            }
+        }
+        throw new IllegalStateException("reader plugin not found under aggregation.home or module target: " + pluginName);
     }
 
     private static ScenarioContext prepareScenario(String label,

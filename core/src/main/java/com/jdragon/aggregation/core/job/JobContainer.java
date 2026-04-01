@@ -5,10 +5,6 @@ import com.jdragon.aggregation.commons.statistics.VMInfo;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.enums.Key;
 import com.jdragon.aggregation.core.enums.State;
-import com.jdragon.aggregation.core.consistency.ConsistencyReader;
-import com.jdragon.aggregation.core.consistency.SortMergeConsistencyReader;
-import com.jdragon.aggregation.core.fusion.FusionReader;
-import com.jdragon.aggregation.core.fusion.SortMergeFusionReader;
 import com.jdragon.aggregation.core.plugin.AbstractJobPlugin;
 import com.jdragon.aggregation.core.plugin.CustomPluginCreator;
 import com.jdragon.aggregation.core.plugin.Transformer;
@@ -238,39 +234,13 @@ public class JobContainer {
             }
             jobPlugin.setPluginType(pluginType);
         } else {
-            AbstractJobPlugin builtinPlugin = createBuiltinJobPlugin(pluginType, pluginName);
-            if (builtinPlugin != null) {
-                jobPlugin = builtinPlugin;
-                jobPlugin.setClassLoader(Thread.currentThread().getContextClassLoader());
-                jobPlugin.setPluginType(pluginType);
-            } else {
             try (PluginClassLoaderCloseable classLoaderSwapper = PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(pluginType, pluginName + pluginType.getName())) {
                 jobPlugin = classLoaderSwapper.loadPlugin();
-            }
             }
         }
         jobPlugin.setPluginJobConf(configuration);
         jobPlugin.setPeerPluginJobConf(peerConfiguration);
         return jobPlugin;
-    }
-
-    private AbstractJobPlugin createBuiltinJobPlugin(PluginType pluginType, String pluginName) {
-        if (pluginType != PluginType.READER || pluginName == null) {
-            return null;
-        }
-        if ("fusion".equalsIgnoreCase(pluginName)) {
-            return new FusionReader();
-        }
-        if ("consistency".equalsIgnoreCase(pluginName)) {
-            return new ConsistencyReader();
-        }
-        if ("fusion-sortmerge".equalsIgnoreCase(pluginName)) {
-            return new SortMergeFusionReader();
-        }
-        if ("consistency-sortmerge".equalsIgnoreCase(pluginName)) {
-            return new SortMergeConsistencyReader();
-        }
-        return null;
     }
 
     private Thread initExecThread(long jobId, AbstractJobPlugin jobPlugin,

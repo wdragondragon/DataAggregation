@@ -1,0 +1,16 @@
+{
+  "type": "fusion-sortmerge",
+  "config": {
+    "sources": [],
+    "join": {
+      "keys": [
+        "biz_id"
+      ],
+      "type": "LEFT"
+    },
+    "fieldMappings": [],
+    "adaptiveMerge": {
+      "enabled": true
+    }
+  }
+}

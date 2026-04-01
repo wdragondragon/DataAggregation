@@ -1,0 +1,6 @@
+{
+  "name": "fusionreader",
+  "class": "com.jdragon.aggregation.core.fusion.SortMergeFusionReader",
+  "description": "fusion sortmerge reader",
+  "developer": "jdragon"
+}
