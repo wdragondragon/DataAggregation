@@ -20,6 +20,7 @@
         <module>rocketmqwriter</module>
         <module>dmwriter</module>
         <module>influxdbv1writer</module>
+        <module>postgresqlwriter</module>
     </modules>
 
     <properties>

@@ -14,6 +14,8 @@ import com.jdragon.aggregation.datasource.rdbms.RdbmsSourcePlugin;
 import com.jdragon.aggregation.rdbms.util.DBUtil;
 import com.jdragon.aggregation.rdbms.util.DBUtilErrorCode;
 import com.jdragon.aggregation.rdbms.util.WriterUtil;
+import lombok.Data;
+import lombok.Getter;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Triple;
 import org.slf4j.Logger;
@@ -28,6 +30,7 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 
+@Getter
 public class CommonRdbmsWriter extends Writer.Job {
     protected static final Logger LOG = LoggerFactory
             .getLogger(CommonRdbmsWriter.class);

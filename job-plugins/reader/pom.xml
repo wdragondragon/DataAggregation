@@ -22,6 +22,7 @@
         <module>dmreader</module>
         <module>influxdbv1reader</module>
         <module>consolereader</module>
+        <module>postgresqlreader</module>
     </modules>
 
     <properties>
