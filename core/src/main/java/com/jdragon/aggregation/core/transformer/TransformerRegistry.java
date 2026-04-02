@@ -79,7 +79,9 @@ public class TransformerRegistry {
         checkName(transformer.getTransformerName(), isNative);
 
         if (registedTransformer.containsKey(transformer.getTransformerName())) {
-            throw AggregationException.asException(TransformerErrorCode.TRANSFORMER_DUPLICATE_ERROR, " name=" + transformer.getTransformerName());
+//            throw AggregationException.asException(TransformerErrorCode.TRANSFORMER_DUPLICATE_ERROR, " name=" + transformer.getTransformerName());
+            LOG.warn("Transformer {} has existed.", transformer.getTransformerName());
+            return;
         }
 
         registedTransformer.put(transformer.getTransformerName(), buildTransformerInfo(transformer, isNative, classLoader));
