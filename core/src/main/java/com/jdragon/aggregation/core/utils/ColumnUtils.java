@@ -30,4 +30,25 @@ public class ColumnUtils {
             return new ObjectColumn(o);
         }
     }
+
+    public static Object column2Object(Column column) {
+        if (column == null) {
+            return null;
+        }
+
+        if (column instanceof StringColumn || column instanceof DateColumn) {
+            return column.asString();
+        } else if (column instanceof LongColumn) {
+            return column.asLong();
+        } else if (column instanceof DoubleColumn) {
+            return column.asDouble();
+        } else if (column instanceof BoolColumn) {
+            return column.asBoolean();
+        } else if (column instanceof BytesColumn) {
+            return column.asBytes();
+        } else if (column instanceof ObjectColumn) {
+            return column.asString();
+        }
+        return column.getRawData();
+    }
 }

@@ -6,6 +6,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.jdragon.aggregation.commons.element.*;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.util.Configuration;
+import com.jdragon.aggregation.core.utils.ColumnUtils;
 import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
 import com.jdragon.aggregation.datasource.rdbms.RdbmsSourcePlugin;
 import com.jdragon.aggregation.rdbms.util.DBUtil;
@@ -63,7 +64,7 @@ public class CommonRdbmsReader extends Reader.Job {
                     throw new RuntimeException(e);
                 }
             }
-            String maxPk = this.getJobPointReporter().get("pkValue", null);
+            Object maxPk = this.getJobPointReporter().get("pkValue", null);
             selectSql = String.format("select %s from %s", String.join(",", columns), tableName);
             pkColumn = this.getPluginJobConf().getString("incrColumn");
             String pkModel = this.getPluginJobConf().getString("incrModel", ">");
@@ -72,7 +73,7 @@ public class CommonRdbmsReader extends Reader.Job {
             }
 
             if (pkIndex != null && maxPk != null) {
-                maxPkValue = new StringColumn(maxPk);
+                maxPkValue = ColumnUtils.object2Column(maxPk);
                 selectSql += String.format("where %s %s '%s'", pkColumn, pkModel, maxPk);
             }
         }
@@ -129,7 +130,7 @@ public class CommonRdbmsReader extends Reader.Job {
             Column column = record.getColumn(pkIndex);
             if (maxPkValue == null || maxPkValue.compareTo(column) < 0) {
                 maxPkValue = column;
-                this.getJobPointReporter().put("pkValue", maxPkValue.asString());
+                this.getJobPointReporter().put("pkValue", ColumnUtils.column2Object(maxPkValue));
             }
         }
         return record;

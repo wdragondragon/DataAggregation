@@ -25,6 +25,7 @@ import com.jdragon.aggregation.core.streaming.PartitionedSpillStore;
 import com.jdragon.aggregation.core.streaming.SpillGuard;
 import com.jdragon.aggregation.core.streaming.SourceRowScanner;
 import com.jdragon.aggregation.core.streaming.StreamExecutionOptions;
+import com.jdragon.aggregation.core.utils.ColumnUtils;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -296,7 +297,7 @@ public class AdaptiveSortMergeFusionExecutor {
                 column = sourceMaxIncrValues.get(sourceId);
             }
             if (column != null && fusionContext.getJobPointReporter() != null) {
-                fusionContext.getJobPointReporter().put("pkValue_" + sourceId, column.asString());
+                fusionContext.getJobPointReporter().put("pkValue_" + sourceId, ColumnUtils.column2Object(column));
             }
         }
     }
