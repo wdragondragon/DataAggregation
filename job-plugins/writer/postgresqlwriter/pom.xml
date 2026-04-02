@@ -73,7 +73,7 @@
                             <descriptors>
                                 <descriptor>src/main/assembly/package-zip.xml</descriptor>
                             </descriptors>
-                            <finalName>postgresql</finalName>
+                            <finalName>postgresqlwriter</finalName>
                             <appendAssemblyId>false</appendAssemblyId>
                         </configuration>
                     </execution>

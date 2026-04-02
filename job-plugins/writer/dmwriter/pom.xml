@@ -67,7 +67,7 @@
                             <descriptors>
                                 <descriptor>src/main/assembly/package-zip.xml</descriptor>
                             </descriptors>
-                            <finalName>dm</finalName>
+                            <finalName>dmwriter</finalName>
                             <appendAssemblyId>false</appendAssemblyId>
                         </configuration>
                     </execution>

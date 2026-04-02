@@ -67,7 +67,7 @@
                             <descriptors>
                                 <descriptor>src/main/assembly/package-zip.xml</descriptor>
                             </descriptors>
-                            <finalName>http</finalName>
+                            <finalName>httpreader</finalName>
                             <appendAssemblyId>false</appendAssemblyId>
                         </configuration>
                     </execution>

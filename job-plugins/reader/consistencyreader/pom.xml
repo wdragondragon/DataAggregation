@@ -63,7 +63,7 @@
                             <descriptors>
                                 <descriptor>src/main/assembly/package-zip.xml</descriptor>
                             </descriptors>
-                            <finalName>consistency</finalName>
+                            <finalName>consistencyreader</finalName>
                             <appendAssemblyId>false</appendAssemblyId>
                         </configuration>
                     </execution>

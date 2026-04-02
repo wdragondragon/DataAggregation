@@ -62,7 +62,7 @@
                             <descriptors>
                                 <descriptor>src/main/assembly/package-zip.xml</descriptor>
                             </descriptors>
-                            <finalName>kafka</finalName>
+                            <finalName>kafkareader</finalName>
                             <appendAssemblyId>false</appendAssemblyId>
                         </configuration>
                     </execution>
