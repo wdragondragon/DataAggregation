@@ -52,6 +52,20 @@
                             <goal>single</goal>
                         </goals>
                     </execution>
+                    <execution>
+                        <id>zip</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                        <configuration>
+                            <descriptors>
+                                <descriptor>src/main/assembly/package-zip.xml</descriptor>
+                            </descriptors>
+                            <finalName>rocketmq</finalName>
+                            <appendAssemblyId>false</appendAssemblyId>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
         </plugins>

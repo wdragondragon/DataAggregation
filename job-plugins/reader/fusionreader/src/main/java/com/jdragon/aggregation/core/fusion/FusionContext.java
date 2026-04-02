@@ -92,6 +92,9 @@ public class FusionContext {
         if (sourceIncrColumn.containsKey(sourceId)) {
             // 更新增量值
             Column maxPkValue = sourceMaxIncrValues.get(sourceId);
+            if (incrValue == null) {
+                return;
+            }
             if (maxPkValue == null || maxPkValue.compareTo(incrValue) < 0) {
 //                maxPkValue = incrValue;
 //                this.getJobPointReporter().put("pkValue_" + sourceId, maxPkValue.asString());

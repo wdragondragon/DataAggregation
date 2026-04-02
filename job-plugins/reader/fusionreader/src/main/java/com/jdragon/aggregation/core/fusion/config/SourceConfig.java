@@ -3,6 +3,7 @@ package com.jdragon.aggregation.core.fusion.config;
 import com.jdragon.aggregation.commons.element.Column;
 import com.jdragon.aggregation.commons.element.StringColumn;
 import com.jdragon.aggregation.commons.util.Configuration;
+import com.jdragon.aggregation.core.utils.ColumnUtils;
 import lombok.Data;
 import org.apache.commons.lang3.StringUtils;
 
@@ -76,9 +77,9 @@ public class SourceConfig {
                 String selectedColumns = (columns == null || columns.isEmpty()) ? "*" : String.join(",", columns);
                 String querySql = String.format("select %s from %s", selectedColumns, tableName);
                 if (StringUtils.isNotBlank(sourceConfig.getIncrColumn())) {
-                    String maxPk = config.get("pkValue", null);
+                    Object maxPk = config.get("pkValue", null);
                     if (maxPk != null) {
-                        sourceConfig.setMaxIncrValue(new StringColumn(maxPk));
+                        sourceConfig.setMaxIncrValue(ColumnUtils.object2Column(maxPk));
                         querySql += String.format(" where %s %s '%s'", sourceConfig.getIncrColumn(), sourceConfig.getIncrModel(), maxPk);
                     }
                 }
