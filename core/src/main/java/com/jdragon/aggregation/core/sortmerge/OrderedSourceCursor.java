@@ -3,6 +3,7 @@ package com.jdragon.aggregation.core.sortmerge;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.consistency.model.DataSourceConfig;
 import com.jdragon.aggregation.core.streaming.SourceRowScanner;
+import com.jdragon.aggregation.core.util.MdcTaskDecorator;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -89,7 +90,7 @@ public class OrderedSourceCursor {
         if (worker != null) {
             return;
         }
-        worker = new Thread(this::produceGroups, "sortmerge-cursor-" + sourceId);
+        worker = MdcTaskDecorator.newThread(this::produceGroups, "sortmerge-cursor-" + sourceId);
         worker.setDaemon(true);
         worker.start();
     }

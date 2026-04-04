@@ -1,6 +1,7 @@
 package com.jdragon.aggregation.core.job.simple;
 
 import com.jdragon.aggregation.core.job.Message;
+import com.jdragon.aggregation.core.util.MdcTaskDecorator;
 
 import java.util.List;
 import java.util.concurrent.*;
@@ -15,7 +16,7 @@ public class ContinuousStream {
 
     // 启动源端推送线程
     public void startProducer(Supplier<String> dataSupplier) {
-        executor.submit(() -> {
+        executor.submit(MdcTaskDecorator.wrap(() -> {
             try {
                 while (true) {
                     String data = dataSupplier.get();
@@ -31,12 +32,12 @@ public class ContinuousStream {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
-        });
+        }));
     }
 
     // 启动消费者线程
     public void startConsumer() {
-        executor.submit(() -> {
+        executor.submit(MdcTaskDecorator.wrap(() -> {
             try {
                 while (true) {
                     Message message = queue.take();  // 获取消息
@@ -47,7 +48,7 @@ public class ContinuousStream {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
-        });
+        }));
     }
 
     // 注册Transformer

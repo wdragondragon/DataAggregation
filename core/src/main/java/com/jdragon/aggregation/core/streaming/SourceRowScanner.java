@@ -11,6 +11,7 @@ import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
 import com.jdragon.aggregation.datasource.SourcePluginType;
 import com.jdragon.aggregation.datasource.file.FileHelper;
 import com.jdragon.aggregation.pluginloader.LoadUtil;
+import com.jdragon.aggregation.core.util.MdcTaskDecorator;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
@@ -48,7 +49,7 @@ public class SourceRowScanner {
                 for (int i = 0; i < configs.size(); i++) {
                     final DataSourceConfig config = configs.get(i);
                     futures[i] = CompletableFuture.runAsync(
-                            () -> scan(config, row -> consumer.accept(config.getSourceId(), row)),
+                            MdcTaskDecorator.wrap(() -> scan(config, row -> consumer.accept(config.getSourceId(), row))),
                             executor
                     );
                 }

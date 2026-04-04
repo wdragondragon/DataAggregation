@@ -2,6 +2,7 @@ package com.jdragon.aggregation.core.job;
 
 
 import com.jdragon.aggregation.commons.element.Record;
+import com.jdragon.aggregation.core.util.MdcTaskDecorator;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -25,13 +26,13 @@ public class Pipeline extends PipelineAbstract {
     @Override
     public void process() throws InterruptedException {
         for (StreamHandler node : getNodes()) {
-            getExecutorService().submit(() -> {
+            getExecutorService().submit(MdcTaskDecorator.wrap(() -> {
                 try {
                     node.process();  // 启动流处理器任务
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
-            });
+            }));
         }
     }
 

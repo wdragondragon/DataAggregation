@@ -1,6 +1,7 @@
 package com.jdragon.aggregation.core.job;
 
 import com.jdragon.aggregation.commons.element.Record;
+import com.jdragon.aggregation.core.util.MdcTaskDecorator;
 
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -15,7 +16,7 @@ public class MergePipeline extends PipelineAbstract {
     public void process() throws InterruptedException {
         for (StreamHandler node : this.getNodes()) {
             node.process();
-            getExecutorService().submit(() -> {
+            getExecutorService().submit(MdcTaskDecorator.wrap(() -> {
                 try {
                     while (true) {
                         Record take = node.getOutputQueue().take();
@@ -24,7 +25,7 @@ public class MergePipeline extends PipelineAbstract {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
-            });
+            }));
         }
     }
 }

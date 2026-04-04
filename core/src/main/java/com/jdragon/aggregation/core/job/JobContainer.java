@@ -21,6 +21,7 @@ import com.jdragon.aggregation.core.transport.channel.Channel;
 import com.jdragon.aggregation.core.transport.channel.memory.MemoryChannel;
 import com.jdragon.aggregation.core.transport.exchanger.BufferedRecordExchanger;
 import com.jdragon.aggregation.core.transport.exchanger.BufferedRecordTransformerExchanger;
+import com.jdragon.aggregation.core.util.MdcTaskDecorator;
 import com.jdragon.aggregation.core.utils.*;
 import com.jdragon.aggregation.pluginloader.ClassLoaderSwapper;
 import com.jdragon.aggregation.pluginloader.PluginClassLoaderCloseable;
@@ -92,7 +93,8 @@ public class JobContainer {
         jobPointReporter.setTrackCommunication(jobCommunication);
         jobPointReporter.recovery();
         // 启动上报线程
-        Thread jobPointReportThread = new Thread(jobPointReporter);
+        Thread jobPointReportThread = MdcTaskDecorator.newThread(jobPointReporter,
+                String.format("DataAggregation-Thread-reporter-%d", jobId));
         jobPointReportThread.start();
         try {
             // 启动作业
@@ -267,7 +269,7 @@ public class JobContainer {
         }
         runner.setJobId(jobId);
         runner.setRunnerCommunication(jobCommunication);
-        Thread runThread = new Thread(runner,
+        Thread runThread = MdcTaskDecorator.newThread(runner,
                 String.format("DataAggregation-Thread-%s-%d", pluginType.getName(), jobId));
         runThread.setContextClassLoader(jobPlugin.getClassLoader());
         return runThread;
