@@ -88,6 +88,11 @@
                 </exclusion>
             </exclusions>
         </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-core</artifactId>
+            <version>${spring.version}</version>
+        </dependency>
         <!--zookeeper curator-->
         <dependency>
             <groupId>org.apache.curator</groupId>

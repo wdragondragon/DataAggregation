@@ -12,8 +12,10 @@ import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.tools.admin.DefaultMQAdminExt;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
@@ -42,6 +44,27 @@ public class RocketQueue extends QueueAbstract {
 
     public RocketQueue() {
 
+    }
+
+    public Set<String> listTopic() throws Exception {
+        DefaultMQAdminExt adminExt = new DefaultMQAdminExt();
+        adminExt.setNamesrvAddr(namesrvAddr);
+        try {
+            adminExt.start();
+            return adminExt.fetchAllTopicList().getTopicList();
+        } finally {
+            adminExt.shutdown();
+        }
+    }
+
+    @Override
+    public boolean checkConnectivity() {
+        try {
+            return true;
+        } catch (Exception e) {
+            log.error("获取topic list失败", e);
+            return false;
+        }
     }
 
     @Override

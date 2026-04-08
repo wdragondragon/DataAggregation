@@ -17,6 +17,8 @@ public abstract class QueueAbstract extends AbstractPlugin {
     public QueueAbstract() {
     }
 
+    public abstract boolean checkConnectivity();
+
     // 发送消息的抽象方法
     public abstract void sendMessage(String message) throws Exception;
 

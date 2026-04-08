@@ -66,6 +66,18 @@ public class RunStatus {
         init();
     }
 
+    public void initFore(){
+        long totalReadRecords = getTotalReadRecords(communication);
+        long totalReadBytes = getTotalReadBytes(communication);
+        communication.setLongCounter(TOTAL_READ_RECORDS, totalReadRecords);
+        communication.setLongCounter(TOTAL_READ_BYTES, totalReadBytes);
+        communication.setLongCounter(TOTAL_ERROR_RECORDS, getTotalErrorRecords(communication));
+        communication.setLongCounter(TOTAL_ERROR_BYTES, getTotalErrorBytes(communication));
+        communication.setLongCounter(WRITE_SUCCEED_RECORDS, getWriteSucceedRecords(communication));
+        communication.setLongCounter(WRITE_SUCCEED_BYTES, getWriteSucceedBytes(communication));
+        init();
+    }
+
     public void init() {
         this.total = communication.getLongCounter(TOTAL_READ_RECORDS);
         this.bytes = communication.getLongCounter(TOTAL_READ_BYTES);

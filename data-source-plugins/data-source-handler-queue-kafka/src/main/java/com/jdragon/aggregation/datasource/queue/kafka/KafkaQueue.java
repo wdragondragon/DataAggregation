@@ -1,9 +1,9 @@
 package com.jdragon.aggregation.datasource.queue.kafka;
 
-import com.alibaba.fastjson.JSONObject;
-import com.alibaba.fastjson.TypeReference;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.queue.QueueAbstract;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -24,6 +24,7 @@ import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@Slf4j
 public class KafkaQueue extends QueueAbstract {
 
     private static final Logger LOG = LoggerFactory.getLogger(KafkaQueue.class);
@@ -36,6 +37,23 @@ public class KafkaQueue extends QueueAbstract {
 
     public KafkaQueue() {
 
+    }
+
+    public Set<String> listTopic() throws Exception {
+        try (AdminClient adminClient = AdminClient.create(props)) {
+            return adminClient.listTopics().names().get();
+        }
+    }
+
+    @Override
+    public boolean checkConnectivity() {
+        try {
+            Set<String> listTopic = listTopic();
+            return true;
+        } catch (Exception e) {
+            log.error("获取topic list失败", e);
+            return false;
+        }
     }
 
     @Override

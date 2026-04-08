@@ -23,6 +23,10 @@ public class RabbitQueue extends QueueAbstract {
 
     }
 
+    public boolean checkConnectivity() {
+        return connection.isOpen() && channel.isOpen();
+    }
+
     @Override
     public void init() {
         // 从 Map 中提取参数
