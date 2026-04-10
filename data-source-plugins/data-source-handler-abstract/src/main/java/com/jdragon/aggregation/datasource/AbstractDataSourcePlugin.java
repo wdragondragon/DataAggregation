@@ -7,6 +7,7 @@ import com.jdragon.aggregation.pluginloader.spi.AbstractPlugin;
 
 import java.sql.Connection;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -42,9 +43,37 @@ public abstract class AbstractDataSourcePlugin extends AbstractPlugin {
 
     public abstract List<TableInfo> getTableInfos(BaseDataSourceDTO dataSource, String table);
 
+    public Map<String, List<TableInfo>> getTableInfos(BaseDataSourceDTO dataSource, List<String> tables) {
+        Map<String, List<TableInfo>> result = new LinkedHashMap<String, List<TableInfo>>();
+        if (tables == null) {
+            return result;
+        }
+        for (String table : tables) {
+            if (table == null || table.trim().isEmpty()) {
+                continue;
+            }
+            result.put(table, getTableInfos(dataSource, table));
+        }
+        return result;
+    }
+
     public abstract List<String> getTableNames(BaseDataSourceDTO dataSource, String table);
 
     public abstract List<ColumnInfo> getColumns(BaseDataSourceDTO dataSource, String table);
+
+    public Map<String, List<ColumnInfo>> getColumns(BaseDataSourceDTO dataSource, List<String> tables) {
+        Map<String, List<ColumnInfo>> result = new LinkedHashMap<String, List<ColumnInfo>>();
+        if (tables == null) {
+            return result;
+        }
+        for (String table : tables) {
+            if (table == null || table.trim().isEmpty()) {
+                continue;
+            }
+            result.put(table, getColumns(dataSource, table));
+        }
+        return result;
+    }
 
     /**
      * 获取表大小，单位为mb

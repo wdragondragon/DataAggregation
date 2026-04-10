@@ -1,9 +1,12 @@
+过滤
 range_number_filter       值区间过滤
 string_operation_filter    枚举值过滤
 number_operation_filter 数字过滤
 date_operation_filter       日期过滤
-date_filter	日期转换成时间戳，非法日期置空
 null_value_filter	空值过滤
+
+规整
+date_filter	日期转换成时间戳，非法日期置空
 null_value_replace	空值替换
 add_default_value	添加默认值
 insert_sys_time	添加系统时间
@@ -14,10 +17,14 @@ replace_str	替换字符
 underline_toCamel_str	下划线转驼峰
 camel_toUnderline_str	驼峰转下划线
 number_cut	保留小数点后n位
+
+脱敏
 SHA256_str	SHA256加密
 string_cut	字符截取
 date_mask	覆盖脱敏
 MD5_str	md5加密
+
+加密
 sm2_str	sm2加密
 rsa_str	rsa加密
 idea_str	idea加密
