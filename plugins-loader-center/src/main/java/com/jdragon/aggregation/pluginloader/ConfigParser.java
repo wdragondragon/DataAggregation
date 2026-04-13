@@ -37,7 +37,8 @@ public class ConfigParser {
 
     public static Configuration parseOnePluginConfig(final String path,
                                                      final IPluginType type) {
-        String filePath = path + File.separator + "plugin.json";
+        String fileName = type.getName().equals("transformer") ? "transformer.json" : "plugin.json";
+        String filePath = path + File.separator + fileName;
         if (pluginConfigMap.containsKey(filePath)) {
             return pluginConfigMap.get(filePath);
         }
