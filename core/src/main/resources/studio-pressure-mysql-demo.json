@@ -1,0 +1,67 @@
+{
+  "sourceMysql": {
+    "host": "192.168.188.129",
+    "port": 3306,
+    "database": "agg_test",
+    "userName": "root",
+    "password": "951753",
+    "other": "{\"rewriteBatchedStatements\":true,\"useUnicode\":true,\"characterEncoding\":\"utf8\"}",
+    "usePool": true,
+    "extraParams": {}
+  },
+  "targetMysql": {
+    "host": "192.168.188.129",
+    "port": 3306,
+    "database": "agg_test",
+    "userName": "root",
+    "password": "951753",
+    "other": "{\"rewriteBatchedStatements\":true,\"useUnicode\":true,\"characterEncoding\":\"utf8\"}",
+    "usePool": true,
+    "extraParams": {}
+  },
+  "studio": {
+    "baseUrl": "http://127.0.0.1:18080",
+    "username": "admin",
+    "password": "admin123",
+    "tenantId": "default",
+    "projectPrefix": "pressure_mock"
+  },
+  "generation": {
+    "sourceDatabase": "mock_data",
+    "targetDatabase": "mock_data_target",
+    "tableNamePrefix": "mock_tbl",
+    "familyCount": 32,
+    "tableCount": 10000,
+    "dropExisting": true,
+    "insertBatchSize": 500,
+    "tiers": [
+      {
+        "tierCode": "cold",
+        "tableCount": 8000,
+        "rowCount": 10
+      },
+      {
+        "tierCode": "warm",
+        "tableCount": 1500,
+        "rowCount": 100
+      },
+      {
+        "tierCode": "hot",
+        "tableCount": 400,
+        "rowCount": 1000
+      },
+      {
+        "tierCode": "heavy",
+        "tableCount": 100,
+        "rowCount": 10000
+      }
+    ]
+  },
+  "timeouts": {
+    "requestTimeoutMs": 1800000,
+    "pollIntervalMs": 3000,
+    "smallDrainTimeoutMs": 1800000,
+    "mediumDrainTimeoutMs": 2700000,
+    "largeDrainTimeoutMs": 5400000
+  }
+}
