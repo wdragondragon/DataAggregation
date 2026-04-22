@@ -2,6 +2,8 @@ package com.jdragon.aggregation.datamock.fusion;
 
 import com.jdragon.aggregation.core.sortmerge.SortMergeStats;
 import com.jdragon.aggregation.core.fusion.config.FusionConfig;
+import com.jdragon.aggregation.datamock.support.MysqlIntegrationAssumptions;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.util.List;
@@ -12,6 +14,11 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class FusionJobContainerMysqlAdaptiveBehaviorTest {
+
+    @BeforeClass
+    public static void assumeMysqlIntegrationEnabled() {
+        MysqlIntegrationAssumptions.assumeEnabled(FusionJobContainerMysqlAdaptiveBehaviorTest.class);
+    }
 
     @Test
     public void shouldMergeSparseOutOfOrderKeysThroughJobContainer() throws Exception {

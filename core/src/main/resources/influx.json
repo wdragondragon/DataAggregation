@@ -19,7 +19,8 @@
       ],
       "selectSql": "",
       "startTime": "2025-05-30 14:12:00",
-      "endTime": "2025-05-30 14:23:00"
+      "endTime": "2025-05-30 14:23:00",
+      "windowSizeMs": "3600000"
     }
   },
   "writer": {

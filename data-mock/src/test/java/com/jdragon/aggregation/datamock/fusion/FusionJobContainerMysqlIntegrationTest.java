@@ -1,5 +1,7 @@
 package com.jdragon.aggregation.datamock.fusion;
 
+import com.jdragon.aggregation.datamock.support.MysqlIntegrationAssumptions;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.util.List;
@@ -8,6 +10,11 @@ import java.util.Map;
 import static org.junit.Assert.assertEquals;
 
 public class FusionJobContainerMysqlIntegrationTest {
+
+    @BeforeClass
+    public static void assumeMysqlIntegrationEnabled() {
+        MysqlIntegrationAssumptions.assumeEnabled(FusionJobContainerMysqlIntegrationTest.class);
+    }
 
     @Test
     public void shouldFuseTwoMysqlTablesIntoTargetTableThroughJobContainer() throws Exception {

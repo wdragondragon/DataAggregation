@@ -6,17 +6,11 @@ import com.jdragon.aggregation.commons.element.StringColumn;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.core.plugin.Transformer;
 import com.jdragon.aggregation.transformer.TransformerErrorCode;
-import com.alibaba.fastjson.JSONObject;
-import com.alibaba.fastjson.TypeReference;
-import com.sun.org.apache.xml.internal.utils.Constants;
 import org.apache.commons.lang3.StringUtils;
 
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Set;
 
 /**
  * @author jdragon

@@ -1,5 +1,7 @@
 package com.jdragon.aggregation.datamock.consistency;
 
+import com.jdragon.aggregation.datamock.support.MysqlIntegrationAssumptions;
+import org.junit.BeforeClass;
 import com.jdragon.aggregation.core.consistency.model.ComparisonResult;
 import com.jdragon.aggregation.core.consistency.model.UpdateResult;
 import org.junit.Test;
@@ -11,6 +13,11 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
 public class ConsistencyMysqlCrossValidationIntegrationTest {
+
+    @BeforeClass
+    public static void assumeMysqlIntegrationEnabled() {
+        MysqlIntegrationAssumptions.assumeEnabled(ConsistencyMysqlCrossValidationIntegrationTest.class);
+    }
 
     @Test
     public void shouldCrossValidateConsistencyExampleAndReaderForInsertUpdateDelete() throws Exception {

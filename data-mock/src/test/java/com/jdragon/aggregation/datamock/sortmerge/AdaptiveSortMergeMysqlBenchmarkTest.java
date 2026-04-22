@@ -2,6 +2,7 @@ package com.jdragon.aggregation.datamock.sortmerge;
 
 import com.jdragon.aggregation.core.consistency.model.ComparisonResult;
 import com.jdragon.aggregation.core.sortmerge.SortMergeStats;
+import com.jdragon.aggregation.datamock.support.MysqlIntegrationAssumptions;
 import org.junit.Assume;
 import org.junit.Test;
 
@@ -192,7 +193,9 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
         report.append("- 当前阶段: `part3` 收尾验证\n");
         report.append("- Java: `").append(System.getProperty("java.version")).append("`\n");
         report.append("- Core 基线命令: `mvn -q -pl core -am \"-Dtest=AdaptiveMergeCoordinatorTest,SpillGuardTest\" test -DfailIfNoTests=false`\n");
-        report.append("- Integration 命令: `mvn -q -pl data-mock -am \"-Dtest=AdaptiveSortMergeMysqlIntegrationTest\" test -DfailIfNoTests=false`\n");
+        report.append("- Integration 命令: `mvn -q -pl data-mock -am -D")
+                .append(MysqlIntegrationAssumptions.MYSQL_INTEGRATION_FLAG)
+                .append("=true \"-Dtest=AdaptiveSortMergeMysqlIntegrationTest\" test -DfailIfNoTests=false`\n");
         report.append("- Benchmark 命令: `mvn -q -pl data-mock -am -DrunSortMergeMysqlBenchmarks=true \"-Dtest=AdaptiveSortMergeMysqlBenchmarkTest\" test -DfailIfNoTests=false`\n");
         report.append("- 可选单场景过滤: `-DsortMergeScenario=<label>`\n");
         report.append("- 报告输出: `").append(resolveReportPath()).append("`\n\n");

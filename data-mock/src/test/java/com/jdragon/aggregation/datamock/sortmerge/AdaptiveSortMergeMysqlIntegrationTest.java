@@ -1,6 +1,8 @@
 package com.jdragon.aggregation.datamock.sortmerge;
 
 import com.jdragon.aggregation.core.consistency.model.ComparisonResult;
+import com.jdragon.aggregation.datamock.support.MysqlIntegrationAssumptions;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.nio.file.Path;
@@ -13,6 +15,11 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class AdaptiveSortMergeMysqlIntegrationTest {
+
+    @BeforeClass
+    public static void assumeMysqlIntegrationEnabled() {
+        MysqlIntegrationAssumptions.assumeEnabled(AdaptiveSortMergeMysqlIntegrationTest.class);
+    }
 
     @Test
     public void shouldRunConsistencyAndFusionAgainstMysqlDemoSource() throws Exception {

@@ -1,7 +1,13 @@
 package com.jdragon.aggregation.influxdbv1;
 
 import com.alibaba.fastjson.JSONObject;
-import com.jdragon.aggregation.commons.element.*;
+import com.jdragon.aggregation.commons.element.BoolColumn;
+import com.jdragon.aggregation.commons.element.Column;
+import com.jdragon.aggregation.commons.element.DateColumn;
+import com.jdragon.aggregation.commons.element.DoubleColumn;
+import com.jdragon.aggregation.commons.element.LongColumn;
+import com.jdragon.aggregation.commons.element.Record;
+import com.jdragon.aggregation.commons.element.StringColumn;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.plugin.RecordSender;
 import com.jdragon.aggregation.core.plugin.spi.Reader;

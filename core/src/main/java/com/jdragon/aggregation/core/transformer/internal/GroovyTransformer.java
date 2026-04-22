@@ -75,7 +75,15 @@ public class GroovyTransformer extends Transformer {
             }
         }
         sb.append("import static com.jdragon.aggregation.core.transformer.internal.GroovyTransformerStaticUtil.*;");
-        sb.append("import com.jdragon.aggregation.commons.element.*;");
+        sb.append("import com.jdragon.aggregation.commons.element.BoolColumn;");
+        sb.append("import com.jdragon.aggregation.commons.element.BytesColumn;");
+        sb.append("import com.jdragon.aggregation.commons.element.Column;");
+        sb.append("import com.jdragon.aggregation.commons.element.DateColumn;");
+        sb.append("import com.jdragon.aggregation.commons.element.DoubleColumn;");
+        sb.append("import com.jdragon.aggregation.commons.element.LongColumn;");
+        sb.append("import com.jdragon.aggregation.commons.element.ObjectColumn;");
+        sb.append("import com.jdragon.aggregation.commons.element.Record;");
+        sb.append("import com.jdragon.aggregation.commons.element.StringColumn;");
         sb.append("import com.jdragon.aggregation.commons.exception.AggregationException;");
         sb.append("import com.jdragon.aggregation.core.plugin.Transformer;");
         sb.append("import java.util.*;");

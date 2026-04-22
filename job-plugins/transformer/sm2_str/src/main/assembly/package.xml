@@ -21,7 +21,7 @@
         <fileSet>
             <directory>target/</directory>
             <includes>
-                <include>sm2_str-1.0-SNAPSHOT.jar</include>
+                <include>sm2_str-1.0_jdk17-SNAPSHOT.jar</include>
             </includes>
             <outputDirectory>plugin/transformer/sm2_str</outputDirectory>
         </fileSet>

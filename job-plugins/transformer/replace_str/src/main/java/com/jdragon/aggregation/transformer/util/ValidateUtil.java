@@ -1,6 +1,12 @@
 package com.jdragon.aggregation.transformer.util;
 
-import com.jdragon.aggregation.commons.element.*;
+import com.jdragon.aggregation.commons.element.BoolColumn;
+import com.jdragon.aggregation.commons.element.Column;
+import com.jdragon.aggregation.commons.element.DateColumn;
+import com.jdragon.aggregation.commons.element.DoubleColumn;
+import com.jdragon.aggregation.commons.element.LongColumn;
+import com.jdragon.aggregation.commons.element.Record;
+import com.jdragon.aggregation.commons.element.StringColumn;
 
 import java.sql.Date;
 

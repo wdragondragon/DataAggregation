@@ -21,7 +21,7 @@
         <fileSet>
             <directory>target/</directory>
             <includes>
-                <include>SHA256_str-1.0-SNAPSHOT.jar</include>
+                <include>SHA256_str-1.0_jdk17-SNAPSHOT.jar</include>
             </includes>
             <outputDirectory>plugin/transformer/SHA256_str</outputDirectory>
         </fileSet>

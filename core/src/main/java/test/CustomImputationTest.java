@@ -1,6 +1,10 @@
 package test;
 
-import com.jdragon.aggregation.commons.element.*;
+import com.jdragon.aggregation.commons.element.Column;
+import com.jdragon.aggregation.commons.element.DoubleColumn;
+import com.jdragon.aggregation.commons.element.LongColumn;
+import com.jdragon.aggregation.commons.element.Record;
+import com.jdragon.aggregation.commons.element.StringColumn;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.job.JobContainer;
 import com.jdragon.aggregation.core.plugin.PluginType;

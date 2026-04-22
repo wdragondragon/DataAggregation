@@ -5,7 +5,7 @@
     <parent>
         <groupId>com.jdragon.aggregation</groupId>
         <artifactId>reader</artifactId>
-        <version>1.0-SNAPSHOT</version>
+        <version>1.0_jdk17-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -17,7 +17,7 @@
         <dependency>
             <groupId>com.jdragon.aggregation</groupId>
             <artifactId>commons</artifactId>
-            <version>1.0-SNAPSHOT</version>
+            <version>1.0_jdk17-SNAPSHOT</version>
             <exclusions>
                 <exclusion>
                     <artifactId>slf4j-log4j12</artifactId>
@@ -29,12 +29,12 @@
         <dependency>
             <groupId>com.jdragon.aggregation</groupId>
             <artifactId>data-source-handler-postgres</artifactId>
-            <version>1.0-SNAPSHOT</version>
+            <version>1.0_jdk17-SNAPSHOT</version>
         </dependency>
         <dependency>
             <groupId>com.jdragon.aggregation</groupId>
             <artifactId>plugin-rdbms-util</artifactId>
-            <version>1.0-SNAPSHOT</version>
+            <version>1.0_jdk17-SNAPSHOT</version>
         </dependency>
 		
     </dependencies>
@@ -45,8 +45,8 @@
             <plugin>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
-                    <source>1.8</source>
-                    <target>1.8</target>
+                    <source>17</source>
+                    <target>17</target>
                     <encoding>${project-sourceEncoding}</encoding>
                 </configuration>
             </plugin>

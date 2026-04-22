@@ -1,7 +1,14 @@
 package com.jdragon.aggregation.core.transformer.internal;
 
 
-import com.jdragon.aggregation.commons.element.*;
+import com.jdragon.aggregation.commons.element.BoolColumn;
+import com.jdragon.aggregation.commons.element.BytesColumn;
+import com.jdragon.aggregation.commons.element.Column;
+import com.jdragon.aggregation.commons.element.DateColumn;
+import com.jdragon.aggregation.commons.element.DoubleColumn;
+import com.jdragon.aggregation.commons.element.LongColumn;
+import com.jdragon.aggregation.commons.element.Record;
+import com.jdragon.aggregation.commons.element.StringColumn;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.core.plugin.Transformer;
 import com.jdragon.aggregation.core.transformer.TransformerErrorCode;

@@ -17,6 +17,14 @@ import org.influxdb.dto.QueryResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -109,12 +117,7 @@ public class InfluxDBV1Writer extends Writer.Job {
                                 if (value instanceof Number) {
                                     pointTime = ((Number) value).longValue();
                                 } else {
-                                    // 尝试 parse 日期字符串，或抛异常
-                                    try {
-                                        pointTime = javax.xml.bind.DatatypeConverter.parseDateTime(value.toString()).getTimeInMillis();
-                                    } catch (Exception e) {
-                                        throw new IllegalArgumentException("Invalid time format: " + value);
-                                    }
+                                    pointTime = parsePointTime(value);
                                 }
                                 break;
                             default:
@@ -147,5 +150,34 @@ public class InfluxDBV1Writer extends Writer.Job {
         if (influxDB != null) {
             influxDB.close();
         }
+    }
+
+    private long parsePointTime(Object value) {
+        String text = value.toString().trim();
+        try {
+            return Instant.parse(text).toEpochMilli();
+        } catch (DateTimeParseException ignored) {
+        }
+        try {
+            return OffsetDateTime.parse(text).toInstant().toEpochMilli();
+        } catch (DateTimeParseException ignored) {
+        }
+        try {
+            return ZonedDateTime.parse(text).toInstant().toEpochMilli();
+        } catch (DateTimeParseException ignored) {
+        }
+        try {
+            return LocalDateTime.parse(text).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        } catch (DateTimeParseException ignored) {
+        }
+        try {
+            return Timestamp.valueOf(text).getTime();
+        } catch (IllegalArgumentException ignored) {
+        }
+        try {
+            return LocalDate.parse(text).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        } catch (DateTimeParseException ignored) {
+        }
+        throw new IllegalArgumentException("Invalid time format: " + value);
     }
 }
