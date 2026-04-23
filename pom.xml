@@ -32,7 +32,7 @@
         <commons-io-version>2.16.1</commons-io-version>
 
         <lombok-version>1.18.30</lombok-version>
-        <spring.version>5.3.39</spring.version>
+        <spring-framework.version>6.2.17</spring-framework.version>
     </properties>
 
 
@@ -73,6 +73,16 @@
                 <groupId>org.projectlombok</groupId>
                 <artifactId>lombok</artifactId>
                 <version>${lombok-version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-core</artifactId>
+                <version>${spring-framework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-jcl</artifactId>
+                <version>${spring-framework.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
