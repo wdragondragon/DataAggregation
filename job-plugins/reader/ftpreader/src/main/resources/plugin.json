@@ -1,0 +1,6 @@
+{
+  "name": "ftpreader",
+  "class": "com.jdragon.aggregation.reader.ftp.FtpReader",
+  "description": "ftp table reader",
+  "developer": "jdragon"
+}

@@ -25,6 +25,9 @@
         <module>influxdbv1reader</module>
         <module>consolereader</module>
         <module>postgresqlreader</module>
+        <module>ftpreader</module>
+        <module>sftpreader</module>
+        <module>minioreader</module>
     </modules>
 
     <properties>

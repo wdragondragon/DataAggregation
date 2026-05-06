@@ -1,0 +1,28 @@
+{
+  "type": "ftp",
+  "config": {
+    "connect": {
+      "host": "127.0.0.1",
+      "port": 21,
+      "username": "ftp",
+      "password": "ftp",
+      "ftpTLS": "none",
+      "connectMode": "PASV",
+      "timeout": 60000
+    },
+    "rootPath": "/data",
+    "partitionType": "glob",
+    "partition": "*.csv",
+    "fileType": "csv",
+    "encoding": "UTF-8",
+    "hasHeader": true,
+    "delimiter": ",",
+    "columns": [
+      {
+        "name": "id",
+        "index": 0,
+        "type": "STRING"
+      }
+    ]
+  }
+}

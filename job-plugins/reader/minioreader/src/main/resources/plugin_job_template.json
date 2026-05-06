@@ -1,0 +1,26 @@
+{
+  "type": "minio",
+  "config": {
+    "connect": {
+      "storageProvider": "oss",
+      "endpoint": "https://oss-cn-hangzhou.aliyuncs.com",
+      "accessKey": "accessKey",
+      "secretKey": "secretKey",
+      "bucket": "bucket"
+    },
+    "rootPath": "data",
+    "partitionType": "glob",
+    "partition": "*.csv",
+    "fileType": "csv",
+    "encoding": "UTF-8",
+    "hasHeader": true,
+    "delimiter": ",",
+    "columns": [
+      {
+        "name": "id",
+        "index": 0,
+        "type": "STRING"
+      }
+    ]
+  }
+}

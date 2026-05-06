@@ -1,0 +1,6 @@
+{
+  "name": "sftpreader",
+  "class": "com.jdragon.aggregation.reader.sftp.SftpReader",
+  "description": "sftp table reader",
+  "developer": "jdragon"
+}

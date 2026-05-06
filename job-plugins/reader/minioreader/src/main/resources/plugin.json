@@ -1,0 +1,6 @@
+{
+  "name": "minioreader",
+  "class": "com.jdragon.aggregation.reader.minio.MinioReader",
+  "description": "minio table reader",
+  "developer": "jdragon"
+}

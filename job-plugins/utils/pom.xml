@@ -16,6 +16,7 @@
         <module>plugin-rdbms-util</module>
         <module>plugin-unstructured-storage-util</module>
         <module>plugin-http-dyn-util</module>
+        <module>plugin-file-table-reader-util</module>
     </modules>
 
 </project>

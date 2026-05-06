@@ -68,15 +68,20 @@ public class AliyunOssHelper extends AbstractPlugin implements FileHelper {
     public Set<String> listFile(String dir, String regex) {
         Set<String> fileNames = new HashSet<>();
         try {
-            ObjectListing objectListing = ossClient.listObjects(bucketName, dir);
+            ListObjectsRequest request = new ListObjectsRequest(bucketName);
+            request.setPrefix(dir);
             Pattern pattern = Pattern.compile(regex);
-
-            for (OSSObjectSummary objectSummary : objectListing.getObjectSummaries()) {
-                String name = objectSummary.getKey();
-                if (pattern.matcher(name).matches()) {
-                    fileNames.add(name);
+            ObjectListing objectListing;
+            do {
+                objectListing = ossClient.listObjects(request);
+                for (OSSObjectSummary objectSummary : objectListing.getObjectSummaries()) {
+                    String name = objectSummary.getKey();
+                    if (pattern.matcher(name).matches()) {
+                        fileNames.add(name);
+                    }
                 }
-            }
+                request.setMarker(objectListing.getNextMarker());
+            } while (objectListing.isTruncated());
         } catch (Exception e) {
             log.error("列出目录 {} 下的文件失败: {}", dir, e.getMessage(), e);
         }

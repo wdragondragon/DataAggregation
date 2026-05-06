@@ -73,22 +73,34 @@ public class CommonRdbmsReader extends Reader.Job {
                     throw new RuntimeException(e);
                 }
             }
-            Object maxPk = this.getJobPointReporter().get("pkValue", null);
+            Object maxPk = resolveInitialPkValue();
             selectSql = String.format("select %s from %s", String.join(",", columns), tableName);
             pkColumn = this.getPluginJobConf().getString("incrColumn");
             String pkModel = this.getPluginJobConf().getString("incrModel", ">");
-            if (pkColumn != null) {
-                pkIndex = columns.indexOf(pkColumn);
+            if (StringUtils.isNotBlank(pkColumn)) {
+                int columnIndex = columns.indexOf(pkColumn);
+                if (columnIndex >= 0) {
+                    pkIndex = columnIndex;
+                }
             }
 
-            if (pkIndex != null && maxPk != null) {
+            if (StringUtils.isNotBlank(pkColumn) && maxPk != null) {
                 maxPkValue = ColumnUtils.object2Column(maxPk);
-                selectSql += String.format("where %s %s '%s'", pkColumn, pkModel, maxPk);
+                selectSql += String.format(" where %s %s '%s'", pkColumn, pkModel, maxPk);
+                this.getJobPointReporter().put("pkValue", maxPk);
             }
         }
 
         LOG.info("rdbms query sql: {}", selectSql);
         mandatoryEncoding = this.getPluginJobConf().getString("mandatoryEncoding", "utf-8");
+    }
+
+    private Object resolveInitialPkValue() {
+        Object configuredPkValue = this.getPluginJobConf().get("pkValue");
+        if (configuredPkValue != null) {
+            return configuredPkValue;
+        }
+        return this.getJobPointReporter().get("pkValue", null);
     }
 
     @Override

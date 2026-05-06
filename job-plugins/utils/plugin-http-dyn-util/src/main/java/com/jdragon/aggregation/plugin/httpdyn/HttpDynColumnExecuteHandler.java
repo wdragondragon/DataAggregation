@@ -201,6 +201,79 @@ public class HttpDynColumnExecuteHandler {
     }
 
     /**
+     * Replace dynamic tags in a standalone text value. Unlike {@link #replaceDynVal(Map)}, this
+     * method does not assume HTTP header/body/params context and can be used by non-HTTP plugins.
+     */
+    public static String replaceDynText(String value) {
+        if (value == null) {
+            return null;
+        }
+        Map<String, String> holder = new LinkedHashMap<>(1);
+        holder.put("value", value);
+        replaceStaticVal(holder);
+        String str = holder.get("value");
+        String prefix = "dyn";
+        int i = 1;
+        Set<String> matchSet;
+        do {
+            String format;
+            String suffix = "";
+            if (i == 1) {
+                format = String.format("\\{%s_(.*?)\\}", prefix);
+            } else {
+                format = String.format("\\{%s%s_(.*?)\\}", prefix, i);
+                suffix = String.valueOf(i);
+            }
+            matchSet = getMatchSet(str, format);
+            for (String dynStr : matchSet) {
+                String className = HttpDynConfigEnum.getClassNameByCode(dynStr
+                        .replaceAll("\\{", "<")
+                        .replaceAll("}", ">")
+                        .replaceAll("<" + prefix + suffix, "<" + prefix));
+                if (StringUtils.isNotBlank(className)) {
+                    Object reflectObject = ReflectionUtils.objectForName(className);
+                    if (reflectObject != null) {
+                        BaseHttpDynExecutor baseHttpDynExecutor = (BaseHttpDynExecutor) reflectObject;
+                        String exeResultStr = baseHttpDynExecutor.execute();
+                        str = str.replaceAll(RegexUtil.escapeExprSpecialWord(dynStr), exeResultStr);
+                    }
+                }
+            }
+            i++;
+        } while (!matchSet.isEmpty());
+
+        i = 1;
+        List<DynPatternParams> httpDynParams;
+        do {
+            String format;
+            String suffix = "";
+            if (i == 1) {
+                format = String.format("(\\{%s_.*?)\\((.*?)\\)\\}", prefix);
+            } else {
+                format = String.format("(\\{%s%s_.*?)\\((.*?)\\)\\}", prefix, i);
+                suffix = String.valueOf(i);
+            }
+            httpDynParams = getHttpDynWithParamsMatchSet(str, format);
+            for (DynPatternParams httpDynParam : httpDynParams) {
+                String className = HttpDynConfigEnum.getClassNameByCode(httpDynParam.getExecuteCode()
+                        .replaceAll("\\{", "<")
+                        .replaceAll("}", ">")
+                        .replaceAll("<" + prefix + suffix, "<" + prefix));
+                if (StringUtils.isNotBlank(className)) {
+                    Object reflectObject = ReflectionUtils.objectForName(className);
+                    if (reflectObject != null) {
+                        BaseHttpDynExecutor baseHttpDynExecutor = (BaseHttpDynExecutor) reflectObject;
+                        String exeResultStr = baseHttpDynExecutor.execute((Object[]) httpDynParam.getParamStrArr());
+                        str = str.replaceAll(RegexUtil.escapeExprSpecialWord(httpDynParam.getOriginalParams()), exeResultStr);
+                    }
+                }
+            }
+            i++;
+        } while (!httpDynParams.isEmpty());
+        return str;
+    }
+
+    /**
      * @param httpContent 需要动态生成的参数
      */
     public static void replaceDynVal(Map<String, String> httpContent) {
