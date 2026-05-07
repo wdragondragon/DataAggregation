@@ -1,0 +1,26 @@
+{
+  "type": "ftp",
+  "config": {
+    "connect": {
+      "host": "127.0.0.1",
+      "port": 21,
+      "username": "ftp",
+      "password": "ftp",
+      "timeout": 60000
+    },
+    "rootPath": "/data/out",
+    "fileName": "result.csv",
+    "fileType": "csv",
+    "encoding": "UTF-8",
+    "writeMode": "overwrite",
+    "hasHeader": true,
+    "delimiter": ",",
+    "columns": [
+      {
+        "name": "id",
+        "index": 0,
+        "type": "STRING"
+      }
+    ]
+  }
+}

@@ -16,14 +16,14 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-final class QualityDynamicFunctionResolver {
+public final class QualityDynamicFunctionResolver {
 
     private static final Pattern FUNCTION_PATTERN = Pattern.compile("\\$([A-Za-z_][A-Za-z0-9_]*)\\(([^()]*)\\)");
 
     private QualityDynamicFunctionResolver() {
     }
 
-    static String replaceAll(String content) {
+    public static String replaceAll(String content) {
         if (StringUtils.isBlank(content)) {
             return content;
         }
@@ -63,9 +63,9 @@ final class QualityDynamicFunctionResolver {
     }
 
     private static String getCurrentTime(String[] args) {
-        requireArgCount("getCurrentTime", args, 2);
+        requireMinArgCount("getCurrentTime", args, 1);
         String pattern = stripQuotes(args[0]);
-        String offset = stripQuotes(args[1]);
+        String offset = args.length > 1 ? stripQuotes(args[1]) : "";
         LocalDateTime value = LocalDateTime.now();
         if (StringUtils.isNotBlank(offset)) {
             value = applyOffset(value, offset.trim());
@@ -74,18 +74,15 @@ final class QualityDynamicFunctionResolver {
     }
 
     private static String getTheMonthLastDay(String[] args) {
-        requireArgCount("getTheMonthLastDay", args, 1);
-        String value = stripQuotes(args[0]);
-        if (!value.matches("^-?\\d+$")) {
-            throw new IllegalArgumentException("getTheMonthLastDay parameter must be timestamp millis: " + value);
-        }
-        LocalDateTime dateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(Long.parseLong(value)), ZoneId.systemDefault());
-        return DateTimeFormatter.ofPattern("dd").format(YearMonth.from(dateTime).atEndOfMonth());
+        LocalDateTime value = args.length > 0 && args[0] != null && StringUtils.isNotBlank(args[0])
+                ? parseDateTime(stripQuotes(args[0]))
+                : LocalDateTime.now();
+        return String.valueOf(YearMonth.from(value).lengthOfMonth());
     }
 
     private static String getTimeUnitValue(String[] args) {
         requireArgCount("getTimeUnitValue", args, 2);
-        LocalDateTime value = LocalDateTime.parse(stripQuotes(args[0]), DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+        LocalDateTime value = parseDateTime(stripQuotes(args[0]));
         String unit = stripQuotes(args[1]).toLowerCase(Locale.ENGLISH);
         if ("y".equals(unit)) {
             return String.valueOf(value.getYear());
@@ -115,17 +112,54 @@ final class QualityDynamicFunctionResolver {
     private static String subStr(String[] args) {
         requireArgCount("subStr", args, 3);
         String source = stripQuotes(args[0]);
-        int beginIndex = Integer.parseInt(stripQuotes(args[1]));
-        int endIndex = Integer.parseInt(stripQuotes(args[2])) + 1;
-        return source.substring(beginIndex, endIndex);
+        int start = Integer.parseInt(stripQuotes(args[1]));
+        int length = Integer.parseInt(stripQuotes(args[2]));
+        if (StringUtils.isEmpty(source)) {
+            return "";
+        }
+        int from = Math.max(0, start);
+        int to = Math.min(source.length(), from + Math.max(0, length));
+        return from >= to ? "" : source.substring(from, to);
     }
 
     private static String subString(String[] args) {
         requireArgCount("subString", args, 3);
         String source = stripQuotes(args[0]);
-        int beginIndex = Integer.parseInt(stripQuotes(args[1]));
-        int endIndex = Integer.parseInt(stripQuotes(args[2]));
-        return source.substring(beginIndex, endIndex);
+        int beginIndex = Math.max(0, Integer.parseInt(stripQuotes(args[1])));
+        int endIndex = Math.min(source.length(), Math.max(beginIndex, Integer.parseInt(stripQuotes(args[2]))));
+        return beginIndex >= endIndex ? "" : source.substring(beginIndex, endIndex);
+    }
+
+    private static LocalDateTime parseDateTime(String value) {
+        if (StringUtils.isBlank(value)) {
+            return LocalDateTime.now();
+        }
+        String trimmed = value.trim();
+        if (trimmed.matches("^-?\\d+$")) {
+            long numeric = Long.parseLong(trimmed);
+            if (trimmed.length() == 8) {
+                return LocalDateTime.parse(trimmed + "000000", DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+            }
+            if (trimmed.length() == 14) {
+                return LocalDateTime.parse(trimmed, DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+            }
+            if (trimmed.length() >= 13) {
+                return LocalDateTime.ofInstant(Instant.ofEpochMilli(numeric), ZoneId.systemDefault());
+            }
+        }
+        try {
+            return LocalDateTime.parse(trimmed, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        } catch (DateTimeParseException ignored) {
+        }
+        try {
+            return LocalDateTime.parse(trimmed, DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+        } catch (DateTimeParseException ignored) {
+        }
+        try {
+            return LocalDateTime.parse(trimmed + " 00:00:00", DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        } catch (DateTimeParseException ignored) {
+        }
+        throw new IllegalArgumentException("Unable to parse datetime value: " + value);
     }
 
     private static String toLower(String[] args) {
@@ -273,6 +307,12 @@ final class QualityDynamicFunctionResolver {
     private static void requireArgCount(String functionName, String[] args, int count) {
         if (args == null || args.length != count) {
             throw new IllegalArgumentException(functionName + " requires " + count + " parameters");
+        }
+    }
+
+    private static void requireMinArgCount(String functionName, String[] args, int count) {
+        if (args == null || args.length < count) {
+            throw new IllegalArgumentException(functionName + " requires at least " + count + " parameters");
         }
     }
 }

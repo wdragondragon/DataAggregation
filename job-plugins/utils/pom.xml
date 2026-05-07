@@ -17,6 +17,7 @@
         <module>plugin-unstructured-storage-util</module>
         <module>plugin-http-dyn-util</module>
         <module>plugin-file-table-reader-util</module>
+        <module>plugin-file-table-writer-util</module>
     </modules>
 
 </project>

@@ -21,6 +21,9 @@
         <module>dmwriter</module>
         <module>influxdbv1writer</module>
         <module>postgresqlwriter</module>
+        <module>ftpwriter</module>
+        <module>sftpwriter</module>
+        <module>miniowriter</module>
     </modules>
 
     <properties>

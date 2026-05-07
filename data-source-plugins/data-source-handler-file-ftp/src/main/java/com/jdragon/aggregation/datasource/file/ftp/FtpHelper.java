@@ -44,6 +44,8 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
 
     private int timeout;
 
+    private String baseDirectory;
+
     @Override
     public boolean connect(Configuration configuration) {
         ftpTLS = configuration.getString("ftpTLS", Constant.DEFAULT_FTP_TLS);
@@ -80,6 +82,7 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
                 ((FTPSClient) ftpClient).execPROT("P");
                 ftpClient.type(FTP.BINARY_FILE_TYPE);
             }
+            baseDirectory = normalizeRemotePath(ftpClient.printWorkingDirectory());
             //设置命令传输编码
             String fileEncoding = Charset.defaultCharset().displayName();
             ftpClient.setControlEncoding(fileEncoding);
@@ -120,7 +123,7 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
     @Override
     public boolean exists(String path, String name) throws IOException {
         boolean isExitFlag = false;
-        String filePath = processingPath(path, name);
+        String filePath = processingPath(resolveRemotePath(path), name);
         try {
             FTPFile[] ftpFiles = ftpClient.listFiles(new String(filePath.getBytes(), FTP.DEFAULT_CONTROL_ENCODING));
             if (ftpFiles.length == 1 && ftpFiles[0].isFile()) {
@@ -136,7 +139,7 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
 
     @Override
     public Set<String> listFile(String dir, String regex) throws IOException {
-        FTPFile[] ftpFiles = this.ftpClient.listFiles(dir);
+        FTPFile[] ftpFiles = this.ftpClient.listFiles(resolveRemotePath(dir));
         Set<String> fileList = new HashSet<>();
         for (FTPFile fileStatus : ftpFiles) {
             String name = fileStatus.getName();
@@ -149,7 +152,7 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
 
     @Override
     public boolean isFile(String dir, String fileName) throws IOException {
-        FTPFile ftpFile = this.ftpClient.mlistFile(processingPath(dir, fileName));
+        FTPFile ftpFile = this.ftpClient.mlistFile(processingPath(resolveRemotePath(dir), fileName));
         if (ftpFile == null) {
             return false;
         }
@@ -158,19 +161,37 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
 
     @Override
     public void mkdir(String directoryPath) throws IOException {
+        String targetDirectory = resolveRemotePath(directoryPath);
+        if (StringUtils.isBlank(targetDirectory)) {
+            return;
+        }
+        String originalDirectory = normalizeRemotePath(ftpClient.printWorkingDirectory());
         // ftp server不支持递归创建目录,只能一级一级创建
-        StringBuilder dirPath = new StringBuilder();
-        String[] dirSplit = StringUtils.split(directoryPath, "/");
-        for (String dirName : dirSplit) {
-            dirPath.append("/").append(dirName);
-            // 如果directoryPath目录不存在,则创建
-            if (ftpClient.changeWorkingDirectory(dirPath.toString())) {
-                continue;
+        boolean absolutePath = StringUtils.startsWith(targetDirectory, "/");
+        StringBuilder dirPath = new StringBuilder(absolutePath ? "/" : "");
+        String[] dirSplit = StringUtils.split(targetDirectory, "/");
+        try {
+            for (String dirName : dirSplit) {
+                if (dirPath.length() > 0 && !StringUtils.endsWith(dirPath.toString(), "/")) {
+                    dirPath.append("/");
+                }
+                dirPath.append(dirName);
+                // 如果directoryPath目录不存在,则创建
+                if (ftpClient.changeWorkingDirectory(dirPath.toString())) {
+                    continue;
+                }
+                int replayCode = this.ftpClient.mkd(dirPath.toString());
+                if (replayCode != FTPReply.COMMAND_OK
+                        && replayCode != FTPReply.PATHNAME_CREATED) {
+                    String message = String.format("创建FTP目录[%s]失败, 状态码:%s, 回复:%s",
+                            dirPath, this.ftpClient.getReplyCode(), this.ftpClient.getReplyString());
+                    log.error(message);
+                    throw AggregationException.asException(FtpHelperErrorCode.COMMAND_FTP_IO_EXCEPTION, message);
+                }
             }
-            int replayCode = this.ftpClient.mkd(dirPath.toString());
-            if (replayCode != FTPReply.COMMAND_OK
-                    && replayCode != FTPReply.PATHNAME_CREATED) {
-                log.error("create path fail [{}]", dirPath.toString());
+        } finally {
+            if (StringUtils.isNotBlank(originalDirectory)) {
+                ftpClient.changeWorkingDirectory(originalDirectory);
             }
         }
     }
@@ -178,8 +199,7 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
     @Override
     public void rm(String path) throws IOException {
         try {
-            this.ftpClient.changeWorkingDirectory("/");
-            this.ftpClient.deleteFile(path);
+            this.ftpClient.deleteFile(resolveRemotePath(path));
         } catch (IOException e) {
             throw AggregationException.asException(FtpHelperErrorCode.RM_FILE_EXCEPTION, e);
         }
@@ -194,8 +214,7 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
     @Override
     public boolean mv(String from, String to) throws Exception {
         try {
-            this.ftpClient.changeWorkingDirectory("/");
-            return this.ftpClient.rename(from, to);
+            return this.ftpClient.rename(resolveRemotePath(from), resolveRemotePath(to));
         } catch (IOException e) {
             throw AggregationException.asException(FtpHelperErrorCode.MV_FILE_EXCEPTION, e);
         }
@@ -203,7 +222,7 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
 
     @Override
     public InputStream getInputStream(String path, String name) throws IOException {
-        String filePath = processingPath(path, name);
+        String filePath = processingPath(resolveRemotePath(path), name);
         try {
             return ftpClient.retrieveFileStream(new String(filePath.getBytes(), FTP.DEFAULT_CONTROL_ENCODING));
         } catch (IOException e) {
@@ -215,19 +234,23 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
 
     @Override
     public OutputStream getOutputStream(String path, String name) throws IOException {
-        String filePath = processingPath(path, name);
+        String directoryPath = resolveRemotePath(path);
+        String filePath = processingPath(directoryPath, name);
         try {
             this.printWorkingDirectory();
             this.ftpClient.setFileType(FTPClient.BINARY_FILE_TYPE);
             this.ftpClient.enterLocalPassiveMode();
 
-            boolean b = this.ftpClient.changeWorkingDirectory(path);
+            boolean b = this.ftpClient.changeWorkingDirectory(directoryPath);
             this.printWorkingDirectory();
             if (!b) {
-                log.error("切换目录失败.{}:{}", this.ftpClient.getReplyCode(), this.ftpClient.getReplyCode());
+                String message = String.format("切换FTP目录[%s]失败, 状态码:%s, 回复:%s",
+                        directoryPath, this.ftpClient.getReplyCode(), this.ftpClient.getReplyString());
+                log.error(message);
+                throw AggregationException.asException(FtpHelperErrorCode.OPEN_FILE_ERROR, message);
             }
             OutputStream writeOutputStream = this.ftpClient
-                    .storeFileStream(filePath);
+                    .storeFileStream(name);
             LOG.info("ftp获取文件流{},状态码：{},回复：{}", filePath, this.ftpClient.getReplyCode(), this.ftpClient.getReplyString());
             String message = String.format(
                     "打开FTP文件[%s]获取写出流时出错,请确认文件%s有权限创建，有权限写出等", filePath,
@@ -246,6 +269,32 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
             throw AggregationException.asException(
                     FtpHelperErrorCode.OPEN_FILE_ERROR, message);
         }
+    }
+
+    private String resolveRemotePath(String path) {
+        String normalized = normalizeRemotePath(path);
+        if (StringUtils.isBlank(normalized) || StringUtils.startsWith(normalized, "/")) {
+            return normalized;
+        }
+        String base = StringUtils.defaultIfBlank(baseDirectory, "");
+        if (StringUtils.isBlank(base)) {
+            return normalized;
+        }
+        return processingPath(base, normalized);
+    }
+
+    private String normalizeRemotePath(String path) {
+        if (path == null) {
+            return "";
+        }
+        String normalized = path.trim().replace('\\', '/');
+        while (normalized.contains("//")) {
+            normalized = normalized.replace("//", "/");
+        }
+        if (normalized.length() > 1 && normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
 
 

@@ -1,0 +1,6 @@
+{
+  "name": "ftpwriter",
+  "class": "com.jdragon.aggregation.writer.ftp.FtpWriter",
+  "description": "ftp table writer",
+  "developer": "jdragon"
+}

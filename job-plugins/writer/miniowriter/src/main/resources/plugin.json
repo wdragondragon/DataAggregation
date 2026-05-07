@@ -1,0 +1,6 @@
+{
+  "name": "miniowriter",
+  "class": "com.jdragon.aggregation.writer.minio.MinioWriter",
+  "description": "minio table writer",
+  "developer": "jdragon"
+}

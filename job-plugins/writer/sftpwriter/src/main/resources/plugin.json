@@ -1,0 +1,6 @@
+{
+  "name": "sftpwriter",
+  "class": "com.jdragon.aggregation.writer.sftp.SftpWriter",
+  "description": "sftp table writer",
+  "developer": "jdragon"
+}

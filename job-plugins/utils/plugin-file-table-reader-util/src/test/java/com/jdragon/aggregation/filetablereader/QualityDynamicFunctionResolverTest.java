@@ -15,8 +15,15 @@ public class QualityDynamicFunctionResolverTest {
     }
 
     @Test
+    public void shouldAllowCurrentTimeOffsetToBeOmittedLikeStudioQualityFunction() {
+        String value = QualityDynamicFunctionResolver.replaceAll("/data/$getCurrentTime(yyyyMMddHHmmss)/part.csv");
+
+        assertTrue(value.matches("/data/\\d{14}/part\\.csv"));
+    }
+
+    @Test
     public void shouldSupportQualityStringFunctions() {
-        assertEquals("prefix-LLO-ell-abc-ABC", QualityDynamicFunctionResolver.replaceAll(
+        assertEquals("prefix-LLOW-ell-abc-ABC", QualityDynamicFunctionResolver.replaceAll(
                 "prefix-$subStr(\"HELLOWORLD\",2,4)-$subString(\"HelloWorld\",1,4)-$toLower(\"ABC\")-$toUpper(\"abc\")"));
     }
 

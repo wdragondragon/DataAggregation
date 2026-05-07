@@ -1,0 +1,26 @@
+{
+  "type": "minio",
+  "config": {
+    "connect": {
+      "storageProvider": "oss",
+      "endpoint": "http://127.0.0.1:9000",
+      "accessKey": "minioadmin",
+      "secretKey": "minioadmin",
+      "bucket": "aggregation"
+    },
+    "rootPath": "data/out",
+    "fileName": "result.csv",
+    "fileType": "csv",
+    "encoding": "UTF-8",
+    "writeMode": "overwrite",
+    "hasHeader": true,
+    "delimiter": ",",
+    "columns": [
+      {
+        "name": "id",
+        "index": 0,
+        "type": "STRING"
+      }
+    ]
+  }
+}
