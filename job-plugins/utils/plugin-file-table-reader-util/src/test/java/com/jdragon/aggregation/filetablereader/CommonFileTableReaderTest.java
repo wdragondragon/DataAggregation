@@ -11,6 +11,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -57,17 +58,45 @@ public class CommonFileTableReaderTest {
                                 + "# 7 Carol\n"
                                 + "</T01::Demo>\n");
         CapturingRecordSender sender = read(fileHelper, true, config(
-                entry("rootPath", "/data/{dyn_timestamp}"),
+                entry("rootPath", "/data/$getCurrentTime(yyyyMMdd,0)"),
                 entry("partitionType", "regex"),
                 entry("partition", "dt=.*/sample\\.efile"),
                 entry("fileType", "efile"),
-                entry("columns", columns(column("name", 1, "STRING"), column("id", 0, "LONG")))));
+                entry("dataTag", list("planDate", "dataTime")),
+                entry("columns", columns(column("name", 1, "STRING"), column("id", 0, "LONG"),
+                        column("planDate", 2, "STRING"), column("dataTime", 3, "STRING")))));
 
         assertEquals(1, sender.records.size());
         assertEquals("Carol", sender.records.get(0).getColumn(0).asString());
         assertEquals(Long.valueOf(7L), sender.records.get(0).getColumn(1).asLong());
+        assertEquals("'20260505'", sender.records.get(0).getColumn(2).asString());
+        assertEquals("'20260505'", sender.records.get(0).getColumn(3).asString());
         assertTrue("rootPath dynamic function should be resolved before listing",
-                Pattern.compile("/data/\\d+").matcher(fileHelper.lastListedDir).matches());
+                Pattern.compile("/data/\\d{8}").matcher(fileHelper.lastListedDir).matches());
+    }
+
+    @Test
+    public void shouldReadGbkEncodedEFileWithConfiguredEncoding() {
+        InMemoryFileHelper fileHelper = new InMemoryFileHelper()
+                .put("/root/sample.efile",
+                        "<! Entity=广东电力 type=日前非计划减出力容量 dataTime='20210901_14:36:46' !>\n"
+                                + "<Data::广东电力 planDate='20210824'>\n"
+                                + "@ id area_name area_code\n"
+                                + "// 序号 区域名称 区域编码\n"
+                                + "# 1 南网 NanW\n"
+                                + "</Data::广东电力>\n",
+                        Charset.forName("GBK"));
+        CapturingRecordSender sender = read(fileHelper, true, config(
+                entry("rootPath", "/root"),
+                entry("partitionType", "glob"),
+                entry("partition", "sample.efile"),
+                entry("fileType", "efile"),
+                entry("encoding", "GBK"),
+                entry("columns", columns(column("area_name", 1, "STRING"), column("area_code", 2, "STRING")))));
+
+        assertEquals(1, sender.records.size());
+        assertEquals("南网", sender.records.get(0).getColumn(0).asString());
+        assertEquals("NanW", sender.records.get(0).getColumn(1).asString());
     }
 
     @Test
@@ -138,6 +167,12 @@ public class CommonFileTableReaderTest {
         return result;
     }
 
+    private List<String> list(String... values) {
+        List<String> result = new ArrayList<String>();
+        Collections.addAll(result, values);
+        return result;
+    }
+
     private Map<String, Object> column(String name, int index, String type) {
         Map<String, Object> column = new LinkedHashMap<String, Object>();
         column.put("name", name);
@@ -189,6 +224,11 @@ public class CommonFileTableReaderTest {
 
         private InMemoryFileHelper put(String path, String content) {
             files.put(normalize(path), content.getBytes(StandardCharsets.UTF_8));
+            return this;
+        }
+
+        private InMemoryFileHelper put(String path, String content, Charset charset) {
+            files.put(normalize(path), content.getBytes(charset));
             return this;
         }
 

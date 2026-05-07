@@ -37,11 +37,6 @@
         </dependency>
         <dependency>
             <groupId>com.jdragon.aggregation</groupId>
-            <artifactId>plugin-http-dyn-util</artifactId>
-            <version>1.0_jdk17-SNAPSHOT</version>
-        </dependency>
-        <dependency>
-            <groupId>com.jdragon.aggregation</groupId>
             <artifactId>plugin-unstructured-storage-util</artifactId>
             <version>1.0_jdk17-SNAPSHOT</version>
         </dependency>

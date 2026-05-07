@@ -281,7 +281,7 @@ public class FileParser {
         try {
             // 使用EFileUtil解析
             EFileUtil eFileUtil = new EFileUtil();
-            EFile eFile = eFileUtil.parseEFile(is, dataType, dataTag);
+            EFile eFile = eFileUtil.parseEFile(is, dataType, dataTag, encoding);
             List<EFile.EFileDetail> parsedData = eFile.getEFileDetails();
             // 将解析结果转换为行数据
             for (EFile.EFileDetail tableBlock : parsedData) {

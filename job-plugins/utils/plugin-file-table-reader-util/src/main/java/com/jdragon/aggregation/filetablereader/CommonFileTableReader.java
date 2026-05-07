@@ -4,13 +4,11 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.jdragon.aggregation.commons.element.Column;
 import com.jdragon.aggregation.commons.element.Record;
-import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.plugin.RecordSender;
 import com.jdragon.aggregation.core.plugin.spi.Reader;
 import com.jdragon.aggregation.datasource.file.FileHelper;
 import com.jdragon.aggregation.datasource.file.utils.FileParser;
-import com.jdragon.aggregation.plugin.httpdyn.HttpDynColumnExecuteHandler;
 import com.jdragon.aggregation.unstructuredstorage.ValidateUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -218,7 +216,9 @@ public class CommonFileTableReader extends Reader.Job {
         List<Object> values = new ArrayList<>(row.values());
         Record record = recordSender.createRecord();
         for (FileColumnEntry columnEntry : columns) {
-            Object value = columnEntry.index >= 0 && columnEntry.index < values.size() ? values.get(columnEntry.index) : null;
+            Object value = row.containsKey(columnEntry.name)
+                    ? row.get(columnEntry.name)
+                    : columnEntry.index >= 0 && columnEntry.index < values.size() ? values.get(columnEntry.index) : null;
             Column column = ValidateUtil.validate(columnEntry.name, columnEntry.type, value);
             record.addColumn(column);
         }
@@ -281,7 +281,7 @@ public class CommonFileTableReader extends Reader.Job {
     }
 
     private String resolveDynamicText(String value) {
-        return HttpDynColumnExecuteHandler.replaceDynText(value);
+        return QualityDynamicFunctionResolver.replaceAll(value);
     }
 
     private String normalizeFileType(String value) {

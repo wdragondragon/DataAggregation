@@ -6,6 +6,7 @@ import com.jdragon.aggregation.datasource.file.utils.efile.*;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.*;
+import java.nio.charset.Charset;
 import java.util.*;
 
 @Slf4j
@@ -17,21 +18,26 @@ public class EFileUtil {
     }
 
     public EFile parseEFile(InputStream inputStream, String dataType, List<String> dataTag) throws Exception {
-        if (dataTag == null) {
-            dataTag = new ArrayList<>();
-        }
+        return parseEFile(inputStream, dataType, dataTag, null);
+    }
+
+    public EFile parseEFile(InputStream inputStream, String dataType, List<String> dataTag, String encoding) throws Exception {
+        List<String> configuredDataTags = normalizeDataTags(dataTag);
         EFileInfo eFileInfo = new EFileInfo();
         eFileInfo.setFileType(dataType);
 
         EFile eFile = new EFile();
         eFile.setEFileInfo(eFileInfo);
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+        Charset charset = encoding == null || encoding.trim().isEmpty()
+                ? Charset.defaultCharset()
+                : Charset.forName(encoding);
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, charset))) {
             while (true) {
                 String line = reader.readLine();
                 if (line != null) {
                     line = line.replaceAll("\t", " ");
                     line = line.trim();
-                    lineHandler(line, eFile, dataTag);
+                    lineHandler(line, eFile, configuredDataTags);
                 } else {
                     break;
                 }
@@ -39,6 +45,19 @@ public class EFileUtil {
             }
         }
         return eFile;
+    }
+
+    private List<String> normalizeDataTags(List<String> dataTag) {
+        List<String> result = new ArrayList<>();
+        if (dataTag == null) {
+            return result;
+        }
+        for (String tag : dataTag) {
+            if (tag != null && !tag.trim().isEmpty()) {
+                result.add(tag.trim());
+            }
+        }
+        return result;
     }
 
     /**
@@ -180,7 +199,9 @@ public class EFileUtil {
         // 去掉空的值
         for (String colum : arr) {
             if (!colum.isEmpty()) {
-                dataTag.remove(colum);
+                if (dataTag.contains(colum)) {
+                    throw new IllegalArgumentException("EFile dataTag conflicts with data column: " + colum);
+                }
                 slist.add(colum);
             }
         }
