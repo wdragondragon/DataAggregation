@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.LinkedBlockingQueue;
 
 /**
@@ -59,6 +60,8 @@ public class OrderedSourceCursor {
     private final List<String> keyFields;
     private final LinkedBlockingQueue<CursorEvent> queue = new LinkedBlockingQueue<CursorEvent>(4);
     private final boolean preferOrderedQuery;
+    @Getter
+    private final boolean ordered;
 
     @Getter
     private volatile long scannedRecords;
@@ -69,6 +72,10 @@ public class OrderedSourceCursor {
     private volatile boolean finished;
     @Getter
     private volatile boolean producerDone;
+    @Getter
+    private volatile boolean started;
+    @Getter
+    private volatile boolean cancelled;
     private Thread worker;
 
     public OrderedSourceCursor(SourceRowScanner rowScanner,
@@ -80,6 +87,7 @@ public class OrderedSourceCursor {
         this.keyFields = keyFields != null ? new ArrayList<String>(keyFields) : new ArrayList<String>();
         this.sourceId = dataSourceConfig.getSourceId();
         this.preferOrderedQuery = preferOrderedQuery;
+        this.ordered = determineOrdered(dataSourceConfig, preferOrderedQuery);
     }
 
     public String getSourceId() {
@@ -90,9 +98,19 @@ public class OrderedSourceCursor {
         if (worker != null) {
             return;
         }
+        started = true;
         worker = MdcTaskDecorator.newThread(this::produceGroups, "sortmerge-cursor-" + sourceId);
         worker.setDaemon(true);
         worker.start();
+    }
+
+    public void cancel() {
+        cancelled = true;
+        finished = true;
+        Thread currentWorker = worker;
+        if (currentWorker != null) {
+            currentWorker.interrupt();
+        }
     }
 
     public CursorEvent pollEvent() {
@@ -107,12 +125,21 @@ public class OrderedSourceCursor {
         final GroupAccumulator accumulator = new GroupAccumulator();
         try {
             rowScanner.scan(buildScanConfig(), row -> {
+                if (cancelled) {
+                    throw new CancellationException("Source cursor cancelled: " + sourceId);
+                }
                 scannedRecords++;
                 accumulator.accept(row);
             });
+            if (cancelled) {
+                return;
+            }
             accumulator.flush();
             queue.put(CursorEvent.end(sourceId));
         } catch (Throwable throwable) {
+            if (cancelled) {
+                return;
+            }
             try {
                 queue.put(CursorEvent.error(sourceId, throwable));
             } catch (InterruptedException interruptedException) {
@@ -142,7 +169,7 @@ public class OrderedSourceCursor {
                 : Configuration.newDefault());
         scanConfig.setUpdateTarget(dataSourceConfig.getUpdateTarget());
 
-        if (preferOrderedQuery && !isFileSource(scanConfig) && !keyFields.isEmpty()) {
+        if (ordered) {
             String orderedQuery = buildOrderedQuery(scanConfig);
             if (orderedQuery != null) {
                 scanConfig.setQuerySql(orderedQuery);
@@ -177,6 +204,9 @@ public class OrderedSourceCursor {
     }
 
     private boolean isFileSource(DataSourceConfig config) {
+        if (config == null) {
+            return false;
+        }
         String pluginName = config.getPluginName();
         if (pluginName == null) {
             return false;
@@ -193,13 +223,37 @@ public class OrderedSourceCursor {
                 || lowerName.equals("localfile");
     }
 
+    private boolean determineOrdered(DataSourceConfig config, boolean preferOrderedQuery) {
+        return preferOrderedQuery
+                && !keyFields.isEmpty()
+                && !isFileSource(config)
+                && canBuildOrderedQuery(config);
+    }
+
+    private boolean canBuildOrderedQuery(DataSourceConfig config) {
+        if (config == null) {
+            return false;
+        }
+        if (config.getQuerySql() != null && !config.getQuerySql().trim().isEmpty()) {
+            return true;
+        }
+        return config.getTableName() != null && !config.getTableName().trim().isEmpty();
+    }
+
     private void publishGroup(OrderedKeyGroup group) {
         producedGroups++;
-        try {
-            queue.put(CursorEvent.group(sourceId, group));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("Interrupted while publishing grouped source rows", e);
+        while (!cancelled) {
+            try {
+                queue.put(CursorEvent.group(sourceId, group));
+                return;
+            } catch (InterruptedException e) {
+                if (cancelled) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Interrupted while publishing grouped source rows", e);
+            }
         }
     }
 

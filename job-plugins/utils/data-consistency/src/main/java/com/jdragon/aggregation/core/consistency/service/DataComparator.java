@@ -2,6 +2,7 @@ package com.jdragon.aggregation.core.consistency.service;
 
 import com.jdragon.aggregation.core.consistency.i18n.MessageResource;
 import com.jdragon.aggregation.core.consistency.model.DifferenceRecord;
+import com.jdragon.aggregation.core.streaming.CompositeKey;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ObjectUtils;
 
@@ -153,32 +154,21 @@ public class DataComparator {
     }
 
     private Map<String, Object> createMissingRecord(String matchKey, List<String> matchKeyFields) {
-        Map<String, Object> values = new LinkedHashMap<>();
         if (matchKeyFields == null || matchKeyFields.isEmpty()) {
+            Map<String, Object> values = new LinkedHashMap<>();
             values.put("key", matchKey);
             return values;
         }
-
-        String[] parts = matchKey.split("-\\|-", -1);
-        for (int i = 0; i < matchKeyFields.size(); i++) {
-            values.put(matchKeyFields.get(i), i < parts.length ? parts[i] : null);
-        }
-        return values;
+        return CompositeKey.fromEncoded(matchKey, matchKeyFields).toValueMap();
     }
 
     private Map<String, Object> parseMatchKeyValues(String matchKey, List<String> matchKeyFields) {
-        Map<String, Object> values = new HashMap<>();
         if (matchKeyFields == null || matchKeyFields.isEmpty()) {
+            Map<String, Object> values = new HashMap<>();
             values.put("key", matchKey);
             return values;
         }
-
-        String[] parts = matchKey.split("-\\|-", -1);
-        for (int i = 0; i < Math.min(parts.length, matchKeyFields.size()); i++) {
-            values.put(matchKeyFields.get(i), parts[i]);
-        }
-
-        return values;
+        return CompositeKey.fromEncoded(matchKey, matchKeyFields).toValueMap();
     }
 
     private String compareFieldAcrossSources(String field, Map<String, Map<String, Object>> sourceValues) {

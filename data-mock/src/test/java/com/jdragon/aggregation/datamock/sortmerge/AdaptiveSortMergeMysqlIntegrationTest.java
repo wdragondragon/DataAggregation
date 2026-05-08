@@ -34,7 +34,7 @@ public class AdaptiveSortMergeMysqlIntegrationTest {
     }
 
     @Test
-    public void shouldMergeSparseOutOfOrderKeysWithoutSpill() throws Exception {
+    public void shouldRouteSparseOutOfOrderKeysThroughSafeOverflow() throws Exception {
         AdaptiveSortMergeTestSupport.ScenarioOptions options = AdaptiveSortMergeTestSupport.ScenarioOptions.defaults()
                 .withPreferOrderedQuery(false)
                 .withPendingKeyThreshold(4096)
@@ -49,14 +49,15 @@ public class AdaptiveSortMergeMysqlIntegrationTest {
                 options
         );
 
-        assertScenario(result, false);
+        assertScenario(result, true);
         assertNull(result.getConsistencyExecution().getErrorMessage());
         assertNull(result.getFusionExecution().getErrorMessage());
-        assertEquals("sortmerge", result.getConsistencyExecution().getExecutionEngine());
-        assertEquals("sortmerge", result.getFusionExecution().getStats().getExecutionEngine());
-        assertTrue("pending window should capture some out-of-order keys",
-                result.getConsistencyExecution().getPendingPeakKeyCount() > 0L
-                        || result.getFusionExecution().getStats().getPendingPeakKeyCount() > 0L);
+        assertEquals("hybrid", result.getConsistencyExecution().getExecutionEngine());
+        assertEquals("hybrid", result.getFusionExecution().getStats().getExecutionEngine());
+        assertEquals("Unordered source detected", result.getConsistencyExecution().getFallbackReason());
+        assertEquals("Unordered source detected", result.getFusionExecution().getStats().getFallbackReason());
+        assertEquals(result.getExpectations().getTotalKeys(), result.getConsistencyExecution().getMergeSpilledKeyCount());
+        assertEquals(result.getExpectations().getTotalKeys(), result.getFusionExecution().getStats().getMergeSpilledKeyCount());
         assertEquals(0L, result.getConsistencyExecution().getWindowEvictedKeyCount());
         assertEquals(0L, result.getFusionExecution().getStats().getWindowEvictedKeyCount());
     }
@@ -117,7 +118,11 @@ public class AdaptiveSortMergeMysqlIntegrationTest {
         assertTrue("fusion should use sortmerge or hybrid path",
                 "sortmerge".equals(fusion.getStats().getExecutionEngine())
                         || "hybrid".equals(fusion.getStats().getExecutionEngine()));
-        assertEquals(expectations.getTotalKeys(), fusion.getStats().getMergeResolvedKeyCount());
+        long fusionResolvedOrSpilled = fusion.getStats().getMergeResolvedKeyCount()
+                + fusion.getStats().getMergeSpilledKeyCount();
+        assertEquals(expectations.getTotalKeys(), spillAllowed
+                ? fusionResolvedOrSpilled
+                : fusion.getStats().getMergeResolvedKeyCount());
         assertEquals(expectations.getExpectedDuplicateIgnoredCount(), fusion.getStats().getDuplicateIgnoredCount());
         if (!spillAllowed) {
             assertEquals(0L, fusion.getStats().getMergeSpilledKeyCount());

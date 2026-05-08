@@ -54,8 +54,8 @@
 | 参数 | 当前状态 | 说明 |
 |---|---|---|
 | `defaultStrategy` | 基本不生效 | 当前 reader 会先校验 `fieldMappings` 非空，因此不会进入依赖 `defaultStrategy` 的 legacy 融合分支。 |
-| `performance.parallelSourceCount` | 基本不生效 | 当前执行器会为每个 source 启一个 `OrderedSourceCursor` 线程，这个参数不会真正限制并发数。 |
-| `adaptiveMerge.enabled` | 当前无切换效果 | 参数会被解析，但当前 reader 始终走 adaptive sort-merge 执行链。 |
+| `performance.parallelSourceCount` | 已生效 | 当前执行器会用它限制同时启动的 source cursor 数量，最小按 `1` 处理。 |
+| `adaptiveMerge.enabled` | 已生效 | `true` 时优先走有序快速路径；`false` 时关闭即时窗口优化，强制走安全 overflow 聚合路径。 |
 | `fieldMappings[].errorMode` | 当前不生效 | 当前真正生效的是顶层 `errorMode` 和 `errorModes.fieldOverrides.<targetField>`。 |
 | `fieldMappings[].strategy` | 仅部分场景生效 | 只有 `DIRECT` 且 `sourceField` 没写 `sourceId`、需要在多个源里择值时才会用到。 |
 | `fieldMappings[].resultType` | `DIRECT` 时不生效 | `DIRECT` 直接返回源列对象，不做类型转换。 |
@@ -76,7 +76,7 @@
 | `errorModes.fieldOverrides.<targetField>` | 否 | 无 | 按目标字段覆盖错误模式。 | 对关键字段单独设 `STRICT`。 |
 | `cache.partitionCount` | 否 | `10` | 影响 overflow spill 的顶层分区数默认值。 | 小数据量 `8~16`，大数据量 `16~64`。 |
 | `cache.rebalancePartitionMultiplier` | 否 | `4` | overflow rebalance 的子分区倍率。 | 通常保持 `4`。 |
-| `performance.parallelSourceCount` | 否 | `2` | 当前基本不影响实际并发。 | 保持默认即可。 |
+| `performance.parallelSourceCount` | 否 | `2` | 限制同时活跃的 source cursor 数量。 | 小任务保持默认；源很多或下游压力大时可调小。 |
 | `performance.memoryLimitMB` | 否 | `1024` | 影响 pending window 的默认内存预算，以及 overflow rebalance 的内存估算。 | 常规 `512~2048`；大作业可更高。 |
 | `adaptiveMerge` | 否 | 见第 7 节 | 控制 pending window、spill、排序查询改写等行为。 | 大多数大表融合都建议显式配置。 |
 | `detailConfig` | 否 | 节点不存在时整体关闭 | 控制融合详情输出。 | 排障时打开，日常批跑建议关闭或采样。 |
@@ -297,22 +297,24 @@ Groovy 可用变量：
 
 | 参数路径 | 是否必填 | 默认值 | 配置后效果 | 建议值 / 建议做法 |
 |---|---|---|---|---|
-| `adaptiveMerge.enabled` | 否 | `true` | 当前仅被解析，不能关闭当前 reader 的 sort-merge 主链路。 | 保持默认即可。 |
+| `adaptiveMerge.enabled` | 否 | `true` | 是否启用有序快速合并窗口。设为 `false` 时不跳过 reader，而是强制所有 group 进入 overflow 后按 key 聚合回放。 | 正常保持 `true`；怀疑 source 无序或需要保守正确性验证时可设 `false`。 |
 | `adaptiveMerge.pendingKeyThreshold` | 否 | `4096` | pending window 中最多允许保留多少个未凑齐的 key；超出后开始 spill。 | 常规 `4096~20000`。 |
 | `adaptiveMerge.pendingMemoryMB` | 否 | `max(64, memoryLimitMB / 2)` | pending window 的内存预算。超出后开始 spill。 | 通常设为总 reader 内存预算的一半。 |
 | `adaptiveMerge.overflowPartitionCount` | 否 | `cache.partitionCount` | spill 到磁盘时的顶层分区数。 | 大量 spill 建议 `16~64`。 |
 | `adaptiveMerge.rebalancePartitionMultiplier` | 否 | `4` | 溢出分区继续 rebalance 时的子分区倍率。 | 通常保持 `4`。 |
 | `adaptiveMerge.overflowSpillPath` | 否 | 系统临时目录下的 `aggregation-stream` | spill 文件落盘目录。 | 生产建议显式指向本地 SSD。 |
-| `adaptiveMerge.preferOrderedQuery` | 否 | `true` | 对数据库 source 尝试改写成 `SELECT * FROM (...) ORDER BY joinKeys`，降低 pending window 压力。文件源不改写。 | 能接受排序 SQL 时保持 `true`。 |
+| `adaptiveMerge.preferOrderedQuery` | 否 | `true` | 对数据库 source 尝试改写成 `SELECT * FROM (...) ORDER BY joinKeys`。只有所有 source 都能保证有序时才会即时合并；存在文件源、关闭该开关或无法构造有序查询时，会进入安全 overflow 聚合路径。 | 数据库源建议保持 `true`；文件源或无法确认顺序的 source 允许性能下降但保证同 key 只聚合一次。 |
 | `adaptiveMerge.maxSpillBytesMB` | 否 | `512` | spill guard 最大累计写盘预算。超限会抛异常。 | 大作业建议按磁盘容量提高。 |
 | `adaptiveMerge.minFreeDiskMB` | 否 | `256` | 磁盘剩余空间保护线。低于它会拒绝继续 spill。 | 生产建议按机器磁盘情况提高。 |
-| `adaptiveMerge.keyTypes.<field>` | 否 | `AUTO` | 显式指定 join key 的排序类型。支持 `AUTO` / `STRING` / `NUMBER` / `DATETIME`。 | 数字键和时间键建议显式写。 |
+| `adaptiveMerge.keyTypes.<field>` | 否 | `AUTO` | 当前会被解析和枚举校验，但 sort-merge key 编码与比较路径暂不消费它。支持值只有 `AUTO` / `STRING` / `NUMBER` / `DATETIME`。 | 暂不建议配置；保留给后续类型化 key 排序。 |
 
 补充说明：
 
 - `preferOrderedQuery = true` 时，数据库 source 可能会被改写成包一层子查询再 `ORDER BY join keys`
+- 只有所有 source 都被判定为有序时才使用即时窗口合并；只要存在无序 source，就会把 group 写入 overflow store 后统一按 key 聚合，避免同 key 非连续出现时重复输出
+- `adaptiveMerge.enabled = false` 表示关闭即时窗口优化，不表示禁用 reader 或回退到旧 legacy reader
 - `LEFT` / `RIGHT` 的主表判断依赖 `sources` 顺序，不依赖 SQL 中的表别名
-- `keyTypes` 建议与实际 join key 数据类型一致，否则比较阶段可能抛类型不兼容异常
+- `keyTypes` 目前只做解析校验，不参与当前 key 编码和比较
 
 ## 8. detailConfig 参数
 
@@ -464,6 +466,6 @@ Groovy 可用变量：
 - 先在 `sources[].fieldMappings` 把多源同义列统一命名，再写 `join.keys`
 - `fieldMappings` 尽量全部写成显式 `sourceId.field`，不要依赖模糊取值
 - 数值计算字段务必写 `resultType`
-- 大表融合时显式配置 `adaptiveMerge.keyTypes`
+- 大表融合时优先确认 source 可排序，并按磁盘容量配置 `adaptiveMerge.maxSpillBytesMB` 和 `adaptiveMerge.overflowSpillPath`
 - 需要排障时再开 `detailConfig`，并配采样率
 - 如果用 `querySql`，就不要再指望 `incrColumn/pkValue` 帮你自动拼 where

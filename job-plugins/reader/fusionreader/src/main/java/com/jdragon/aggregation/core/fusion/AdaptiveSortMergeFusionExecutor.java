@@ -15,8 +15,6 @@ import com.jdragon.aggregation.core.fusion.config.SourceConfig;
 import com.jdragon.aggregation.core.plugin.RecordSender;
 import com.jdragon.aggregation.core.sortmerge.AdaptiveMergeConfig;
 import com.jdragon.aggregation.core.sortmerge.AdaptiveMergeCoordinator;
-import com.jdragon.aggregation.core.sortmerge.OrderedKey;
-import com.jdragon.aggregation.core.sortmerge.OrderedKeySchema;
 import com.jdragon.aggregation.core.sortmerge.OrderedSourceCursor;
 import com.jdragon.aggregation.core.sortmerge.OverflowBucketStore;
 import com.jdragon.aggregation.core.sortmerge.SortMergeStats;
@@ -69,12 +67,12 @@ public class AdaptiveSortMergeFusionExecutor {
         }
         AdaptiveMergeConfig adaptiveMergeConfig = fusionConfig.getAdaptiveMergeConfig();
         options.setRebalancePartitionMultiplier(adaptiveMergeConfig.getRebalancePartitionMultiplier());
+        adaptiveMergeConfig.setMaxActiveCursors(options.getParallelSourceCount());
         SpillGuard spillGuard = new SpillGuard(
                 adaptiveMergeConfig.getMaxSpillBytes(),
                 adaptiveMergeConfig.getMinFreeDiskBytes()
         );
         List<DataSourceConfig> dataSourceConfigs = convertToDataSourceConfigs();
-        OrderedKeySchema keySchema = new OrderedKeySchema(fusionConfig.getJoinKeys(), adaptiveMergeConfig.getKeyTypes());
         List<OrderedSourceCursor> cursors = new ArrayList<>();
         SourceRowScanner rowScanner = new SourceRowScanner(pluginManager);
         for (DataSourceConfig dataSourceConfig : dataSourceConfigs) {

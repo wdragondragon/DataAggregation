@@ -60,7 +60,7 @@
 | `sources` | array<object> | 否 | 无 | `dataSources` 的兼容别名 | 新配置请统一写 `dataSources` |
 | `outputConfig` | object | 否 | 见下文 | 控制差异文件、resolution 文件、HTML 报告输出 | 测试环境建议开启报告 |
 | `cache` | object | 否 | 见下文 | 控制 spill 分区、临时文件等 | 默认可用，大数据量再调 |
-| `performance` | object | 否 | 见下文 | 控制内存预算；部分并发字段当前未生效 | 通常只需要调 `memoryLimitMB` |
+| `performance` | object | 否 | 见下文 | 控制内存预算和 source cursor 并发上限 | 通常关注 `memoryLimitMB`，源很多时再调 `parallelSourceCount` |
 | `adaptiveMerge` | object | 否 | 见下文 | 控制 sort-merge 自适应窗口和 spill 策略 | 建议保留启用 |
 | `updateTargetSourceId` | string | 条件必填 | 无 | 自动修复写回到哪个 `sourceId` | 只在 `autoApplyResolutions=true` 时填写 |
 | `autoApplyResolutions` | boolean | 否 | `false` | 是否把解决结果自动回写到目标源 | 生产环境谨慎开启 |
@@ -144,28 +144,28 @@
 
 | 路径 | 类型 | 是否必填 | 默认值 | 配置效果 | 建议值 |
 | --- | --- | --- | --- | --- | --- |
-| `performance.parallelSourceCount` | int | 否 | `1` | 当前 `consistencyreader` 会解析但未实际用于执行并发控制 | 无需依赖 |
+| `performance.parallelSourceCount` | int | 否 | `1` | 限制同时活跃的 source cursor 数量，最小按 `1` 处理 | 源很多或数据库压力大时可调小；需要更高并行度时按资源调大 |
 | `performance.memoryLimitMB` | int | 否 | `512` | sort-merge 内存预算来源，也会影响 `adaptiveMerge.pendingMemoryMB` 默认值 | 常见取值 `512`、`1024`、`2048` |
 
 补充：
 
 - 运行时最小会按 `64MB` 做保护
-- 当前最值得调的是 `memoryLimitMB`，不是 `parallelSourceCount`
+- `parallelSourceCount` 是 source cursor 并发上限，不是任务最大运行线程数
 
 ## 7. `adaptiveMerge` 参数
 
 | 路径 | 类型 | 是否必填 | 默认值 | 配置效果 | 建议值 |
 | --- | --- | --- | --- | --- | --- |
-| `adaptiveMerge.enabled` | boolean | 否 | `true` | 是否启用自适应 sort-merge | 建议保持开启 |
+| `adaptiveMerge.enabled` | boolean | 否 | `true` | 是否启用有序快速合并窗口。设为 `false` 时不跳过 reader，而是强制所有 group 进入 overflow 后按 key 聚合回放 | 正常保持开启；需要保守正确性验证时可关闭即时窗口优化 |
 | `adaptiveMerge.pendingKeyThreshold` | int | 否 | `4096` | 内存窗口最多保留多少个待决 key | 大 key 基数场景可适度调大 |
 | `adaptiveMerge.pendingMemoryMB` | int | 否 | `max(64, performance.memoryLimitMB / 2)` | 内存窗口的预算大小 | 通常让它跟随默认推导即可 |
 | `adaptiveMerge.overflowPartitionCount` | int | 否 | `cache.partitionCount`，若未配 cache 则为 `16` | overflow spill 的初始分区数 | 建议与 `cache.partitionCount` 保持一致 |
 | `adaptiveMerge.rebalancePartitionMultiplier` | int | 否 | `4` | overflow 分区继续扩容时的倍数 | 通常保持 `4` |
 | `adaptiveMerge.overflowSpillPath` | string | 否 | `cache.spillPath` | overflow spill 目录 | 不配时继承 `cache.spillPath` 即可 |
-| `adaptiveMerge.preferOrderedQuery` | boolean | 否 | `true` | 尝试把源查询改写成带 `ORDER BY` 的包装 SQL，降低 pending window 压力 | 数据库源建议保持 `true` |
+| `adaptiveMerge.preferOrderedQuery` | boolean | 否 | `true` | 尝试把源查询改写成带 `ORDER BY` 的包装 SQL。只有所有 source 都可保证有序时才使用即时窗口合并；存在文件源、关闭该开关或无法构造有序查询时，会进入安全 overflow 聚合路径 | 数据库源建议保持 `true` |
 | `adaptiveMerge.maxSpillBytesMB` | int | 否 | `512` | spill 总写入预算上限 | 大任务可适当调大 |
 | `adaptiveMerge.minFreeDiskMB` | int | 否 | `256` | 最低剩余磁盘空间保护阈值 | 至少高于操作系统安全线 |
-| `adaptiveMerge.keyTypes.<field>` | enum | 否 | `AUTO` | 显式指定匹配键类型，影响 key 排序与比较 | 键类型稳定时建议显式配置 |
+| `adaptiveMerge.keyTypes.<field>` | enum | 否 | `AUTO` | 当前会被解析和枚举校验，但 sort-merge key 编码与比较路径暂不消费它 | 暂不建议配置；保留给后续类型化 key 排序 |
 
 `adaptiveMerge.keyTypes.<field>` 当前只接受：
 
@@ -336,12 +336,13 @@
 - 比较器里虽然保留了数值容差辅助方法
 - 但当前字段比对实际仍走严格相等判断
 
-### 11.5 `performance.parallelSourceCount` 当前也基本无效
+### 11.5 `performance.parallelSourceCount` 控制 source cursor 并发
 
 原因：
 
 - 参数会被读入 `StreamExecutionOptions`
-- 但当前 consistency sort-merge 代码没有实际用它控制并发数
+- 当前 consistency sort-merge 会将它写入 `AdaptiveMergeConfig.maxActiveCursors`
+- coordinator 按该值限制同时启动的 source cursor 数量，已经完成的 cursor 会释放并发名额
 
 ### 11.6 历史键名 `performanceConfig` / `adaptiveMergeConfig` 当前不会被读取
 
@@ -350,7 +351,7 @@
 - `performance`
 - `adaptiveMerge`
 
-### 11.7 `adaptiveMerge.keyTypes` 的枚举值不是旧文档里的 `LONG/DOUBLE/DATE`
+### 11.7 `adaptiveMerge.keyTypes` 当前只做解析校验
 
 当前真实可用值只有：
 
@@ -358,6 +359,11 @@
 - `STRING`
 - `NUMBER`
 - `DATETIME`
+
+说明：
+
+- 当前 `OrderedKey` 使用版本化结构编码，不再按 `keyTypes` 做运行期排序转换
+- 不要继续使用旧文档中的 `LONG` / `DOUBLE` / `DATE`
 
 ### 11.8 `maxRecords` 对数据库源会直接补 `LIMIT n`
 
@@ -451,4 +457,3 @@
 - 自动修复先从 `allowDelete=false` 开始
 - 数据库量大时先调 `performance.memoryLimitMB`、`cache.partitionCount`
 - 非 MySQL 类数据库做抽样时优先手写 `querySql`，不要盲配 `maxRecords`
-

@@ -79,52 +79,82 @@ public class AdaptiveMergeCoordinator {
     }
 
     public Result execute(List<OrderedSourceCursor> cursors, ResolvedGroupHandler handler) throws Exception {
+        final boolean safeAggregationMode = shouldUseSafeAggregation(cursors);
+        final Set<String> startedSourceIds = new LinkedHashSet<String>();
+        boolean completed = false;
+        if (safeAggregationMode) {
+            stats.setExecutionEngine("hybrid");
+            stats.setFallbackReason(!config.isEnabled()
+                    ? "Adaptive merge disabled"
+                    : "Unordered source detected");
+        }
+        int nextCursorIndex = 0;
         for (OrderedSourceCursor cursor : cursors) {
             cursorIndex.put(cursor.getSourceId(), cursor);
-            cursor.start();
         }
 
-        int cursorIndexHint = 0;
-        while (true) {
-            if (allCursorsFinished()) {
-                drainRemainingPending(handler);
-                break;
-            }
+        try {
+            nextCursorIndex = startAvailableCursors(cursors, nextCursorIndex, startedSourceIds);
 
-            OrderedSourceCursor.CursorEvent event = null;
-            for (int i = 0; i < cursors.size(); i++) {
-                OrderedSourceCursor cursor = cursors.get((cursorIndexHint + i) % cursors.size());
-                OrderedSourceCursor.CursorEvent candidate = cursor.pollEvent();
-                if (candidate != null) {
-                    event = candidate;
-                    cursorIndexHint = (cursorIndexHint + i + 1) % Math.max(1, cursors.size());
+            int cursorIndexHint = 0;
+            while (true) {
+                if (nextCursorIndex >= cursors.size() && allStartedCursorsFinished(cursors, startedSourceIds)) {
+                    if (!safeAggregationMode) {
+                        drainRemainingPending(handler);
+                    }
                     break;
                 }
-            }
 
-            if (event == null) {
-                OrderedSourceCursor cursor = nextActiveCursor(cursors, cursorIndexHint);
-                if (cursor == null) {
-                    continue;
+                OrderedSourceCursor.CursorEvent event = null;
+                for (int i = 0; i < cursors.size(); i++) {
+                    OrderedSourceCursor cursor = cursors.get((cursorIndexHint + i) % cursors.size());
+                    if (!isStarted(cursor, startedSourceIds) || cursor.isFinished()) {
+                        continue;
+                    }
+                    OrderedSourceCursor.CursorEvent candidate = cursor.pollEvent();
+                    if (candidate != null) {
+                        event = candidate;
+                        cursorIndexHint = (cursorIndexHint + i + 1) % Math.max(1, cursors.size());
+                        break;
+                    }
                 }
-                event = cursor.takeEvent();
-                cursorIndexHint = (cursors.indexOf(cursor) + 1) % Math.max(1, cursors.size());
+
+                if (event == null) {
+                    OrderedSourceCursor cursor = nextActiveCursor(cursors, cursorIndexHint, startedSourceIds);
+                    if (cursor == null) {
+                        nextCursorIndex = startAvailableCursors(cursors, nextCursorIndex, startedSourceIds);
+                        continue;
+                    }
+                    event = cursor.takeEvent();
+                    cursorIndexHint = (cursors.indexOf(cursor) + 1) % Math.max(1, cursors.size());
+                }
+
+                handleEvent(event, handler, safeAggregationMode);
+                nextCursorIndex = startAvailableCursors(cursors, nextCursorIndex, startedSourceIds);
             }
 
-            handleEvent(event, handler);
+            for (OrderedSourceCursor cursor : cursors) {
+                stats.getSourceRecordCounts().put(cursor.getSourceId(), cursor.getScannedRecords());
+                stats.getSourceGroupCounts().put(cursor.getSourceId(), cursor.getProducedGroups());
+            }
+            if (overflowBucketStore != null) {
+                overflowBucketStore.close();
+            }
+            completed = true;
+            return new Result(stats, overflowBucketStore);
+        } finally {
+            if (!completed) {
+                cancelUnfinishedCursors(cursors);
+                if (overflowBucketStore != null) {
+                    overflowBucketStore.cleanup();
+                }
+            }
         }
-
-        for (OrderedSourceCursor cursor : cursors) {
-            stats.getSourceRecordCounts().put(cursor.getSourceId(), cursor.getScannedRecords());
-            stats.getSourceGroupCounts().put(cursor.getSourceId(), cursor.getProducedGroups());
-        }
-        if (overflowBucketStore != null) {
-            overflowBucketStore.close();
-        }
-        return new Result(stats, overflowBucketStore);
     }
 
-    private void handleEvent(OrderedSourceCursor.CursorEvent event, ResolvedGroupHandler handler) throws Exception {
+    private void handleEvent(OrderedSourceCursor.CursorEvent event,
+                             ResolvedGroupHandler handler,
+                             boolean safeAggregationMode) throws Exception {
         if (event == null) {
             return;
         }
@@ -143,6 +173,11 @@ public class AdaptiveMergeCoordinator {
         stats.setDuplicateIgnoredCount(stats.getDuplicateIgnoredCount() + group.getDuplicateCount());
 
         String encodedKey = group.getKey().getEncoded();
+        if (safeAggregationMode) {
+            appendGroupToOverflow(group);
+            return;
+        }
+
         if (spilledEncodedKeys.contains(encodedKey)) {
             appendGroupToOverflow(group);
             if (lateArrivalEncodedKeys.add(encodedKey)) {
@@ -220,6 +255,9 @@ public class AdaptiveMergeCoordinator {
 
     private void appendGroupToOverflow(OrderedKeyGroup group) {
         ensureOverflowStore();
+        if (spilledEncodedKeys.add(group.getKey().getEncoded())) {
+            stats.setMergeSpilledKeyCount(stats.getMergeSpilledKeyCount() + 1L);
+        }
         overflowBucketStore.append(group.getSourceId(), group.getKey(), group.getFirstRow());
     }
 
@@ -235,23 +273,76 @@ public class AdaptiveMergeCoordinator {
         }
     }
 
-    private boolean allCursorsFinished() {
-        for (OrderedSourceCursor cursor : cursorIndex.values()) {
-            if (!cursor.isFinished()) {
+    private boolean allStartedCursorsFinished(List<OrderedSourceCursor> cursors, Set<String> startedSourceIds) {
+        for (OrderedSourceCursor cursor : cursors) {
+            if (isStarted(cursor, startedSourceIds) && !cursor.isFinished()) {
                 return false;
             }
         }
         return true;
     }
 
-    private OrderedSourceCursor nextActiveCursor(List<OrderedSourceCursor> cursors, int startIndex) {
+    private OrderedSourceCursor nextActiveCursor(List<OrderedSourceCursor> cursors,
+                                                int startIndex,
+                                                Set<String> startedSourceIds) {
         for (int i = 0; i < cursors.size(); i++) {
             OrderedSourceCursor cursor = cursors.get((startIndex + i) % cursors.size());
-            if (!cursor.isFinished()) {
+            if (isStarted(cursor, startedSourceIds) && !cursor.isFinished()) {
                 return cursor;
             }
         }
         return null;
+    }
+
+    private int startAvailableCursors(List<OrderedSourceCursor> cursors,
+                                      int nextCursorIndex,
+                                      Set<String> startedSourceIds) {
+        int activeCount = activeStartedCursorCount(cursors, startedSourceIds);
+        int maxActiveCursors = config.getMaxActiveCursors();
+        while (nextCursorIndex < cursors.size() && activeCount < maxActiveCursors) {
+            OrderedSourceCursor cursor = cursors.get(nextCursorIndex);
+            if (!isStarted(cursor, startedSourceIds)) {
+                cursor.start();
+                startedSourceIds.add(cursor.getSourceId());
+                activeCount++;
+            }
+            nextCursorIndex++;
+        }
+        return nextCursorIndex;
+    }
+
+    private int activeStartedCursorCount(List<OrderedSourceCursor> cursors, Set<String> startedSourceIds) {
+        int activeCount = 0;
+        for (OrderedSourceCursor cursor : cursors) {
+            if (isStarted(cursor, startedSourceIds) && !cursor.isFinished()) {
+                activeCount++;
+            }
+        }
+        return activeCount;
+    }
+
+    private boolean isStarted(OrderedSourceCursor cursor, Set<String> startedSourceIds) {
+        return cursor != null && startedSourceIds.contains(cursor.getSourceId());
+    }
+
+    private boolean shouldUseSafeAggregation(List<OrderedSourceCursor> cursors) {
+        if (!config.isEnabled()) {
+            return true;
+        }
+        for (OrderedSourceCursor cursor : cursors) {
+            if (!cursor.isOrdered()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void cancelUnfinishedCursors(List<OrderedSourceCursor> cursors) {
+        for (OrderedSourceCursor cursor : cursors) {
+            if (cursor != null && !cursor.isFinished()) {
+                cursor.cancel();
+            }
+        }
     }
 
     private long estimateGroupBytes(OrderedKeyGroup group) {

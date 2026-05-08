@@ -74,10 +74,12 @@ mvn -q -pl core "-Dtest=AdaptiveMergeCoordinatorTest,SpillGuardTest" test -Dfail
 会先在 `core/src/main/java/com/jdragon/aggregation/core/streaming/SourceRowScanner.java`
 看到 `scanQuery(...)` 相关编译错误。
 
-但当前状态已经更新：
+但当时状态已经更新：
 
 - `SourceRowScanner` 已改为直接走 `executeQuerySql(...)`
 - 该假性接口漂移阻塞已不再是当前机器上的必现问题
+
+> 2026-05-08 更新：后续 SortMerge 正确性修复已经把数据库扫描路径重新改为 `plugin.scanQuery(...)` 逐行流式读取，避免先把查询结果整体落到 `Table.bodies`。因此本节关于 `executeQuerySql(...)` 的说法只代表 2026-03-30 当时的接手状态，不再是当前实现结论。
 
 ### 3.2 历史根因判断
 
@@ -98,7 +100,7 @@ mvn -q -pl core -am "-Dtest=AdaptiveMergeCoordinatorTest,SpillGuardTest" test -D
 结论：
 
 - 当前机器上的 `part3` 编译基线已对齐
-- 旧的 `scanQuery(...)` 假性阻塞说明应视为历史备注，不再是当前结论
+- 旧的 `scanQuery(...)` 假性阻塞说明应视为历史备注；当前实现已重新使用 `scanQuery(...)`，验证时仍建议带 `-am` 确保 sibling module 一起构建
 - 后续凡是只验证 `core`、但又依赖 sibling module 新接口时，仍优先使用 `-am`
 
 ## 4. 当前机器上的实际验证结果

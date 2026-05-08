@@ -8,7 +8,7 @@
           "name": "基础信息",
           "type": "mysql8",
           "config": {
-            "host": "192.168.188.128",
+            "host": "192.168.188.129",
             "port": 3306,
             "database": "agg_test",
             "userName": "root",
@@ -28,7 +28,7 @@
           "name": "额外信息",
           "type": "mysql8",
           "config": {
-            "host": "192.168.188.128",
+            "host": "192.168.188.129",
             "port": 3306,
             "database": "agg_test",
             "userName": "root",
@@ -142,7 +142,7 @@
     "type": "mysql8",
     "config": {
       "connect": {
-        "host": "192.168.188.128",
+        "host": "192.168.188.129",
         "port": 3306,
         "database": "agg_test",
         "userName": "root",

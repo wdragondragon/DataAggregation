@@ -49,6 +49,11 @@ public class SortMergeConsistencyReader extends Reader.Job {
     @Override
     public void startRead(RecordSender recordSender) {
         ComparisonResult result = executor.execute(rule);
+        if (ComparisonResult.Status.FAILED.equals(result.getStatus())) {
+            Object error = result.getSummary() == null ? null : result.getSummary().get("error");
+            throw new RuntimeException("Consistency sort-merge failed: "
+                    + (error == null ? "executor returned FAILED" : String.valueOf(error)));
+        }
         List<DifferenceRecord> differences = result.getDifferenceRecords();
         if (differences != null) {
             for (DifferenceRecord difference : differences) {

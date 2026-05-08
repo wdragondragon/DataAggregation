@@ -65,7 +65,7 @@
 | `errorModes.fieldOverrides.<targetField>` | map | 无 | 单个目标字段的错误模式覆盖。 |
 | `cache.partitionCount` | int | `10` | 旧 streaming spill 分区数；同时作为 adaptive overflow 的默认分区数来源。 |
 | `cache.rebalancePartitionMultiplier` | int | `4` | rebalance 子分区倍率，子层分区数会严格大于父层。 |
-| `performance.parallelSourceCount` | int | `2` | 旧 `StreamingFusionExecutor` 的并行扫描度；当前 `fusion` reader 不直接消费它。 |
+| `performance.parallelSourceCount` | int | `2` | 当前 `fusion` reader 会用它限制同时活跃的 source cursor 数量，最小按 `1` 处理。 |
 | `performance.memoryLimitMB` | int | `1024` | 内存预算，驱动 sort-merge pending 窗口和 `maxKeysPerPartition` 估算。 |
 | `adaptiveMerge` | object | 见下表 | 自适应 sort-merge 主配置。 |
 | `detailConfig` | object | 见下表 | 融合详情落盘配置。 |
@@ -116,16 +116,16 @@
 
 | 路径 | 类型 | 默认值 | 作用 |
 |------|------|--------|------|
-| `adaptiveMerge.enabled` | boolean | `true` | 是否启用 adaptive sort-merge。 |
+| `adaptiveMerge.enabled` | boolean | `true` | 是否启用有序快速合并窗口。设为 `false` 时强制进入安全 overflow 聚合路径，不跳过 reader。 |
 | `adaptiveMerge.pendingKeyThreshold` | int | `4096` | coordinator 内存 pending key 上限。 |
 | `adaptiveMerge.pendingMemoryMB` | int | `max(64, memoryLimitMB / 2)` | pending 窗口内存预算。 |
 | `adaptiveMerge.overflowPartitionCount` | int | `cache.partitionCount` | overflow 顶层分区数。 |
 | `adaptiveMerge.rebalancePartitionMultiplier` | int | `4` | overflow rebalance 的子分区倍率。 |
 | `adaptiveMerge.overflowSpillPath` | string | 无 | overflow 分区文件目录。 |
-| `adaptiveMerge.preferOrderedQuery` | boolean | `true` | 优先改写 source 查询为带 `ORDER BY`，用于降低 pending window 压力，不再作为正确性前提。 |
+| `adaptiveMerge.preferOrderedQuery` | boolean | `true` | 优先改写数据库 source 查询为带 `ORDER BY`。所有 source 都有序时走即时窗口合并；存在无序 source 时走安全 overflow 聚合路径。 |
 | `adaptiveMerge.maxSpillBytesMB` | int | `512` | spill guard 最大累计写入预算。 |
 | `adaptiveMerge.minFreeDiskMB` | int | `256` | spill guard 最小剩余磁盘空间。 |
-| `adaptiveMerge.keyTypes.<field>` | map | 空 | 显式指定匹配键类型，值可为 `STRING` / `LONG` / `DOUBLE` / `DATE` / `AUTO` 等。 |
+| `adaptiveMerge.keyTypes.<field>` | map | 空 | 当前只解析并校验枚举，暂不参与 key 编码和比较。可用值为 `AUTO` / `STRING` / `NUMBER` / `DATETIME`。 |
 
 ### 6. `detailConfig` 配置
 
@@ -222,7 +222,7 @@
 | `cache.rebalancePartitionMultiplier` | int | `4` | 子分区倍率。 |
 | `cache.spillPath` | string | 无 | spill 文件目录。 |
 | `cache.keepTempFiles` | boolean | `false` | 是否保留临时 spill 文件。 |
-| `performance.parallelSourceCount` | int | `1` | 旧 `StreamingConsistencyExecutor` 的并行度；当前 `consistency` reader 不直接消费它。 |
+| `performance.parallelSourceCount` | int | `1` | 当前 `consistency` reader 会用它限制同时活跃的 source cursor 数量，最小按 `1` 处理。 |
 | `performance.memoryLimitMB` | int | `512` | 分区 key 数估算和 sort-merge 内存预算来源。 |
 
 ## 三、Fusion 示例 JSON
@@ -328,7 +328,7 @@
         "maxSpillBytesMB": 512,
         "minFreeDiskMB": 256,
         "keyTypes": {
-          "user_id": "LONG"
+          "user_id": "NUMBER"
         }
       },
       "detailConfig": {
@@ -451,7 +451,7 @@
         "maxSpillBytesMB": 512,
         "minFreeDiskMB": 256,
         "keyTypes": {
-          "user_id": "LONG"
+          "user_id": "NUMBER"
         }
       },
       "updateTargetSourceId": "master",

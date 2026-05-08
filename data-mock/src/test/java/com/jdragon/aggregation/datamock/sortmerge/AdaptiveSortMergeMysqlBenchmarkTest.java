@@ -151,15 +151,14 @@ public class AdaptiveSortMergeMysqlBenchmarkTest {
         AdaptiveSortMergeTestSupport.FusionExecution fusion = result.getFusionExecution();
         SortMergeStats fusionStats = fusion.getStats();
 
-        assertEquals("sortmerge", consistency.getExecutionEngine());
-        assertEquals("sortmerge", fusionStats.getExecutionEngine());
-        assertTrue("pending window should observe out-of-order keys",
-                consistency.getPendingPeakKeyCount() > 0L
-                        || fusionStats.getPendingPeakKeyCount() > 0L);
+        assertEquals("hybrid", consistency.getExecutionEngine());
+        assertEquals("hybrid", fusionStats.getExecutionEngine());
+        assertEquals("Unordered source detected", consistency.getFallbackReason());
+        assertEquals("Unordered source detected", fusionStats.getFallbackReason());
+        assertTrue("safe overflow should spill all unordered keys",
+                consistency.getMergeSpilledKeyCount() > 0L || fusionStats.getMergeSpilledKeyCount() > 0L);
         assertEquals(0L, consistency.getWindowEvictedKeyCount());
         assertEquals(0L, fusionStats.getWindowEvictedKeyCount());
-        assertNull(consistency.getFallbackReason());
-        assertNull(fusionStats.getFallbackReason());
     }
 
     private void assertTightPendingSpill(AdaptiveSortMergeTestSupport.ScenarioResult result) {

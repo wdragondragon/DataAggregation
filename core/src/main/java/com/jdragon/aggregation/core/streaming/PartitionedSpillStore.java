@@ -99,7 +99,7 @@ public class PartitionedSpillStore implements AutoCloseable {
     }
 
     public int resolvePartition(String key) {
-        return Math.abs(key != null ? key.hashCode() : 0) % partitionCount;
+        return Math.floorMod(key != null ? key.hashCode() : 0, partitionCount);
     }
 
     public Path getPartitionPath(int partition) {

@@ -18,6 +18,7 @@ public class AdaptiveMergeConfig {
     private boolean preferOrderedQuery = true;
     private int maxSpillBytesMB = 512;
     private int minFreeDiskMB = 256;
+    private int maxActiveCursors = Integer.MAX_VALUE;
     private Map<String, OrderedKeyType> keyTypes = new LinkedHashMap<String, OrderedKeyType>();
 
     public static AdaptiveMergeConfig fromConfig(Configuration configuration,
@@ -44,6 +45,7 @@ public class AdaptiveMergeConfig {
         config.setPreferOrderedQuery(configuration.getBool("preferOrderedQuery", true));
         config.setMaxSpillBytesMB(configuration.getInt("maxSpillBytesMB", config.getMaxSpillBytesMB()));
         config.setMinFreeDiskMB(configuration.getInt("minFreeDiskMB", config.getMinFreeDiskMB()));
+        config.setMaxActiveCursors(configuration.getInt("maxActiveCursors", config.getMaxActiveCursors()));
 
         Configuration keyTypesConfig = configuration.getConfiguration("keyTypes");
         if (keyTypesConfig != null) {
@@ -70,5 +72,9 @@ public class AdaptiveMergeConfig {
 
     public long getMinFreeDiskBytes() {
         return Math.max(1, minFreeDiskMB) * 1024L * 1024L;
+    }
+
+    public int getMaxActiveCursors() {
+        return Math.max(1, maxActiveCursors);
     }
 }
