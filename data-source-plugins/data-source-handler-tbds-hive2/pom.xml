@@ -54,8 +54,8 @@
             <version>2.2.0-TBDS-5.2.0.1</version>
             <exclusions>
                 <exclusion>
-                    <groupId>javax.el</groupId>
-                    <artifactId>org.glassfish</artifactId>
+                    <groupId>org.glassfish</groupId>
+                    <artifactId>javax.el</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
