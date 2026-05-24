@@ -171,6 +171,13 @@ public class HttpUtils {
         return this;
     }
 
+    public HttpUtils setRawBody(String body) {
+        if (!StringUtils.isBlank(body)) {
+            this.httpEntity = new StringEntity(body, charset);
+        }
+        return this;
+    }
+
 //    public HttpUtils setFile(String name, MultipartFile value) {
 //        if (value != null) {
 //            String fileName = value.getName();
@@ -253,6 +260,7 @@ public class HttpUtils {
             Header[] header = new Header[headers.size()];
             requestBase.setHeaders(headers.toArray(header));
         }
+        requestBase.setConfig(requestConfig);
         return exec(requestBase);
     }
 

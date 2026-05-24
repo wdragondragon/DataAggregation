@@ -1,0 +1,32 @@
+{
+  "type": "http",
+  "config": {
+    "url": "http://127.0.0.1:8081/aggregation/httpWrite",
+    "mode": "POST",
+    "contentType": "application/json;charset=utf-8",
+    "header": "{\"Authorization\":\"Bearer {dyn_from_http_token(GET,http://127.0.0.1:8081/aggregation/login,,,data.token)}\"}",
+    "params": "{}",
+    "requestBody": "{\"meta\":{\"source\":\"aggregation\"}}",
+    "payloadMode": "array",
+    "dataNodePath": "data.items",
+    "includeTotal": true,
+    "totalNodePath": "data.total",
+    "batchSize": 500,
+    "responseStatus": {
+      "path": "code",
+      "code": "200"
+    },
+    "columns": [
+      {
+        "index": 0,
+        "name": "id",
+        "type": "STRING"
+      },
+      {
+        "index": 1,
+        "name": "name",
+        "type": "STRING"
+      }
+    ]
+  }
+}

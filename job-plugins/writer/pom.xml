@@ -24,6 +24,7 @@
         <module>ftpwriter</module>
         <module>sftpwriter</module>
         <module>miniowriter</module>
+        <module>httpwriter</module>
     </modules>
 
     <properties>

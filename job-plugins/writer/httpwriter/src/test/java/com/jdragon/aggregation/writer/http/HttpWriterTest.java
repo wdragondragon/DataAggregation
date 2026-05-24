@@ -1,0 +1,248 @@
+package com.jdragon.aggregation.writer.http;
+
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import com.jdragon.aggregation.commons.element.LongColumn;
+import com.jdragon.aggregation.commons.element.Record;
+import com.jdragon.aggregation.commons.element.StringColumn;
+import com.jdragon.aggregation.commons.exception.AggregationException;
+import com.jdragon.aggregation.commons.util.Configuration;
+import com.jdragon.aggregation.core.plugin.RecordReceiver;
+import com.jdragon.aggregation.core.transport.record.DefaultRecord;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+import org.junit.After;
+import org.junit.Test;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
+
+public class HttpWriterTest {
+
+    private HttpServer server;
+
+    @After
+    public void stopServer() {
+        if (server != null) {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void arrayPayloadShouldSendBatchesWithTemplateTotalAndDynamicValues() throws Exception {
+        List<CapturedRequest> requests = new ArrayList<>();
+        AtomicInteger tokenCount = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/token", exchange -> {
+            tokenCount.incrementAndGet();
+            respond(exchange, 200, "{\"data\":{\"token\":\"TOKEN-OK\"}}");
+        });
+        server.createContext("/write", exchange -> {
+            requests.add(capture(exchange));
+            respond(exchange, 200, "{\"code\":\"200\"}");
+        });
+        server.start();
+
+        String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        HttpWriter writer = new HttpWriter();
+        writer.setPluginJobConf(Configuration.from(writerConfig(baseUrl + "/write",
+                "array",
+                "{\"meta\":{\"page\":\"{dyn_page}\",\"pageSize\":\"{dyn_pageSize}\",\"offset\":\"{dyn_offset}\"}}",
+                "data.items",
+                true,
+                "data.total",
+                "{\"Authorization\":\"Bearer {dyn_from_http_token(GET," + baseUrl + "/token,,,data.token)}\"}",
+                "{\"page\":\"{dyn_page}\"}",
+                2,
+                responseStatus())));
+        writer.init();
+
+        writer.startWrite(new ListRecordReceiver(Arrays.asList(record(1L, "a"), record(2L, "b"), record(3L, "c"))));
+
+        assertEquals(2, requests.size());
+        assertTrue(tokenCount.get() >= 2);
+
+        CapturedRequest first = requests.get(0);
+        assertEquals("Bearer TOKEN-OK", first.headers.get("Authorization"));
+        assertEquals("page=1", first.query);
+        JSONObject firstBody = JSONObject.parseObject(first.body);
+        assertEquals(Integer.valueOf(1), firstBody.getJSONObject("meta").getInteger("page"));
+        assertEquals(Integer.valueOf(2), firstBody.getJSONObject("meta").getInteger("pageSize"));
+        assertEquals(Integer.valueOf(0), firstBody.getJSONObject("meta").getInteger("offset"));
+        assertEquals(Integer.valueOf(2), firstBody.getJSONObject("data").getInteger("total"));
+        JSONArray firstItems = firstBody.getJSONObject("data").getJSONArray("items");
+        assertEquals(2, firstItems.size());
+        assertEquals(Long.valueOf(1L), firstItems.getJSONObject(0).getLong("id"));
+        assertEquals("a", firstItems.getJSONObject(0).getString("name"));
+
+        CapturedRequest second = requests.get(1);
+        assertEquals("page=2", second.query);
+        JSONObject secondBody = JSONObject.parseObject(second.body);
+        assertEquals(Integer.valueOf(2), secondBody.getJSONObject("meta").getInteger("page"));
+        assertEquals(Integer.valueOf(1), secondBody.getJSONObject("meta").getInteger("pageSize"));
+        assertEquals(Integer.valueOf(2), secondBody.getJSONObject("meta").getInteger("offset"));
+        assertEquals(Integer.valueOf(1), secondBody.getJSONObject("data").getInteger("total"));
+        assertEquals(1, secondBody.getJSONObject("data").getJSONArray("items").size());
+    }
+
+    @Test
+    public void objectPayloadShouldSendRawJsonBodyWithoutDoubleEncoding() throws Exception {
+        List<CapturedRequest> requests = new ArrayList<>();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/write", exchange -> {
+            requests.add(capture(exchange));
+            respond(exchange, 200, "{\"code\":\"200\"}");
+        });
+        server.start();
+
+        String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        HttpWriter writer = new HttpWriter();
+        writer.setPluginJobConf(Configuration.from(writerConfig(baseUrl + "/write",
+                "object",
+                "",
+                "",
+                false,
+                "",
+                "{}",
+                "{}",
+                500,
+                new HashMap<>())));
+        writer.init();
+
+        writer.startWrite(new ListRecordReceiver(Arrays.asList(record(10L, ""))));
+
+        assertEquals(1, requests.size());
+        assertEquals("{\"id\":10,\"name\":\"\"}", requests.get(0).body);
+    }
+
+    @Test
+    public void nonSuccessfulHttpStatusShouldFailJob() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/write", exchange -> respond(exchange, 500, "{\"code\":\"500\"}"));
+        server.start();
+
+        String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        HttpWriter writer = new HttpWriter();
+        writer.setPluginJobConf(Configuration.from(writerConfig(baseUrl + "/write",
+                "object",
+                "",
+                "",
+                false,
+                "",
+                "{}",
+                "{}",
+                500,
+                new HashMap<>())));
+        writer.init();
+
+        assertThrows(AggregationException.class, () -> writer.startWrite(new ListRecordReceiver(Arrays.asList(record(1L, "a")))));
+    }
+
+    private static Map<String, Object> writerConfig(String url,
+                                                    String payloadMode,
+                                                    String requestBody,
+                                                    String dataNodePath,
+                                                    boolean includeTotal,
+                                                    String totalNodePath,
+                                                    String header,
+                                                    String params,
+                                                    int batchSize,
+                                                    Map<String, Object> responseStatus) {
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put(Key.URL, url);
+        config.put(Key.MODE, "POST");
+        config.put(Key.CONTENT_TYPE, "application/json;charset=utf-8");
+        config.put(Key.HEADER, header);
+        config.put(Key.PARAMS, params);
+        config.put(Key.REQUEST_BODY, requestBody);
+        config.put(Key.PAYLOAD_MODE, payloadMode);
+        config.put(Key.DATA_NODE_PATH, dataNodePath);
+        config.put(Key.INCLUDE_TOTAL, Boolean.valueOf(includeTotal));
+        config.put(Key.TOTAL_NODE_PATH, totalNodePath);
+        config.put(Key.BATCH_SIZE, Integer.valueOf(batchSize));
+        config.put(Key.RETRY_TIMES, Integer.valueOf(1));
+        config.put(Key.RETRY_INTERVAL_MS, Long.valueOf(0L));
+        config.put(Key.RESPONSE_STATUS, responseStatus);
+        config.put(Key.COLUMNS, Arrays.asList(column(0, "id"), column(1, "name")));
+        return config;
+    }
+
+    private static Map<String, Object> column(int index, String name) {
+        Map<String, Object> column = new LinkedHashMap<>();
+        column.put("index", Integer.valueOf(index));
+        column.put("name", name);
+        column.put("type", "STRING");
+        return column;
+    }
+
+    private static Map<String, Object> responseStatus() {
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("path", "code");
+        status.put("code", "200");
+        return status;
+    }
+
+    private static Record record(Long id, String name) {
+        DefaultRecord record = new DefaultRecord();
+        record.addColumn(new LongColumn(id));
+        record.addColumn(new StringColumn(name));
+        return record;
+    }
+
+    private static CapturedRequest capture(HttpExchange exchange) throws IOException {
+        CapturedRequest request = new CapturedRequest();
+        request.query = exchange.getRequestURI().getRawQuery();
+        request.body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        request.headers = new LinkedHashMap<>();
+        for (Map.Entry<String, List<String>> entry : exchange.getRequestHeaders().entrySet()) {
+            request.headers.put(entry.getKey(), entry.getValue().isEmpty() ? "" : entry.getValue().get(0));
+        }
+        return request;
+    }
+
+    private static void respond(HttpExchange exchange, int status, String body) throws IOException {
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json;charset=utf-8");
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream outputStream = exchange.getResponseBody()) {
+            outputStream.write(bytes);
+        }
+    }
+
+    private static final class CapturedRequest {
+        private String query;
+        private String body;
+        private Map<String, String> headers;
+    }
+
+    private static final class ListRecordReceiver implements RecordReceiver {
+        private final Iterator<Record> iterator;
+
+        private ListRecordReceiver(List<Record> records) {
+            this.iterator = records.iterator();
+        }
+
+        @Override
+        public Record getFromReader() {
+            return iterator.hasNext() ? iterator.next() : null;
+        }
+
+        @Override
+        public void shutdown() {
+        }
+    }
+}

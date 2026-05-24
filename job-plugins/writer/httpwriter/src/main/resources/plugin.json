@@ -1,0 +1,6 @@
+{
+  "name": "httpwriter",
+  "class": "com.jdragon.aggregation.writer.http.HttpWriter",
+  "description": "httpwriter",
+  "developer": "jdragon"
+}

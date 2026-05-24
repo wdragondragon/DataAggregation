@@ -135,7 +135,8 @@ public class HttpReader extends Reader.Job {
 
         httpUtils.setHeaderMap(headerMap);
         httpUtils.setParamMap(paramMap);
-        httpUtils.setBody(this.bodyStr);
+        String requestBody = httpContent.get(Key.REQUEST_BODY);
+        httpUtils.setRawBody(requestBody == null ? this.bodyStr : requestBody);
         String resultStr;
         try {
             resultStr = RetryUtil.executeWithRetry(() -> {
