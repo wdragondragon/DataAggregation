@@ -46,6 +46,8 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
 
     private String baseDirectory;
 
+    private boolean pendingCommand;
+
     @Override
     public boolean connect(Configuration configuration) {
         ftpTLS = configuration.getString("ftpTLS", Constant.DEFAULT_FTP_TLS);
@@ -260,6 +262,7 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
                         FtpHelperErrorCode.OPEN_FILE_ERROR, message);
             }
 
+            pendingCommand = true;
             return writeOutputStream;
         } catch (IOException e) {
             String message = String.format(
@@ -308,11 +311,22 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
 
     @Override
     public void fresh() {
+        if (!pendingCommand) {
+            return;
+        }
         try {
-            this.ftpClient.completePendingCommand();
+            boolean completed = this.ftpClient.completePendingCommand();
+            if (!completed) {
+                String message = String.format("发送completePendingCommand指令失败, 状态码:%s, 回复:%s",
+                        this.ftpClient.getReplyCode(), this.ftpClient.getReplyString());
+                throw AggregationException.asException(
+                        FtpHelperErrorCode.COMPLETE_PENDING_COMMAND_ERROR, message);
+            }
         } catch (IOException e) {
             throw AggregationException.asException(
                     FtpHelperErrorCode.COMPLETE_PENDING_COMMAND_ERROR, e);
+        } finally {
+            pendingCommand = false;
         }
     }
 
@@ -341,6 +355,7 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
 
     @Override
     public void close() throws Exception {
+        pendingCommand = false;
         if (ftpClient == null) {
             return;
         }
