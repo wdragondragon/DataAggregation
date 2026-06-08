@@ -25,6 +25,7 @@
         <module>sftpwriter</module>
         <module>miniowriter</module>
         <module>httpwriter</module>
+        <module>odpswriter</module>
     </modules>
 
     <properties>

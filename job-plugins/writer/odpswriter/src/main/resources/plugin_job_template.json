@@ -1,0 +1,27 @@
+{
+  "type": "odps",
+  "config": {
+    "connect": {
+      "type": "odps",
+      "name": "",
+      "host": "http://service.cn-hangzhou.maxcompute.aliyun.com/api",
+      "database": "",
+      "userName": "",
+      "password": "",
+      "extraParams": {
+        "projectEnv": "",
+        "tunnelEndpoint": ""
+      }
+    },
+    "table": "",
+    "columns": [
+      "*"
+    ],
+    "partitionSpec": "",
+    "partitionColumns": [],
+    "writeMode": "append",
+    "batchSize": 1000,
+    "emptyAsNull": false,
+    "autoCreatePartition": true
+  }
+}

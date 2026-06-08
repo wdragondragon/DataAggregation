@@ -1,0 +1,6 @@
+{
+  "name": "odpswriter",
+  "class": "com.jdragon.aggregation.writer.odps.OdpsWriter",
+  "description": "odps writer",
+  "developer": "jdragon"
+}

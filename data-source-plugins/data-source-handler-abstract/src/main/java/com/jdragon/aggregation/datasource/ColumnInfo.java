@@ -98,4 +98,9 @@ public class ColumnInfo {
      * 暂时给influxdb使用，标记tag或field
      */
     private String indexType;
+
+    /**
+     * 是否为分区字段
+     */
+    private boolean partitionColumn;
 }

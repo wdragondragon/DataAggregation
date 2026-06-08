@@ -600,6 +600,48 @@ public class Configuration {
     }
 
     /**
+     * 在指定Map节点下按字面量key写入值。mapPath仍按Configuration路径解析，
+     * literalKey不会再按点号拆分，适用于Kafka、ODPS等原生参数名自带点号的场景。
+     */
+    @SuppressWarnings("unchecked")
+    public Object setMapValue(final String mapPath, final String literalKey, final Object object) {
+        checkPath(mapPath);
+        if (literalKey == null) {
+            throw new IllegalArgumentException("literalKey不能为null.");
+        }
+
+        Object target = this.get(mapPath);
+        if (target == null) {
+            this.set(mapPath, new HashMap<String, Object>());
+            target = this.get(mapPath);
+        }
+        if (!(target instanceof Map)) {
+            throw AggregationException.asException(CommonErrorCode.RUNTIME_ERROR,
+                    String.format("路径[%s]需要是Map对象，才能按字面量key写入.", mapPath));
+        }
+
+        return ((Map<String, Object>) target).put(literalKey, extractConfiguration(object));
+    }
+
+    /**
+     * 在指定Map节点下按字面量key读取值。mapPath仍按Configuration路径解析，
+     * literalKey不会再按点号拆分。
+     */
+    @SuppressWarnings("unchecked")
+    public Object getMapValue(final String mapPath, final String literalKey) {
+        checkPath(mapPath);
+        if (literalKey == null) {
+            return null;
+        }
+
+        Object target = this.get(mapPath);
+        if (!(target instanceof Map)) {
+            return null;
+        }
+        return ((Map<String, Object>) target).get(literalKey);
+    }
+
+    /**
      * 获取Configuration下所有叶子节点的key
      * <p/>
      * <br>

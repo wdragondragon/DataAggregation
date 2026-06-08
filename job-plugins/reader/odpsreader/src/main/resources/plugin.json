@@ -1,0 +1,6 @@
+{
+  "name": "odpsreader",
+  "class": "com.jdragon.aggregation.odps.OdpsReader",
+  "description": "odps reader",
+  "developer": "jdragon"
+}

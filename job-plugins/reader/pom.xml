@@ -23,6 +23,7 @@
         <module>rocketmqreader</module>
         <module>dmreader</module>
         <module>influxdbv1reader</module>
+        <module>odpsreader</module>
         <module>consolereader</module>
         <module>postgresqlreader</module>
         <module>ftpreader</module>

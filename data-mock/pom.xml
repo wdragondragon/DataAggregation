@@ -44,8 +44,32 @@
         </dependency>
         <dependency>
             <groupId>com.jdragon.aggregation</groupId>
+            <artifactId>odpsreader</artifactId>
+            <version>1.0_jdk17-SNAPSHOT</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.jdragon.aggregation</groupId>
+            <artifactId>kafkawriter</artifactId>
+            <version>1.0_jdk17-SNAPSHOT</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.jdragon.aggregation</groupId>
+            <artifactId>data-source-handler-odps</artifactId>
+            <version>1.0_jdk17-SNAPSHOT</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.jdragon.aggregation</groupId>
             <artifactId>data-source-handler-mysql8</artifactId>
             <version>1.0_jdk17-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>1.7.36</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>junit</groupId>

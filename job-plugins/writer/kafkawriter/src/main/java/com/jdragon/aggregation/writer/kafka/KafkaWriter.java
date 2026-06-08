@@ -78,16 +78,17 @@ public class KafkaWriter extends Writer.Job {
                 ListTopicsResult topicsResult = adminClient.listTopics();
                 String topic = conf.getNecessaryValue(Key.TOPIC, KafkaWriterErrorCode.REQUIRED_VALUE);
                 if (!topicsResult.names().get().contains(topic)) {
-                    new NewTopic(
+                    NewTopic newTopic = new NewTopic(
                             topic,
                             Integer.parseInt(conf.getUnnecessaryValue(Key.CREATE_TOPIC_NUM_PARTITION, "1", null)),
                             Short.parseShort(conf.getUnnecessaryValue(Key.CREATE_TOPIC_REPLICATION_FACTOR, "1", null))
                     );
                     List<NewTopic> newTopics = new ArrayList<>();
-                    adminClient.createTopics(newTopics);
+                    newTopics.add(newTopic);
+                    adminClient.createTopics(newTopics).all().get();
                 }
             } catch (Exception e) {
-                throw AggregationException.asException(KafkaWriterErrorCode.CREATE_TOPIC, KafkaWriterErrorCode.REQUIRED_VALUE.getDescription());
+                throw AggregationException.asException(KafkaWriterErrorCode.CREATE_TOPIC, e);
             }
         }
     }
