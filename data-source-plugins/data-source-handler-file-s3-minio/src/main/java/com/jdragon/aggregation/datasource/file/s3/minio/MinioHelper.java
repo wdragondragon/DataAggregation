@@ -33,9 +33,10 @@ public class MinioHelper extends AbstractPlugin implements FileHelper {
                             configuration.getString("secretKey"))
                     .build();
             this.bucketName = configuration.getString("bucket");
+            boolean createBucket = configuration.getBool("createBucket", true);
 
             // 确保存储桶存在
-            if (!minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build())) {
+            if (createBucket && !minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build())) {
                 log.info("存储桶{}不存在，尝试创建", bucketName);
                 minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
             }

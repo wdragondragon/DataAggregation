@@ -29,11 +29,12 @@ public class AliyunOssHelper extends AbstractPlugin implements FileHelper {
             String accessKeyId = configuration.getString("accessKey");
             String accessKeySecret = configuration.getString("secretKey");
             this.bucketName = configuration.getString("bucket");
+            boolean createBucket = configuration.getBool("createBucket", true);
 
             this.ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
 
             // 确保存储桶存在
-            if (!ossClient.doesBucketExist(bucketName)) {
+            if (createBucket && !ossClient.doesBucketExist(bucketName)) {
                 log.info("存储桶 {} 不存在，尝试创建", bucketName);
                 ossClient.createBucket(bucketName);
             }
