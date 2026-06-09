@@ -42,6 +42,10 @@ public final class Key {
     public final static String INCREMENT_VALUE = "incrementValue";
     //返回结果类型：xml,soap,json 默认json
     public final static String RESULT_DATA_TYPE = "resultType";
+    public final static String PROTOCOL_MODE = "protocolMode";
+    public final static String SOAP_VERSION = "soapVersion";
+    public final static String SOAP_ACTION = "soapAction";
+    public final static String SOAP_FAULT_FAIL = "soapFaultFail";
 
 
 }

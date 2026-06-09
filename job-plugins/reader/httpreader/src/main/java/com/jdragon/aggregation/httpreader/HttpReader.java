@@ -37,6 +37,10 @@ public class HttpReader extends Reader.Job {
     private String resultDataType = "";
     //响应头信息
     private String contentType = "";
+    private String protocolMode = "";
+    private String soapVersion = "";
+    private String soapAction = "";
+    private Boolean soapFaultFail = true;
 
     private String headerStr = null;
     private String bodyStr = null;
@@ -63,7 +67,11 @@ public class HttpReader extends Reader.Job {
 
         this.url = readerSliceConfig.getNecessaryValue(Key.URL, HttpReaderErrorCode.REQUIRED_VALUE);
         this.requestType = readerSliceConfig.getNecessaryValue(Key.MODE, HttpReaderErrorCode.REQUIRED_VALUE);
-        this.contentType = readerSliceConfig.getUnnecessaryValue(Key.CONTENT_TYPE, HttpConstant.getContentType(), null);
+        this.protocolMode = readerSliceConfig.getUnnecessaryValue(Key.PROTOCOL_MODE, "REST_JSON", null);
+        this.soapVersion = readerSliceConfig.getUnnecessaryValue(Key.SOAP_VERSION, "SOAP_11", null);
+        this.soapAction = readerSliceConfig.getUnnecessaryValue(Key.SOAP_ACTION, "", null);
+        this.soapFaultFail = readerSliceConfig.getBool(Key.SOAP_FAULT_FAIL, true);
+        this.contentType = resolveContentType();
 
         this.headerStr = readerSliceConfig.getString(Key.HEADER, "{}");
         this.paramStr = readerSliceConfig.getUnnecessaryValue(Key.PARAM_STR, "{}", null);
@@ -72,7 +80,7 @@ public class HttpReader extends Reader.Job {
         httpContent.put(Key.PARAM_STR, paramStr);
         httpContent.put(Key.REQUEST_BODY, bodyStr);
 
-        this.resultDataType = readerSliceConfig.getUnnecessaryValue(Key.RESULT_DATA_TYPE, "json", null);
+        this.resultDataType = readerSliceConfig.getUnnecessaryValue(Key.RESULT_DATA_TYPE, isSoapMode() ? "soap" : "json", null);
 
 
         this.totalCodePath = readerSliceConfig.getUnnecessaryValue(Key.TOTAL_CODE_PATH, null, null);
@@ -134,6 +142,9 @@ public class HttpReader extends Reader.Job {
         httpUtils.setMethod(requestType);
 
         httpUtils.setHeaderMap(headerMap);
+        if (StringUtils.isNotBlank(soapAction) && !containsHeaderIgnoreCase(headerMap, "SOAPAction")) {
+            httpUtils.setHeader("SOAPAction", soapAction);
+        }
         httpUtils.setParamMap(paramMap);
         String requestBody = httpContent.get(Key.REQUEST_BODY);
         httpUtils.setRawBody(requestBody == null ? this.bodyStr : requestBody);
@@ -150,16 +161,30 @@ public class HttpReader extends Reader.Job {
             throw new RuntimeException(e);
         }
 
+        if (Boolean.TRUE.equals(soapFaultFail)) {
+            String faultMessage = SoapToJSON.faultMessage(resultStr);
+            if (StringUtils.isNotBlank(faultMessage)) {
+                throw AggregationException.asException(HttpReaderErrorCode.RESPONSE_STATUS_ERROR,
+                        "SOAP Fault: " + faultMessage);
+            }
+        }
+
         if (ReadResultTypeEnum.XML.name().equalsIgnoreCase(this.resultDataType)) {
             try {
                 JSONObject result2 = XmlToJSON.toJson(resultStr);
                 resultStr = JSONObject.toJSONString(result2);
             } catch (Exception e) {
-                log.info(e.getMessage());
+                throw AggregationException.asException(HttpReaderErrorCode.RESULT_RO_JSON_ERROR,
+                        "XML response parse failed: " + e.getMessage());
             }
         } else if (ReadResultTypeEnum.SOAP.name().equalsIgnoreCase(this.resultDataType)) {
-            JSONObject result2 = SoapToJSON.toJson(resultStr);
-            resultStr = JSONObject.toJSONString(result2);
+            try {
+                JSONObject result2 = SoapToJSON.toJson(resultStr);
+                resultStr = JSONObject.toJSONString(result2);
+            } catch (Exception e) {
+                throw AggregationException.asException(HttpReaderErrorCode.RESULT_RO_JSON_ERROR,
+                        "SOAP response parse failed: " + e.getMessage());
+            }
         }
 
         //判断是否有设置返回状态码
@@ -225,5 +250,35 @@ public class HttpReader extends Reader.Job {
     @Override
     public void post() {
 
+    }
+
+    private String resolveContentType() {
+        String configured = readerSliceConfig.getString(Key.CONTENT_TYPE, null);
+        if (StringUtils.isNotBlank(configured)) {
+            return configured;
+        }
+        if (!isSoapMode()) {
+            return HttpConstant.getContentType();
+        }
+        return "SOAP_12".equalsIgnoreCase(soapVersion)
+                ? "application/soap+xml;charset=UTF-8"
+                : "text/xml;charset=UTF-8";
+    }
+
+    private boolean isSoapMode() {
+        return "SOAP".equalsIgnoreCase(protocolMode)
+                || ReadResultTypeEnum.SOAP.name().equalsIgnoreCase(readerSliceConfig.getString(Key.RESULT_DATA_TYPE, ""));
+    }
+
+    private boolean containsHeaderIgnoreCase(Map<String, String> headerMap, String headerName) {
+        if (headerMap == null || headerName == null) {
+            return false;
+        }
+        for (String key : headerMap.keySet()) {
+            if (headerName.equalsIgnoreCase(key)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

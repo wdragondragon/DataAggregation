@@ -22,4 +22,10 @@ public final class Key {
     public static final String RETRY_INTERVAL_MS = "retryIntervalMs";
     public static final String CONNECT_TIMEOUT_MS = "connectTimeoutMs";
     public static final String SOCKET_TIMEOUT_MS = "socketTimeoutMs";
+    public static final String PROTOCOL_MODE = "protocolMode";
+    public static final String SOAP_VERSION = "soapVersion";
+    public static final String SOAP_ACTION = "soapAction";
+    public static final String SOAP_FAULT_FAIL = "soapFaultFail";
+    public static final String PAYLOAD_FORMAT = "payloadFormat";
+    public static final String RESPONSE_TYPE = "responseType";
 }

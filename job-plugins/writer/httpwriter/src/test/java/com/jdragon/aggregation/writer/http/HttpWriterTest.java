@@ -152,6 +152,140 @@ public class HttpWriterTest {
         assertThrows(AggregationException.class, () -> writer.startWrite(new ListRecordReceiver(Arrays.asList(record(1L, "a")))));
     }
 
+    @Test
+    public void soapPayloadShouldApplyTemplateEscapeXmlAndValidateSoapResponse() throws Exception {
+        List<CapturedRequest> requests = new ArrayList<>();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/soap", exchange -> {
+            requests.add(capture(exchange));
+            respondXml(exchange, 200,
+                    "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns=\"urn:test\">"
+                            + "<soap:Body><ns:WriteResponse><ns:code>200</ns:code></ns:WriteResponse></soap:Body>"
+                            + "</soap:Envelope>");
+        });
+        server.start();
+
+        Map<String, Object> config = writerConfig("http://127.0.0.1:" + server.getAddress().getPort() + "/soap",
+                "object",
+                "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:tns=\"urn:test\">"
+                        + "<soap:Body><tns:Write><tns:id>{{id}}</tns:id><tns:name>{{name}}</tns:name></tns:Write></soap:Body>"
+                        + "</soap:Envelope>",
+                "",
+                false,
+                "",
+                "{}",
+                "{}",
+                500,
+                soapResponseStatus());
+        config.remove(Key.CONTENT_TYPE);
+        config.put(Key.PROTOCOL_MODE, "SOAP");
+        config.put(Key.SOAP_ACTION, "urn:test/Write");
+        config.put(Key.PAYLOAD_FORMAT, "soap");
+        config.put(Key.RESPONSE_TYPE, "soap");
+
+        HttpWriter writer = new HttpWriter();
+        writer.setPluginJobConf(Configuration.from(config));
+        writer.init();
+
+        writer.startWrite(new ListRecordReceiver(Arrays.asList(record(7L, "a&<b"))));
+
+        assertEquals(1, requests.size());
+        CapturedRequest request = requests.get(0);
+        assertTrue(headerValue(request, "Content-Type").contains("text/xml"));
+        assertEquals("urn:test/Write", headerValue(request, "SOAPAction"));
+        assertTrue(request.body.contains("<tns:id>7</tns:id>"));
+        assertTrue(request.body.contains("<tns:name>a&amp;&lt;b</tns:name>"));
+    }
+
+    @Test
+    public void soapFaultShouldFailWriter() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/soap", exchange -> respondXml(exchange, 200,
+                "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">"
+                        + "<soap:Body><soap:Fault><faultcode>soap:Server</faultcode><faultstring>write rejected</faultstring></soap:Fault></soap:Body>"
+                        + "</soap:Envelope>"));
+        server.start();
+
+        Map<String, Object> config = writerConfig("http://127.0.0.1:" + server.getAddress().getPort() + "/soap",
+                "object",
+                "<Envelope><Body><Write><id>{{id}}</id></Write></Body></Envelope>",
+                "",
+                false,
+                "",
+                "{}",
+                "{}",
+                500,
+                new HashMap<>());
+        config.put(Key.PROTOCOL_MODE, "SOAP");
+        config.put(Key.PAYLOAD_FORMAT, "soap");
+
+        HttpWriter writer = new HttpWriter();
+        writer.setPluginJobConf(Configuration.from(config));
+        writer.init();
+
+        AggregationException exception = assertThrows(AggregationException.class,
+                () -> writer.startWrite(new ListRecordReceiver(Arrays.asList(record(1L, "a")))));
+        assertTrue(exception.getMessage().contains("SOAP Fault"));
+        assertTrue(exception.getMessage().contains("write rejected"));
+    }
+
+    @Test
+    public void soapPayloadShouldRejectArrayMode() {
+        Map<String, Object> config = writerConfig("http://127.0.0.1/soap",
+                "array",
+                "<Envelope><Body><Write><id>{{id}}</id></Write></Body></Envelope>",
+                "",
+                false,
+                "",
+                "{}",
+                "{}",
+                500,
+                new HashMap<>());
+        config.put(Key.PROTOCOL_MODE, "SOAP");
+        config.put(Key.PAYLOAD_FORMAT, "soap");
+
+        HttpWriter writer = new HttpWriter();
+        writer.setPluginJobConf(Configuration.from(config));
+
+        AggregationException exception = assertThrows(AggregationException.class, writer::init);
+        assertTrue(exception.getMessage().contains("does not support array"));
+    }
+
+    @Test
+    public void xmlPayloadShouldDefaultToXmlContentType() throws Exception {
+        List<CapturedRequest> requests = new ArrayList<>();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/xml", exchange -> {
+            requests.add(capture(exchange));
+            respond(exchange, 200, "{\"code\":\"200\"}");
+        });
+        server.start();
+
+        Map<String, Object> config = writerConfig("http://127.0.0.1:" + server.getAddress().getPort() + "/xml",
+                "object",
+                "<item><id>{{id}}</id><name>{{name}}</name></item>",
+                "",
+                false,
+                "",
+                "{}",
+                "{}",
+                500,
+                new HashMap<>());
+        config.remove(Key.CONTENT_TYPE);
+        config.put(Key.PAYLOAD_FORMAT, "xml");
+        config.put(Key.RESPONSE_TYPE, "json");
+
+        HttpWriter writer = new HttpWriter();
+        writer.setPluginJobConf(Configuration.from(config));
+        writer.init();
+
+        writer.startWrite(new ListRecordReceiver(Arrays.asList(record(9L, "xml"))));
+
+        assertEquals(1, requests.size());
+        assertTrue(headerValue(requests.get(0), "Content-Type").contains("application/xml"));
+        assertTrue(requests.get(0).body.contains("<id>9</id>"));
+    }
+
     private static Map<String, Object> writerConfig(String url,
                                                     String payloadMode,
                                                     String requestBody,
@@ -196,6 +330,13 @@ public class HttpWriterTest {
         return status;
     }
 
+    private static Map<String, Object> soapResponseStatus() {
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("path", "WriteResponse.code");
+        status.put("code", "200");
+        return status;
+    }
+
     private static Record record(Long id, String name) {
         DefaultRecord record = new DefaultRecord();
         record.addColumn(new LongColumn(id));
@@ -221,6 +362,24 @@ public class HttpWriterTest {
         try (OutputStream outputStream = exchange.getResponseBody()) {
             outputStream.write(bytes);
         }
+    }
+
+    private static void respondXml(HttpExchange exchange, int status, String body) throws IOException {
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "text/xml;charset=utf-8");
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream outputStream = exchange.getResponseBody()) {
+            outputStream.write(bytes);
+        }
+    }
+
+    private static String headerValue(CapturedRequest request, String name) {
+        for (Map.Entry<String, String> entry : request.headers.entrySet()) {
+            if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(name)) {
+                return entry.getValue();
+            }
+        }
+        return "";
     }
 
     private static final class CapturedRequest {

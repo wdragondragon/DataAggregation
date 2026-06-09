@@ -14,6 +14,8 @@ import com.jdragon.aggregation.core.plugin.RecordReceiver;
 import com.jdragon.aggregation.core.plugin.spi.Writer;
 import com.jdragon.aggregation.plugin.httpdyn.HttpDynColumnExecuteHandler;
 import com.jdragon.aggregation.plugin.httpdyn.util.HttpUtils;
+import com.jdragon.aggregation.unstructuredstorage.SoapToJSON;
+import com.jdragon.aggregation.unstructuredstorage.XmlToJSON;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,13 +51,25 @@ public class HttpWriter extends Writer.Job {
     private List<ColumnEntry> columns;
     private long sentCount;
     private int requestSequence;
+    private String protocolMode;
+    private String soapVersion;
+    private String soapAction;
+    private boolean soapFaultFail;
+    private String payloadFormat;
+    private String responseType;
 
     @Override
     public void init() {
         this.conf = super.getPluginJobConf();
         this.url = conf.getNecessaryValue(Key.URL, HttpWriterErrorCode.REQUIRED_VALUE);
         this.mode = conf.getUnnecessaryValue(Key.MODE, "POST", null).toUpperCase(Locale.ENGLISH);
-        this.contentType = conf.getUnnecessaryValue(Key.CONTENT_TYPE, "application/json;charset=utf-8", null);
+        this.protocolMode = conf.getUnnecessaryValue(Key.PROTOCOL_MODE, "REST_JSON", null);
+        this.soapVersion = conf.getUnnecessaryValue(Key.SOAP_VERSION, "SOAP_11", null);
+        this.soapAction = conf.getUnnecessaryValue(Key.SOAP_ACTION, "", null);
+        this.soapFaultFail = conf.getBool(Key.SOAP_FAULT_FAIL, true);
+        this.payloadFormat = normalizeLower(conf.getString(Key.PAYLOAD_FORMAT, isSoapMode() ? "soap" : "json"));
+        this.responseType = normalizeLower(conf.getString(Key.RESPONSE_TYPE, isSoapMode() ? "soap" : "json"));
+        this.contentType = resolveContentType();
         this.headerStr = conf.getString(Key.HEADER, "{}");
         this.paramsStr = conf.getUnnecessaryValue(Key.PARAMS, "{}", null);
         this.requestBodyTemplate = conf.getString(Key.REQUEST_BODY, "");
@@ -75,7 +89,7 @@ public class HttpWriter extends Writer.Job {
 
     @Override
     public void startWrite(RecordReceiver lineReceiver) {
-        logger.info("start to writer http url={}, mode={}, payloadMode={}", url, mode, payloadMode);
+        logger.info("start to writer http url={}, mode={}, payloadMode={}, payloadFormat={}", url, mode, payloadMode, payloadFormat);
         if (PayloadMode.ARRAY == payloadMode) {
             writeArray(lineReceiver);
             return;
@@ -152,6 +166,9 @@ public class HttpWriter extends Writer.Job {
                 .setHeaderMap(headerMap)
                 .setParamMap(paramMap)
                 .setRawBody(httpContent.get(Key.REQUEST_BODY));
+        if (StringUtils.isNotBlank(soapAction) && !containsHeaderIgnoreCase(headerMap, "SOAPAction")) {
+            httpUtils.setHeader("SOAPAction", soapAction);
+        }
         try {
             return httpUtils.exec();
         } catch (Exception e) {
@@ -163,6 +180,10 @@ public class HttpWriter extends Writer.Job {
         if (!"200".equals(exec.get("statusCode"))) {
             throw AggregationException.asException(HttpWriterErrorCode.REQUEST_ERROR,
                     "HTTP status code is " + exec.get("statusCode") + ", response=" + exec.get("result"));
+        }
+        if (soapResponseHasFault(exec.get("result"))) {
+            throw AggregationException.asException(HttpWriterErrorCode.RESPONSE_STATUS_ERROR,
+                    "SOAP Fault: " + SoapToJSON.faultMessage(exec.get("result")));
         }
         if (responseStatus == null || responseStatus.isEmpty()) {
             return;
@@ -176,7 +197,7 @@ public class HttpWriter extends Writer.Job {
         if (StringUtils.isBlank(result)) {
             throw AggregationException.asException(HttpWriterErrorCode.RESPONSE_STATUS_ERROR, "响应为空，无法校验业务状态码");
         }
-        FastJsonMemory resultObj = new FastJsonMemory(result);
+        FastJsonMemory resultObj = new FastJsonMemory(normalizeResponseBody(result));
         Object actual = resultObj.get(String.valueOf(path).trim());
         if (actual == null || !code.equalsIgnoreCase(String.valueOf(actual))) {
             throw AggregationException.asException(HttpWriterErrorCode.RESPONSE_STATUS_ERROR,
@@ -185,6 +206,9 @@ public class HttpWriter extends Writer.Job {
     }
 
     private String buildBody(Object payload, int payloadSize) {
+        if (isXmlPayload()) {
+            return buildXmlBody(payload);
+        }
         Object bodyRoot;
         if (StringUtils.isBlank(requestBodyTemplate)) {
             bodyRoot = payload;
@@ -214,6 +238,27 @@ public class HttpWriter extends Writer.Job {
             putByPath((JSONObject) bodyRoot, totalNodePath, Integer.valueOf(payloadSize));
         }
         return JSON.toJSONString(bodyRoot);
+    }
+
+    private String buildXmlBody(Object payload) {
+        if (PayloadMode.ARRAY == payloadMode) {
+            throw AggregationException.asException(HttpWriterErrorCode.ILLEGAL_VALUE,
+                    "SOAP/XML payload does not support array payloadMode in this version");
+        }
+        if (!(payload instanceof JSONObject)) {
+            throw AggregationException.asException(HttpWriterErrorCode.ILLEGAL_VALUE,
+                    "SOAP/XML payload requires object payload");
+        }
+        if (StringUtils.isBlank(requestBodyTemplate)) {
+            throw AggregationException.asException(HttpWriterErrorCode.REQUIRED_VALUE,
+                    "SOAP/XML requestBody template is required");
+        }
+        String body = requestBodyTemplate;
+        JSONObject payloadObject = (JSONObject) payload;
+        for (Map.Entry<String, Object> entry : payloadObject.entrySet()) {
+            body = body.replace("{{" + entry.getKey() + "}}", escapeXml(entry.getValue()));
+        }
+        return body;
     }
 
     private JSONObject recordToJson(Record record) {
@@ -310,6 +355,21 @@ public class HttpWriter extends Writer.Job {
             throw AggregationException.asException(HttpWriterErrorCode.REQUIRED_VALUE,
                     "totalNodePath is required when includeTotal is true");
         }
+        if (isXmlPayload()) {
+            if (PayloadMode.ARRAY == payloadMode) {
+                throw AggregationException.asException(HttpWriterErrorCode.ILLEGAL_VALUE,
+                        "SOAP/XML payload does not support array payloadMode in this version");
+            }
+            if (StringUtils.isBlank(requestBodyTemplate)) {
+                throw AggregationException.asException(HttpWriterErrorCode.REQUIRED_VALUE,
+                        "SOAP/XML requestBody template is required");
+            }
+            return;
+        }
+        if (!"json".equals(payloadFormat)) {
+            throw AggregationException.asException(HttpWriterErrorCode.ILLEGAL_VALUE,
+                    "payloadFormat only supports json/xml/soap");
+        }
         if (StringUtils.isNotBlank(requestBodyTemplate) && PayloadMode.ARRAY == payloadMode && StringUtils.isBlank(dataNodePath)) {
             throw AggregationException.asException(HttpWriterErrorCode.REQUIRED_VALUE,
                     "dataNodePath is required when array payload uses requestBody template");
@@ -322,5 +382,81 @@ public class HttpWriter extends Writer.Job {
 
     private boolean isBlankValue(Object value) {
         return value == null || String.valueOf(value).trim().isEmpty();
+    }
+
+    private boolean isXmlPayload() {
+        return "soap".equals(payloadFormat) || "xml".equals(payloadFormat);
+    }
+
+    private boolean isSoapMode() {
+        return "SOAP".equalsIgnoreCase(protocolMode);
+    }
+
+    private String normalizeLower(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ENGLISH);
+    }
+
+    private String resolveContentType() {
+        String configured = conf.getString(Key.CONTENT_TYPE, null);
+        if (StringUtils.isNotBlank(configured)) {
+            return configured;
+        }
+        if ("xml".equals(payloadFormat)) {
+            return "application/xml;charset=UTF-8";
+        }
+        if (!isSoapMode() && !"soap".equals(payloadFormat)) {
+            return "application/json;charset=utf-8";
+        }
+        return "SOAP_12".equalsIgnoreCase(soapVersion)
+                ? "application/soap+xml;charset=UTF-8"
+                : "text/xml;charset=UTF-8";
+    }
+
+    private String normalizeResponseBody(String result) {
+        if ("xml".equals(responseType)) {
+            try {
+                return JSON.toJSONString(XmlToJSON.toJson(result));
+            } catch (Exception e) {
+                throw AggregationException.asException(HttpWriterErrorCode.RESPONSE_STATUS_ERROR,
+                        "XML response parse failed: " + e.getMessage());
+            }
+        }
+        if ("soap".equals(responseType)) {
+            try {
+                return JSON.toJSONString(SoapToJSON.toJson(result));
+            } catch (Exception e) {
+                throw AggregationException.asException(HttpWriterErrorCode.RESPONSE_STATUS_ERROR,
+                        "SOAP response parse failed: " + e.getMessage());
+            }
+        }
+        return result;
+    }
+
+    private boolean soapResponseHasFault(String result) {
+        return soapFaultFail && StringUtils.isNotBlank(SoapToJSON.faultMessage(result));
+    }
+
+    private String escapeXml(Object value) {
+        if (value == null) {
+            return "";
+        }
+        return String.valueOf(value)
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&apos;");
+    }
+
+    private boolean containsHeaderIgnoreCase(Map<String, String> headerMap, String headerName) {
+        if (headerMap == null || headerName == null) {
+            return false;
+        }
+        for (String key : headerMap.keySet()) {
+            if (headerName.equalsIgnoreCase(key)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

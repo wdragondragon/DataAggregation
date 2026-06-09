@@ -1,6 +1,7 @@
 package com.jdragon.aggregation.httpreader;
 
 import com.jdragon.aggregation.commons.util.Configuration;
+import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.After;
@@ -14,7 +15,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 public class HttpReaderRequestBodyDynamicTest {
@@ -70,6 +73,73 @@ public class HttpReaderRequestBodyDynamicTest {
         assertTrue(body.contains("0"));
     }
 
+    @Test
+    public void soapResponseShouldParseByLocalNameAndIgnoreNamespacePrefix() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/soap", exchange -> respond(exchange,
+                "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns=\"urn:test\">"
+                        + "<soap:Body><ns:QueryResponse><ns:items><ns:id>1</ns:id><ns:name>A</ns:name></ns:items>"
+                        + "<ns:items><ns:id>2</ns:id><ns:name>B</ns:name></ns:items></ns:QueryResponse></soap:Body>"
+                        + "</soap:Envelope>"));
+        server.start();
+
+        HttpReader reader = new HttpReader();
+        Map<String, Object> config = readerConfig("http://127.0.0.1:" + server.getAddress().getPort() + "/soap", "");
+        config.put(Key.PROTOCOL_MODE, "SOAP");
+        config.put(Key.RESULT_DATA_TYPE, "soap");
+        config.remove(Key.CONTENT_TYPE);
+        reader.setPluginJobConf(Configuration.from(config));
+        reader.init();
+
+        String result = reader.connectToGetData(httpContent(""), Integer.valueOf(1));
+
+        assertTrue(result.contains("\"QueryResponse\""));
+        assertTrue(result.contains("\"items\""));
+        assertTrue(result.contains("\"id\":\"1\""));
+        assertFalse(result.contains("soap:"));
+        assertFalse(result.contains("ns:"));
+    }
+
+    @Test
+    public void soapFaultShouldFailReader() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/fault", exchange -> respond(exchange,
+                "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">"
+                        + "<soap:Body><soap:Fault><faultcode>soap:Client</faultcode><faultstring>bad request</faultstring></soap:Fault></soap:Body>"
+                        + "</soap:Envelope>"));
+        server.start();
+
+        HttpReader reader = new HttpReader();
+        Map<String, Object> config = readerConfig("http://127.0.0.1:" + server.getAddress().getPort() + "/fault", "");
+        config.put(Key.PROTOCOL_MODE, "SOAP");
+        config.put(Key.RESULT_DATA_TYPE, "soap");
+        config.remove(Key.CONTENT_TYPE);
+        reader.setPluginJobConf(Configuration.from(config));
+        reader.init();
+
+        AggregationException exception = assertThrows(AggregationException.class,
+                () -> reader.connectToGetData(httpContent(""), Integer.valueOf(1)));
+        assertTrue(exception.getMessage().contains("SOAP Fault"));
+        assertTrue(exception.getMessage().contains("bad request"));
+    }
+
+    @Test
+    public void invalidXmlShouldFailReaderWithClearError() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/broken", exchange -> respond(exchange, "<root><item>1</root>"));
+        server.start();
+
+        HttpReader reader = new HttpReader();
+        Map<String, Object> config = readerConfig("http://127.0.0.1:" + server.getAddress().getPort() + "/broken", "");
+        config.put(Key.RESULT_DATA_TYPE, "xml");
+        reader.setPluginJobConf(Configuration.from(config));
+        reader.init();
+
+        AggregationException exception = assertThrows(AggregationException.class,
+                () -> reader.connectToGetData(httpContent(""), Integer.valueOf(1)));
+        assertTrue(exception.getMessage().contains("XML response parse failed"));
+    }
+
     private static Map<String, Object> readerConfig(String url, String requestBody) {
         Map<String, Object> config = new HashMap<>();
         config.put(Key.URL, url);
@@ -82,6 +152,14 @@ public class HttpReaderRequestBodyDynamicTest {
         config.put(Key.PAGE_SIZE, Integer.valueOf(25));
         config.put(Key.PAGE_READ, Boolean.FALSE);
         return config;
+    }
+
+    private static Map<String, String> httpContent(String requestBody) {
+        Map<String, String> content = new HashMap<>();
+        content.put(Key.HEADER, "{}");
+        content.put(Key.PARAM_STR, "{}");
+        content.put(Key.REQUEST_BODY, requestBody);
+        return content;
     }
 
     private static void respond(HttpExchange exchange, String body) throws IOException {
