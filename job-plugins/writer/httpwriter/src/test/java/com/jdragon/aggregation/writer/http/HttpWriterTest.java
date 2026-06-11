@@ -2,9 +2,11 @@ package com.jdragon.aggregation.writer.http;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.jdragon.aggregation.commons.element.DateColumn;
 import com.jdragon.aggregation.commons.element.LongColumn;
 import com.jdragon.aggregation.commons.element.Record;
 import com.jdragon.aggregation.commons.element.StringColumn;
+import com.jdragon.aggregation.commons.element.TimestampColumn;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.plugin.RecordReceiver;
@@ -18,6 +20,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -230,7 +233,64 @@ public class HttpWriterTest {
     }
 
     @Test
-    public void soapPayloadShouldRejectArrayMode() {
+    public void soapArrayPayloadShouldSendBatchesWithRepeatBlock() throws Exception {
+        List<CapturedRequest> requests = new ArrayList<>();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/soap", exchange -> {
+            requests.add(capture(exchange));
+            respondXml(exchange, 200,
+                    "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns=\"urn:test\">"
+                            + "<soap:Body><ns:WriteBatchResponse><ns:code>200</ns:code></ns:WriteBatchResponse></soap:Body>"
+                            + "</soap:Envelope>");
+        });
+        server.start();
+
+        Map<String, Object> config = writerConfig("http://127.0.0.1/soap",
+                "array",
+                "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:tns=\"urn:test\">"
+                        + "<soap:Body><tns:WriteBatch><tns:batchSize>{dyn_pageSize}</tns:batchSize><tns:records>"
+                        + "{{#records}}<tns:record><tns:id>{{id}}</tns:id><tns:name>{{name}}</tns:name></tns:record>{{/records}}"
+                        + "</tns:records></tns:WriteBatch></soap:Body></soap:Envelope>",
+                "",
+                false,
+                "",
+                "{}",
+                "{}",
+                2,
+                soapBatchResponseStatus());
+        config.put(Key.URL, "http://127.0.0.1:" + server.getAddress().getPort() + "/soap");
+        config.remove(Key.CONTENT_TYPE);
+        config.put(Key.PROTOCOL_MODE, "SOAP");
+        config.put(Key.SOAP_ACTION, "urn:test/WriteBatch");
+        config.put(Key.PAYLOAD_FORMAT, "soap");
+        config.put(Key.RESPONSE_TYPE, "soap");
+
+        HttpWriter writer = new HttpWriter();
+        writer.setPluginJobConf(Configuration.from(config));
+        writer.init();
+
+        writer.startWrite(new ListRecordReceiver(Arrays.asList(record(1L, "a&<b"), record(2L, "c"), record(3L, null))));
+
+        assertEquals(2, requests.size());
+        CapturedRequest first = requests.get(0);
+        assertEquals("urn:test/WriteBatch", headerValue(first, "SOAPAction"));
+        assertTrue(headerValue(first, "Content-Type").contains("text/xml"));
+        assertTrue(first.body.contains("<tns:batchSize>2</tns:batchSize>"));
+        assertTrue(first.body.contains("<tns:id>1</tns:id>"));
+        assertTrue(first.body.contains("<tns:name>a&amp;&lt;b</tns:name>"));
+        assertTrue(first.body.contains("<tns:id>2</tns:id>"));
+        assertEquals(2, countOccurrences(first.body, "<tns:record>"));
+
+        CapturedRequest second = requests.get(1);
+        assertTrue(second.body.contains("<tns:batchSize>1</tns:batchSize>"));
+        assertTrue(second.body.contains("<tns:id>3</tns:id>"));
+        assertTrue(second.body.contains("xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\""));
+        assertTrue(second.body.contains("<tns:name xsi:nil=\"true\"/>"));
+        assertEquals(1, countOccurrences(second.body, "<tns:record>"));
+    }
+
+    @Test
+    public void soapArrayPayloadShouldRejectMissingRepeatBlock() {
         Map<String, Object> config = writerConfig("http://127.0.0.1/soap",
                 "array",
                 "<Envelope><Body><Write><id>{{id}}</id></Write></Body></Envelope>",
@@ -248,7 +308,91 @@ public class HttpWriterTest {
         writer.setPluginJobConf(Configuration.from(config));
 
         AggregationException exception = assertThrows(AggregationException.class, writer::init);
-        assertTrue(exception.getMessage().contains("does not support array"));
+        assertTrue(exception.getMessage().contains("{{#records}}"));
+    }
+
+    @Test
+    public void soapPayloadShouldRenderDateColumnsAsTextInsteadOfEpochMillis() throws Exception {
+        List<CapturedRequest> requests = new ArrayList<>();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/soap", exchange -> {
+            requests.add(capture(exchange));
+            respondXml(exchange, 200,
+                    "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns=\"urn:test\">"
+                            + "<soap:Body><ns:WriteResponse><ns:code>200</ns:code></ns:WriteResponse></soap:Body>"
+                            + "</soap:Envelope>");
+        });
+        server.start();
+
+        Map<String, Object> config = writerConfig("http://127.0.0.1:" + server.getAddress().getPort() + "/soap",
+                "object",
+                "<Envelope><Body><Write><dateVal>{{date_val}}</dateVal><timestampVal>{{timestamp_val}}</timestampVal></Write></Body></Envelope>",
+                "",
+                false,
+                "",
+                "{}",
+                "{}",
+                500,
+                soapResponseStatus());
+        config.put(Key.PROTOCOL_MODE, "SOAP");
+        config.put(Key.PAYLOAD_FORMAT, "soap");
+        config.put(Key.RESPONSE_TYPE, "soap");
+        config.put(Key.COLUMNS, Arrays.asList(column(0, "date_val"), column(1, "timestamp_val")));
+
+        HttpWriter writer = new HttpWriter();
+        writer.setPluginJobConf(Configuration.from(config));
+        writer.init();
+
+        DefaultRecord record = new DefaultRecord();
+        record.addColumn(new DateColumn(java.sql.Date.valueOf("2026-06-11")));
+        record.addColumn(new TimestampColumn(Timestamp.valueOf("2026-06-11 15:48:40")));
+        writer.startWrite(new ListRecordReceiver(Arrays.asList(record)));
+
+        assertEquals(1, requests.size());
+        assertTrue(requests.get(0).body.contains("<dateVal>2026-06-11</dateVal>"));
+        assertTrue(requests.get(0).body.contains("<timestampVal>2026-06-11 15:48:40</timestampVal>"));
+        assertTrue(!requests.get(0).body.contains("178"));
+    }
+
+    @Test
+    public void soapPayloadShouldRenderNullColumnAsXsiNilElement() throws Exception {
+        List<CapturedRequest> requests = new ArrayList<>();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/soap", exchange -> {
+            requests.add(capture(exchange));
+            respondXml(exchange, 200,
+                    "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns=\"urn:test\">"
+                            + "<soap:Body><ns:WriteResponse><ns:code>200</ns:code></ns:WriteResponse></soap:Body>"
+                            + "</soap:Envelope>");
+        });
+        server.start();
+
+        Map<String, Object> config = writerConfig("http://127.0.0.1:" + server.getAddress().getPort() + "/soap",
+                "object",
+                "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:tns=\"urn:test\">"
+                        + "<soap:Body><tns:Write><tns:id>{{id}}</tns:id><tns:name>{{name}}</tns:name></tns:Write></soap:Body>"
+                        + "</soap:Envelope>",
+                "",
+                false,
+                "",
+                "{}",
+                "{}",
+                500,
+                soapResponseStatus());
+        config.put(Key.PROTOCOL_MODE, "SOAP");
+        config.put(Key.PAYLOAD_FORMAT, "soap");
+        config.put(Key.RESPONSE_TYPE, "soap");
+
+        HttpWriter writer = new HttpWriter();
+        writer.setPluginJobConf(Configuration.from(config));
+        writer.init();
+
+        writer.startWrite(new ListRecordReceiver(Arrays.asList(record(7L, null))));
+
+        assertEquals(1, requests.size());
+        assertTrue(requests.get(0).body.contains("xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\""));
+        assertTrue(requests.get(0).body.contains("<tns:name xsi:nil=\"true\"/>"));
+        assertTrue(!requests.get(0).body.contains("{{name}}"));
     }
 
     @Test
@@ -337,6 +481,13 @@ public class HttpWriterTest {
         return status;
     }
 
+    private static Map<String, Object> soapBatchResponseStatus() {
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("path", "WriteBatchResponse.code");
+        status.put("code", "200");
+        return status;
+    }
+
     private static Record record(Long id, String name) {
         DefaultRecord record = new DefaultRecord();
         record.addColumn(new LongColumn(id));
@@ -380,6 +531,16 @@ public class HttpWriterTest {
             }
         }
         return "";
+    }
+
+    private static int countOccurrences(String value, String fragment) {
+        int count = 0;
+        int index = 0;
+        while ((index = value.indexOf(fragment, index)) >= 0) {
+            count++;
+            index += fragment.length();
+        }
+        return count;
     }
 
     private static final class CapturedRequest {

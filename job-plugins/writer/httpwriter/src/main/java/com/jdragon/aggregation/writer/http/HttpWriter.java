@@ -26,6 +26,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class HttpWriter extends Writer.Job {
 
@@ -57,6 +59,8 @@ public class HttpWriter extends Writer.Job {
     private boolean soapFaultFail;
     private String payloadFormat;
     private String responseType;
+    private static final String RECORDS_REPEAT_START = "{{#records}}";
+    private static final String RECORDS_REPEAT_END = "{{/records}}";
 
     @Override
     public void init() {
@@ -242,8 +246,23 @@ public class HttpWriter extends Writer.Job {
 
     private String buildXmlBody(Object payload) {
         if (PayloadMode.ARRAY == payloadMode) {
-            throw AggregationException.asException(HttpWriterErrorCode.ILLEGAL_VALUE,
-                    "SOAP/XML payload does not support array payloadMode in this version");
+            if (!(payload instanceof JSONArray)) {
+                throw AggregationException.asException(HttpWriterErrorCode.ILLEGAL_VALUE,
+                        "SOAP/XML array payload requires array payload");
+            }
+            RepeatBlock repeatBlock = parseRecordsRepeatBlock(requestBodyTemplate);
+            StringBuilder body = new StringBuilder();
+            body.append(repeatBlock.prefix);
+            JSONArray payloadArray = (JSONArray) payload;
+            for (Object item : payloadArray) {
+                if (!(item instanceof JSONObject)) {
+                    throw AggregationException.asException(HttpWriterErrorCode.ILLEGAL_VALUE,
+                            "SOAP/XML array payload item must be object");
+                }
+                body.append(applyXmlTemplate(repeatBlock.inner, (JSONObject) item));
+            }
+            body.append(repeatBlock.suffix);
+            return ensureXsiNamespace(body.toString());
         }
         if (!(payload instanceof JSONObject)) {
             throw AggregationException.asException(HttpWriterErrorCode.ILLEGAL_VALUE,
@@ -253,12 +272,7 @@ public class HttpWriter extends Writer.Job {
             throw AggregationException.asException(HttpWriterErrorCode.REQUIRED_VALUE,
                     "SOAP/XML requestBody template is required");
         }
-        String body = requestBodyTemplate;
-        JSONObject payloadObject = (JSONObject) payload;
-        for (Map.Entry<String, Object> entry : payloadObject.entrySet()) {
-            body = body.replace("{{" + entry.getKey() + "}}", escapeXml(entry.getValue()));
-        }
-        return body;
+        return applyXmlTemplate(requestBodyTemplate, (JSONObject) payload);
     }
 
     private JSONObject recordToJson(Record record) {
@@ -283,6 +297,9 @@ public class HttpWriter extends Writer.Job {
     private Object columnValue(Column column) {
         if (column == null || column.getRawData() == null) {
             return null;
+        }
+        if (isXmlPayload()) {
+            return column.asString();
         }
         return column.getRawData();
     }
@@ -356,13 +373,12 @@ public class HttpWriter extends Writer.Job {
                     "totalNodePath is required when includeTotal is true");
         }
         if (isXmlPayload()) {
-            if (PayloadMode.ARRAY == payloadMode) {
-                throw AggregationException.asException(HttpWriterErrorCode.ILLEGAL_VALUE,
-                        "SOAP/XML payload does not support array payloadMode in this version");
-            }
             if (StringUtils.isBlank(requestBodyTemplate)) {
                 throw AggregationException.asException(HttpWriterErrorCode.REQUIRED_VALUE,
                         "SOAP/XML requestBody template is required");
+            }
+            if (PayloadMode.ARRAY == payloadMode) {
+                parseRecordsRepeatBlock(requestBodyTemplate);
             }
             return;
         }
@@ -446,6 +462,94 @@ public class HttpWriter extends Writer.Job {
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;")
                 .replace("'", "&apos;");
+    }
+
+    private String applyXmlTemplate(String template, JSONObject payloadObject) {
+        String body = template;
+        for (Map.Entry<String, Object> entry : payloadObject.entrySet()) {
+            String placeholder = "{{" + entry.getKey() + "}}";
+            if (entry.getValue() == null) {
+                body = replaceNilElement(body, entry.getKey(), placeholder);
+            } else {
+                body = body.replace(placeholder, escapeXml(entry.getValue()));
+            }
+        }
+        return ensureXsiNamespace(body);
+    }
+
+    private String replaceNilElement(String body, String key, String placeholder) {
+        Pattern elementPattern = Pattern.compile("<([A-Za-z_][\\w:.-]*)([^>]*)>\\s*"
+                + Pattern.quote(placeholder) + "\\s*</\\1>");
+        Matcher matcher = elementPattern.matcher(body);
+        StringBuffer result = new StringBuffer();
+        boolean matched = false;
+        while (matcher.find()) {
+            matched = true;
+            String tagName = matcher.group(1);
+            String attributes = matcher.group(2) == null ? "" : matcher.group(2);
+            matcher.appendReplacement(result, Matcher.quoteReplacement("<" + tagName + attributes + " xsi:nil=\"true\"/>"));
+        }
+        matcher.appendTail(result);
+        if (matched) {
+            return result.toString();
+        }
+        return body.replace(placeholder, "");
+    }
+
+    private String ensureXsiNamespace(String body) {
+        if (body == null || !body.contains("xsi:nil") || body.contains("xmlns:xsi=")) {
+            return body;
+        }
+        Pattern envelopePattern = Pattern.compile("<([^\\s>/]*Envelope)([^>]*)>");
+        Matcher matcher = envelopePattern.matcher(body);
+        if (matcher.find()) {
+            String replacement = "<" + matcher.group(1)
+                    + " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\""
+                    + matcher.group(2) + ">";
+            return matcher.replaceFirst(Matcher.quoteReplacement(replacement));
+        }
+        return body;
+    }
+
+    private RepeatBlock parseRecordsRepeatBlock(String template) {
+        if (StringUtils.isBlank(template)) {
+            throw AggregationException.asException(HttpWriterErrorCode.REQUIRED_VALUE,
+                    "SOAP/XML requestBody template is required");
+        }
+        int start = template.indexOf(RECORDS_REPEAT_START);
+        int end = template.indexOf(RECORDS_REPEAT_END);
+        if (start < 0 || end < 0) {
+            throw AggregationException.asException(HttpWriterErrorCode.ILLEGAL_VALUE,
+                    "SOAP/XML array requestBody must contain repeat block {{#records}}...{{/records}}");
+        }
+        if (start != template.lastIndexOf(RECORDS_REPEAT_START) || end != template.lastIndexOf(RECORDS_REPEAT_END)) {
+            throw AggregationException.asException(HttpWriterErrorCode.ILLEGAL_VALUE,
+                    "SOAP/XML array requestBody must contain exactly one repeat block {{#records}}...{{/records}}");
+        }
+        int innerStart = start + RECORDS_REPEAT_START.length();
+        if (end <= innerStart) {
+            throw AggregationException.asException(HttpWriterErrorCode.ILLEGAL_VALUE,
+                    "SOAP/XML array repeat block {{#records}}...{{/records}} must not be empty");
+        }
+        String inner = template.substring(innerStart, end);
+        if (StringUtils.isBlank(inner)) {
+            throw AggregationException.asException(HttpWriterErrorCode.ILLEGAL_VALUE,
+                    "SOAP/XML array repeat block {{#records}}...{{/records}} must not be empty");
+        }
+        return new RepeatBlock(template.substring(0, start), inner,
+                template.substring(end + RECORDS_REPEAT_END.length()));
+    }
+
+    private static final class RepeatBlock {
+        private final String prefix;
+        private final String inner;
+        private final String suffix;
+
+        private RepeatBlock(String prefix, String inner, String suffix) {
+            this.prefix = prefix;
+            this.inner = inner;
+            this.suffix = suffix;
+        }
     }
 
     private boolean containsHeaderIgnoreCase(Map<String, String> headerMap, String headerName) {

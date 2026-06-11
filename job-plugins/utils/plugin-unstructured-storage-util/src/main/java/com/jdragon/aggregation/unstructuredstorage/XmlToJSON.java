@@ -41,6 +41,9 @@ public class XmlToJSON {
     }
 
     static Object elementValue(Element element) {
+        if (isNil(element)) {
+            return null;
+        }
         JSONObject children = childrenToObject(element);
         if (!children.isEmpty()) {
             return children;
@@ -80,5 +83,23 @@ public class XmlToJSON {
     static String localName(Node node) {
         String localName = node.getLocalName();
         return localName == null || localName.trim().isEmpty() ? node.getNodeName() : localName;
+    }
+
+    private static boolean isNil(Element element) {
+        if (element == null) {
+            return false;
+        }
+        String namespaceValue = element.getAttributeNS(XMLConstants.W3C_XML_SCHEMA_INSTANCE_NS_URI, "nil");
+        if ("true".equalsIgnoreCase(namespaceValue) || "1".equals(namespaceValue)) {
+            return true;
+        }
+        for (int index = 0; index < element.getAttributes().getLength(); index++) {
+            Node attribute = element.getAttributes().item(index);
+            if ("nil".equals(localName(attribute))) {
+                String value = attribute.getNodeValue();
+                return "true".equalsIgnoreCase(value) || "1".equals(value);
+            }
+        }
+        return false;
     }
 }

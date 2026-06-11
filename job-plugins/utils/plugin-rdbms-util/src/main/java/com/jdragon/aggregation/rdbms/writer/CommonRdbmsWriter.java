@@ -27,6 +27,9 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -164,7 +167,6 @@ public class CommonRdbmsWriter extends Writer.Job {
     }
 
     protected PreparedStatement fillPreparedStatementColumnType(PreparedStatement preparedStatement, int columnIndex, int columnSqltype, Column column) throws SQLException {
-        java.util.Date utilDate;
         switch (columnSqltype) {
             case Types.CHAR:
             case Types.NCHAR:
@@ -223,62 +225,27 @@ public class CommonRdbmsWriter extends Writer.Job {
                 } else if (column.getByteSize() == 0) {
                     preparedStatement.setDate(columnIndex + 1, null);
                 } else {
-                    java.sql.Date sqlDate = null;
-                    try {
-                        utilDate = column.asDate();
-                    } catch (AggregationException e) {
-                        throw new SQLException(String.format(
-                                "Date 类型转换错误：[%s]", column));
-                    }
-
-                    if (null != utilDate) {
-                        sqlDate = new java.sql.Date(utilDate.getTime());
-                    }
-                    preparedStatement.setDate(columnIndex + 1, sqlDate);
+                    preparedStatement.setDate(columnIndex + 1, parseSqlDate(column));
                 }
                 break;
 
             case Types.TIME:
                 if (column.getByteSize() == 0) {
-                    preparedStatement.setDate(columnIndex + 1, null);
+                    preparedStatement.setTime(columnIndex + 1, null);
                     break;
                 }
-                try {
-                    utilDate = column.asDate();
-                } catch (AggregationException e) {
-                    throw new SQLException(String.format(
-                            "TIME 类型转换错误：[%s]", column));
-                }
-                if (null != utilDate) {
-                    preparedStatement.setTimestamp(columnIndex + 1,
-                            new java.sql.Timestamp(utilDate.getTime()));
-                } else {
-                    preparedStatement.setDate(columnIndex + 1, null);
-                }
+                preparedStatement.setTime(columnIndex + 1, parseSqlTime(column));
                 break;
             case Types.TIMESTAMP:
                 if (column.getByteSize() == 0) {
-                    preparedStatement.setDate(columnIndex + 1, null);
+                    preparedStatement.setTimestamp(columnIndex + 1, null);
                     break;
                 }
                 if (column instanceof TimestampColumn) {
                     preparedStatement.setTimestamp(columnIndex + 1, ((TimestampColumn) column).asTimestamp());
                     break;
                 }
-                try {
-                    utilDate = column.asDate();
-                } catch (AggregationException e) {
-                    LOG.error("TIMESTAMP 类型转换错误：[{}]", column, e);
-                    throw new SQLException(String.format(
-                            "TIMESTAMP 类型转换错误：[%s]", column));
-                }
-
-                if (null != utilDate) {
-                    preparedStatement.setTimestamp(columnIndex + 1,
-                            new java.sql.Timestamp(utilDate.getTime()));
-                } else {
-                    preparedStatement.setDate(columnIndex + 1, null);
-                }
+                preparedStatement.setTimestamp(columnIndex + 1, parseSqlTimestamp(column));
                 break;
 
             case Types.BINARY:
@@ -336,6 +303,160 @@ public class CommonRdbmsWriter extends Writer.Job {
         return preparedStatement;
     }
 
+    protected java.sql.Date parseSqlDate(Column column) throws SQLException {
+        if (isNullOrBlank(column)) {
+            return null;
+        }
+        Object raw = column.getRawData();
+        if (raw instanceof java.sql.Date) {
+            return (java.sql.Date) raw;
+        }
+        if (raw instanceof java.util.Date) {
+            return new java.sql.Date(((java.util.Date) raw).getTime());
+        }
+        String text = column.asString();
+        try {
+            if (isLongNumber(text)) {
+                return new java.sql.Date(Long.parseLong(text.trim()));
+            }
+            return java.sql.Date.valueOf(extractDatePart(text));
+        } catch (Exception ignored) {
+            try {
+                java.util.Date utilDate = column.asDate();
+                return utilDate == null ? null : new java.sql.Date(utilDate.getTime());
+            } catch (Exception e) {
+                throw new SQLException(String.format("Date 类型转换错误：[%s]", column), e);
+            }
+        }
+    }
+
+    protected java.sql.Time parseSqlTime(Column column) throws SQLException {
+        if (isNullOrBlank(column)) {
+            return null;
+        }
+        Object raw = column.getRawData();
+        if (raw instanceof java.sql.Time) {
+            return (java.sql.Time) raw;
+        }
+        if (raw instanceof java.util.Date) {
+            return new java.sql.Time(((java.util.Date) raw).getTime());
+        }
+        String text = column.asString();
+        try {
+            if (isLongNumber(text)) {
+                return new java.sql.Time(Long.parseLong(text.trim()));
+            }
+            return java.sql.Time.valueOf(normalizeTimeText(text));
+        } catch (Exception ignored) {
+            try {
+                java.util.Date utilDate = column.asDate();
+                return utilDate == null ? null : new java.sql.Time(utilDate.getTime());
+            } catch (Exception e) {
+                throw new SQLException(String.format("TIME 类型转换错误：[%s]", column), e);
+            }
+        }
+    }
+
+    protected java.sql.Timestamp parseSqlTimestamp(Column column) throws SQLException {
+        if (isNullOrBlank(column)) {
+            return null;
+        }
+        Object raw = column.getRawData();
+        if (raw instanceof java.sql.Timestamp) {
+            return (java.sql.Timestamp) raw;
+        }
+        if (raw instanceof java.util.Date) {
+            return new java.sql.Timestamp(((java.util.Date) raw).getTime());
+        }
+        String text = column.asString();
+        try {
+            if (isLongNumber(text)) {
+                return new java.sql.Timestamp(Long.parseLong(text.trim()));
+            }
+            return java.sql.Timestamp.valueOf(normalizeTimestampText(text));
+        } catch (Exception ignored) {
+            try {
+                java.util.Date utilDate = column.asDate();
+                return utilDate == null ? null : new java.sql.Timestamp(utilDate.getTime());
+            } catch (Exception e) {
+                throw new SQLException(String.format("TIMESTAMP 类型转换错误：[%s]", column), e);
+            }
+        }
+    }
+
+    private boolean isNullOrBlank(Column column) {
+        return column == null || column.getRawData() == null || column.getByteSize() == 0
+                || (column.asString() != null && column.asString().trim().isEmpty());
+    }
+
+    private boolean isLongNumber(String text) {
+        if (text == null) {
+            return false;
+        }
+        String trimmed = text.trim();
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+        int start = trimmed.charAt(0) == '-' ? 1 : 0;
+        if (start == trimmed.length()) {
+            return false;
+        }
+        for (int i = start; i < trimmed.length(); i++) {
+            if (!Character.isDigit(trimmed.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private String extractDatePart(String text) {
+        String normalized = text.trim().replace('T', ' ');
+        int space = normalized.indexOf(' ');
+        return space >= 0 ? normalized.substring(0, space) : normalized;
+    }
+
+    private String normalizeTimeText(String text) {
+        String normalized = text.trim().replace('T', ' ');
+        int space = normalized.indexOf(' ');
+        if (space >= 0) {
+            normalized = normalized.substring(space + 1).trim();
+        }
+        LocalTime time = LocalTime.parse(appendSecondsIfMissing(normalized));
+        return time.toString().length() == 5 ? time + ":00" : time.toString();
+    }
+
+    private String normalizeTimestampText(String text) {
+        String normalized = text.trim().replace('T', ' ');
+        if (normalized.length() == 10) {
+            return LocalDate.parse(normalized).toString() + " 00:00:00";
+        }
+        int space = normalized.indexOf(' ');
+        if (space < 0) {
+            return normalized;
+        }
+        String date = normalized.substring(0, space);
+        String time = appendSecondsIfMissing(normalized.substring(space + 1).trim());
+        LocalDateTime.parse(date + "T" + time);
+        return date + " " + time;
+    }
+
+    private String appendSecondsIfMissing(String time) {
+        if (time == null) {
+            return "";
+        }
+        String normalized = time.trim();
+        int dot = normalized.indexOf('.');
+        String main = dot >= 0 ? normalized.substring(0, dot) : normalized;
+        String fraction = dot >= 0 ? normalized.substring(dot) : "";
+        int colonCount = 0;
+        for (int i = 0; i < main.length(); i++) {
+            if (main.charAt(i) == ':') {
+                colonCount++;
+            }
+        }
+        return colonCount == 1 ? main + ":00" + fraction : normalized;
+    }
+
     private Connection doInsertWithRetry(Connection connection, List<Record> writeBuffer) throws SQLException {
         int retry = 0;
         while (true) {
@@ -380,26 +501,39 @@ public class CommonRdbmsWriter extends Writer.Job {
         }
     }
 
-    protected void doOneInsert(Connection connection, List<Record> buffer) {
+    protected void doOneInsert(Connection connection, List<Record> buffer) throws SQLException {
         PreparedStatement preparedStatement = null;
+        SQLException firstFailure = null;
+        int failureCount = 0;
         try {
             connection.setAutoCommit(true);
             preparedStatement = connection
                     .prepareStatement(this.insertSql);
 
+            int rowIndex = 0;
             for (Record record : buffer) {
+                rowIndex++;
                 try {
                     preparedStatement = fillPreparedStatement(
                             preparedStatement, record);
                     preparedStatement.execute();
                 } catch (SQLException e) {
-                    LOG.debug(e.toString());
+                    failureCount++;
+                    if (firstFailure == null) {
+                        firstFailure = e;
+                    }
+                    LOG.warn("逐行写入失败, rowIndex={}, error={}", rowIndex, e.getMessage(), e);
                     // 脏数据收集
                 } finally {
                     // 最后不要忘了关闭 preparedStatement
                     preparedStatement.clearParameters();
                 }
             }
+            if (firstFailure != null) {
+                throw new SQLException(String.format("逐行写入失败，共 %d 条记录写入失败", failureCount), firstFailure);
+            }
+        } catch (SQLException e) {
+            throw e;
         } catch (Exception e) {
             throw AggregationException.asException(
                     DBUtilErrorCode.WRITE_DATA_ERROR, e);

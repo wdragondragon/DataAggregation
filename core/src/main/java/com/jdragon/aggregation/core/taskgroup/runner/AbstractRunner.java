@@ -44,13 +44,30 @@ public class AbstractRunner implements Runnable {
     }
 
     public void markSuccess() {
-        mark(State.SUCCEEDED);
+        if (this.runnerCommunication == null) {
+            log.info("runner skip mark success because communication is null");
+            return;
+        }
+        synchronized (this.runnerCommunication) {
+            if (this.runnerCommunication.getState() == State.FAILED
+                    || this.runnerCommunication.getState() == State.KILLED) {
+                log.info("runner skip mark success because current status is {}", this.runnerCommunication.getState());
+                return;
+            }
+            mark(State.SUCCEEDED);
+        }
     }
 
     public void markFail(final Throwable throwable) {
-        mark(State.FAILED);
-        this.runnerCommunication.setTimestamp(System.currentTimeMillis());
-        this.runnerCommunication.setThrowable(throwable);
+        if (this.runnerCommunication == null) {
+            log.info("runner skip mark fail because communication is null");
+            return;
+        }
+        synchronized (this.runnerCommunication) {
+            mark(State.FAILED);
+            this.runnerCommunication.setTimestamp(System.currentTimeMillis());
+            this.runnerCommunication.setThrowable(throwable);
+        }
     }
 
     /**

@@ -1,7 +1,9 @@
 package com.jdragon.aggregation.httpreader;
 
 import com.jdragon.aggregation.commons.util.Configuration;
+import com.jdragon.aggregation.commons.element.Column;
 import com.jdragon.aggregation.commons.exception.AggregationException;
+import com.jdragon.aggregation.unstructuredstorage.ValidateUtil;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.After;
@@ -138,6 +140,26 @@ public class HttpReaderRequestBodyDynamicTest {
         AggregationException exception = assertThrows(AggregationException.class,
                 () -> reader.connectToGetData(httpContent(""), Integer.valueOf(1)));
         assertTrue(exception.getMessage().contains("XML response parse failed"));
+    }
+
+    @Test
+    public void validateUtilShouldAcceptSoapDateTimeAndNumericBooleanValues() {
+        Column date = ValidateUtil.validate("date_val", "DATE", "2026-06-02");
+        Column datetime = ValidateUtil.validate("datetime_val", "DATETIME", "2026-06-02 12:34:56");
+        Column timestamp = ValidateUtil.validate("timestamp_val", "TIMESTAMP", "2026-06-02T12:34:56.123");
+        Column trueValue = ValidateUtil.validate("bool_flag", "BOOLEAN", "1");
+        Column falseValue = ValidateUtil.validate("bool_flag", "BOOLEAN", "0");
+
+        assertEquals(Column.Type.DATE, date.getType());
+        assertEquals(Column.Type.DATE, datetime.getType());
+        assertEquals(Column.Type.DATE, timestamp.getType());
+        assertTrue(date.asDate() != null);
+        assertTrue(datetime.asDate() != null);
+        assertTrue(timestamp.asDate() != null);
+        assertEquals(Boolean.TRUE, trueValue.asBoolean());
+        assertEquals(Boolean.FALSE, falseValue.asBoolean());
+        assertEquals(Long.valueOf(1L), trueValue.asLong());
+        assertEquals(Long.valueOf(0L), falseValue.asLong());
     }
 
     private static Map<String, Object> readerConfig(String url, String requestBody) {
