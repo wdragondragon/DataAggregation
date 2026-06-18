@@ -160,7 +160,12 @@ public class CommonRdbmsWriter extends Writer.Job {
             throws SQLException {
         for (int i = 0; i < this.columnNumber; i++) {
             int columnSqltype = this.resultSetMetaData.getMiddle().get(i);
-            preparedStatement = fillPreparedStatementColumnType(preparedStatement, i, columnSqltype, record.getColumn(i));
+            Column column = record.getColumn(i);
+            if (column == null) {
+                preparedStatement.setObject(i + 1, null);
+                continue;
+            }
+            preparedStatement = fillPreparedStatementColumnType(preparedStatement, i, columnSqltype, column);
         }
 
         return preparedStatement;
