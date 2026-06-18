@@ -15,6 +15,29 @@ import java.util.*;
 public class OdpsSourcePlugin extends AbstractDataSourcePlugin {
 
     @Override
+    public boolean connectTest(BaseDataSourceDTO dataSource) {
+        validateConnectConfig(dataSource);
+        String project = resolveProjectName(dataSource);
+        Odps odps = createOdpsClient(dataSource);
+        setDefaultProject(odps, project);
+        return probeConnection(odps);
+    }
+
+    protected Odps createOdpsClient(BaseDataSourceDTO dataSource) {
+        return OdpsUtils.createOdps(dataSource);
+    }
+
+    protected void setDefaultProject(Odps odps, String project) {
+        odps.setDefaultProject(project);
+    }
+
+    protected boolean probeConnection(Odps odps) {
+        Iterator<Table> iterator = odps.tables().iterator(new TableFilter());
+        iterator.hasNext();
+        return true;
+    }
+
+    @Override
     public List<String> getTableNames(BaseDataSourceDTO dataSource, String keyword) {
         Odps odps = OdpsUtils.createOdps(dataSource);
         List<String> tableNames = new ArrayList<>();
@@ -224,6 +247,22 @@ public class OdpsSourcePlugin extends AbstractDataSourcePlugin {
             return projectName + "_dev";
         }
         return projectName;
+    }
+
+    private static void validateConnectConfig(BaseDataSourceDTO dataSource) {
+        if (dataSource == null) {
+            throw new IllegalArgumentException("Missing odps connect config.");
+        }
+        requireNotBlank(dataSource.getHost(), "endpoint");
+        requireNotBlank(dataSource.getDatabase(), "project");
+        requireNotBlank(dataSource.getUserName(), "accessId");
+        requireNotBlank(dataSource.getPassword(), "accessKey");
+    }
+
+    private static void requireNotBlank(String value, String name) {
+        if (isBlank(value)) {
+            throw new IllegalArgumentException("Missing odps connect config: " + name);
+        }
     }
 
     private static String getTunnelEndpoint(BaseDataSourceDTO dataSource) {
