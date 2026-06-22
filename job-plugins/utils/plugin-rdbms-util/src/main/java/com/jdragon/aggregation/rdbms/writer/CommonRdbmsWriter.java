@@ -101,10 +101,7 @@ public class CommonRdbmsWriter extends Writer.Job {
             valueHolders.add(VALUE_HOLDER);
         }
 
-        boolean forceUseUpdate = dataSourceType != null
-                && (dataSourceType == DataSourceType.MySql || dataSourceType == DataSourceType.Mysql8);
-
-        String insertSqlTemplate = WriterUtil.getWriteTemplate(columns, valueHolders, writeMode, sourcePlugin, forceUseUpdate, pks);
+        String insertSqlTemplate = WriterUtil.getWriteTemplate(columns, valueHolders, writeMode, sourcePlugin, false, pks);
         insertSql = String.format(insertSqlTemplate, this.tableName);
     }
 
@@ -528,7 +525,9 @@ public class CommonRdbmsWriter extends Writer.Job {
                         firstFailure = e;
                     }
                     LOG.warn("逐行写入失败, rowIndex={}, error={}", rowIndex, e.getMessage(), e);
-                    // 脏数据收集
+                    if (this.getTaskPluginCollector() != null) {
+                        this.getTaskPluginCollector().collectDirtyRecord(record, e);
+                    }
                 } finally {
                     // 最后不要忘了关闭 preparedStatement
                     preparedStatement.clearParameters();

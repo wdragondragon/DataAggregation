@@ -73,14 +73,14 @@ public abstract class Channel {
 
     public Record pull() {
         Record record = this.doPull();
-        this.statPull(1L, record.getByteSize());
+        this.statPull(record);
         return record;
     }
 
     public void pullAll(final Collection<Record> rs) {
         Validate.notNull(rs);
         this.doPullAll(rs);
-        this.statPull(rs.size(), this.getByteSize(rs));
+        this.statPull(rs);
     }
 
     protected abstract void doPush(Record r);
@@ -124,6 +124,26 @@ public abstract class Channel {
                 CommunicationTool.WRITE_RECEIVED_RECORDS, recordSize);
         communication.increaseCounter(
                 CommunicationTool.WRITE_RECEIVED_BYTES, byteSize);
+    }
+
+    private void statPull(final Record record) {
+        if (record instanceof TerminateRecord) {
+            return;
+        }
+        this.statPull(1L, record.getByteSize());
+    }
+
+    private void statPull(final Collection<Record> rs) {
+        long recordSize = 0L;
+        long byteSize = 0L;
+        for (Record record : rs) {
+            if (record instanceof TerminateRecord) {
+                continue;
+            }
+            recordSize++;
+            byteSize += record.getByteSize();
+        }
+        this.statPull(recordSize, byteSize);
     }
 
     public String statPrint() {
