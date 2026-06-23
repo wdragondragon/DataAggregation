@@ -114,7 +114,8 @@ public class UnstructuredStorageReaderUtil {
                 String key = entry.getKey();
                 List<ColumnEntry> value = entry.getValue();
                 for (ColumnEntry columnEntry : value) {
-                    String subDataNode = StringUtils.isBlank(key) ? columnEntry.getName() : key + "." + columnEntry.getName();
+                    boolean isRootKey = StringUtils.isBlank(key) || "$".equals(key);
+                    String subDataNode = isRootKey ? columnEntry.getName() : key + "." + columnEntry.getName();
                     result.put(columnEntry.getName(), itemJson.get(subDataNode));
                 }
             }
