@@ -6,6 +6,7 @@ import com.jdragon.aggregation.commons.element.*;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.pagination.Table;
 import com.jdragon.aggregation.datasource.*;
+import com.jdragon.aggregation.datasource.scan.TableScanReadable;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.calcite.adapter.jdbc.JdbcSchema;
@@ -23,7 +24,7 @@ import java.util.function.Consumer;
 
 @Getter
 @Slf4j
-public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin implements RdbmsSourceDefine {
+public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin implements RdbmsSourceDefine, TableScanReadable {
 
     protected IDataSourceSql dataSourceSql;
 
@@ -274,6 +275,11 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
         } finally {
             closeResource(resultSet, statement, connection);
         }
+    }
+
+    @Override
+    public void scanRows(BaseDataSourceDTO dataSource, String querySql, boolean columnLabel, Consumer<Map<String, Object>> rowConsumer) {
+        scanQuery(dataSource, querySql, columnLabel, rowConsumer);
     }
 
     protected Map<String, Object> buildRecord(ResultSet rs, ResultSetMetaData metaData, int columnNumber, String mandatoryEncoding, boolean columnLabel) {

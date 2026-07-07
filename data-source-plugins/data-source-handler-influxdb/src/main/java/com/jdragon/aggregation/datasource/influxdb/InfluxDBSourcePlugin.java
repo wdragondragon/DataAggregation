@@ -6,12 +6,14 @@ import com.influxdb.query.FluxRecord;
 import com.influxdb.query.FluxTable;
 import com.jdragon.aggregation.commons.pagination.Table;
 import com.jdragon.aggregation.datasource.*;
+import com.jdragon.aggregation.datasource.scan.TableScanReadable;
 
 import java.sql.Connection;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-public class InfluxDBSourcePlugin extends AbstractDataSourcePlugin {
+public class InfluxDBSourcePlugin extends AbstractDataSourcePlugin implements TableScanReadable {
 
     static String URL = "http://172.20.10.2:8086";
 
@@ -96,6 +98,26 @@ public class InfluxDBSourcePlugin extends AbstractDataSourcePlugin {
         Table<Map<String, Object>> result = convertToTable(tables);
         client.close();
         return result;
+    }
+
+    @Override
+    public void scanRows(BaseDataSourceDTO dataSource, String querySql, boolean columnLabel, Consumer<Map<String, Object>> rowConsumer) {
+        scanQuery(dataSource, querySql, columnLabel, rowConsumer);
+    }
+
+    @Override
+    public void scanQuery(BaseDataSourceDTO dataSource, String sql, boolean columnLabel, Consumer<Map<String, Object>> rowConsumer) {
+        if (rowConsumer == null) {
+            return;
+        }
+        try (InfluxDBClient client = createClient(dataSource)) {
+            QueryApi queryApi = client.getQueryApi();
+            for (FluxTable fluxTable : queryApi.query(sql)) {
+                for (FluxRecord record : fluxTable.getRecords()) {
+                    rowConsumer.accept(new LinkedHashMap<>(record.getValues()));
+                }
+            }
+        }
     }
 
     private Table<Map<String, Object>> convertToTable(List<FluxTable> tables) {

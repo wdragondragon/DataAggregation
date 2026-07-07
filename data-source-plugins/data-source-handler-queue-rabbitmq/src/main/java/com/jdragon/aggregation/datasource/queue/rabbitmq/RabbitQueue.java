@@ -2,6 +2,7 @@ package com.jdragon.aggregation.datasource.queue.rabbitmq;
 
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.queue.QueueAbstract;
+import com.jdragon.aggregation.datasource.scan.QueueCheckpointReadable;
 import com.rabbitmq.client.*;
 import lombok.extern.slf4j.Slf4j;
 
@@ -11,7 +12,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
 @Slf4j
-public class RabbitQueue extends QueueAbstract {
+public class RabbitQueue extends QueueAbstract implements QueueCheckpointReadable {
 
     private Connection connection;
 

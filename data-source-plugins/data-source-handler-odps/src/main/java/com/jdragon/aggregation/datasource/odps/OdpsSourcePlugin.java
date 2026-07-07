@@ -6,13 +6,15 @@ import com.aliyun.odps.task.SQLTask;
 import com.aliyun.odps.tunnel.TableTunnel;
 import com.aliyun.odps.tunnel.io.TunnelRecordReader;
 import com.jdragon.aggregation.datasource.*;
+import com.jdragon.aggregation.datasource.scan.TableScanReadable;
 import lombok.extern.slf4j.Slf4j;
 
 import java.sql.Connection;
 import java.util.*;
+import java.util.function.Consumer;
 
 @Slf4j
-public class OdpsSourcePlugin extends AbstractDataSourcePlugin {
+public class OdpsSourcePlugin extends AbstractDataSourcePlugin implements TableScanReadable {
 
     @Override
     public boolean connectTest(BaseDataSourceDTO dataSource) {
@@ -386,6 +388,42 @@ public class OdpsSourcePlugin extends AbstractDataSourcePlugin {
         } catch (OdpsException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Override
+    public void scanRows(BaseDataSourceDTO dataSource, String querySql, boolean columnLabel, Consumer<Map<String, Object>> rowConsumer) {
+        scanQuery(dataSource, querySql, columnLabel, rowConsumer);
+    }
+
+    @Override
+    public void scanQuery(BaseDataSourceDTO dataSource, String sql, boolean columnLabel, Consumer<Map<String, Object>> rowConsumer) {
+        if (rowConsumer == null) {
+            return;
+        }
+        Odps odps = OdpsUtils.createOdps(dataSource);
+        try {
+            if (!sql.endsWith(";")) {
+                sql += ";";
+            }
+            Instance instance = SQLTask.run(odps, sql);
+            instance.waitForSuccess();
+            com.aliyun.odps.data.ResultSet resultSet = SQLTask.getResultSet(instance);
+            for (Record record : resultSet) {
+                rowConsumer.accept(buildRecord(record));
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static Map<String, Object> buildRecord(Record record) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        Column[] columns = record.getColumns();
+        for (Column column : columns) {
+            String name = column.getName();
+            map.put(name, normalizeOdpsValue(record.get(name)));
+        }
+        return map;
     }
 
     @Override

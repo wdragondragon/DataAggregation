@@ -2,6 +2,7 @@ package com.jdragon.aggregation.datasource.queue.rocketmq;
 
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.queue.QueueAbstract;
+import com.jdragon.aggregation.datasource.scan.QueueCheckpointReadable;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.apache.rocketmq.acl.common.AclClientRPCHook;
@@ -20,7 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
 @Slf4j
-public class RocketQueue extends QueueAbstract {
+public class RocketQueue extends QueueAbstract implements QueueCheckpointReadable {
 
     private DefaultMQProducer producer;
 

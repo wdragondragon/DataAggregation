@@ -2,6 +2,7 @@ package com.jdragon.aggregation.datasource.queue.kafka;
 
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.queue.QueueAbstract;
+import com.jdragon.aggregation.datasource.scan.QueueCheckpointReadable;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -25,7 +26,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Slf4j
-public class KafkaQueue extends QueueAbstract {
+public class KafkaQueue extends QueueAbstract implements QueueCheckpointReadable {
 
     private static final Logger LOG = LoggerFactory.getLogger(KafkaQueue.class);
 

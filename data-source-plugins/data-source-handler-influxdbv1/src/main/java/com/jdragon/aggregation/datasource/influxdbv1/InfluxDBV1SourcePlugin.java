@@ -2,6 +2,7 @@ package com.jdragon.aggregation.datasource.influxdbv1;
 
 import com.jdragon.aggregation.commons.pagination.Table;
 import com.jdragon.aggregation.datasource.*;
+import com.jdragon.aggregation.datasource.scan.TableScanReadable;
 import org.influxdb.InfluxDB;
 import org.influxdb.InfluxDBFactory;
 import org.influxdb.dto.Pong;
@@ -10,9 +11,10 @@ import org.influxdb.dto.QueryResult;
 
 import java.sql.Connection;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-public class InfluxDBV1SourcePlugin extends AbstractDataSourcePlugin {
+public class InfluxDBV1SourcePlugin extends AbstractDataSourcePlugin implements TableScanReadable {
 
     private static final String UNSUPPORTED = "该操作不支持 InfluxDB 数据源";
 
@@ -38,6 +40,23 @@ public class InfluxDBV1SourcePlugin extends AbstractDataSourcePlugin {
             QueryResult queryResult = influxDB.query(query);
 
             return convertToTable(queryResult);
+        }
+    }
+
+    @Override
+    public void scanRows(BaseDataSourceDTO dataSource, String querySql, boolean columnLabel, Consumer<Map<String, Object>> rowConsumer) {
+        scanQuery(dataSource, querySql, columnLabel, rowConsumer);
+    }
+
+    @Override
+    public void scanQuery(BaseDataSourceDTO dataSource, String sql, boolean columnLabel, Consumer<Map<String, Object>> rowConsumer) {
+        if (rowConsumer == null) {
+            return;
+        }
+        try (InfluxDB influxDB = connect(dataSource)) {
+            influxDB.setDatabase(dataSource.getDatabase());
+            QueryResult queryResult = influxDB.query(new Query(sql, dataSource.getDatabase()));
+            emitRows(queryResult, rowConsumer);
         }
     }
 
@@ -74,6 +93,27 @@ public class InfluxDBV1SourcePlugin extends AbstractDataSourcePlugin {
         headers.forEach(h -> table.addHeader(h, h));
         table.setBodies(bodies);
         return table;
+    }
+
+    private void emitRows(QueryResult queryResult, Consumer<Map<String, Object>> rowConsumer) {
+        for (QueryResult.Result result : queryResult.getResults()) {
+            if (result.getSeries() == null) {
+                continue;
+            }
+            for (QueryResult.Series series : result.getSeries()) {
+                List<String> columns = series.getColumns();
+                for (List<Object> values : series.getValues()) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    for (int i = 0; i < columns.size(); i++) {
+                        row.put(columns.get(i), values.get(i));
+                    }
+                    if (series.getTags() != null) {
+                        row.putAll(series.getTags());
+                    }
+                    rowConsumer.accept(row);
+                }
+            }
+        }
     }
 
     @Override
