@@ -56,7 +56,7 @@ public class MinioHelper extends AbstractPlugin implements FileHelper {
     @Override
     public boolean exists(String path, String name) throws IOException {
         try {
-            String objectName = processingPath(path, name);
+            String objectName = normalizeObjectName(processingPath(path, name));
             minioClient.statObject(StatObjectArgs.builder().bucket(bucketName).object(objectName).build());
             return true;
         } catch (Exception e) {
@@ -69,7 +69,7 @@ public class MinioHelper extends AbstractPlugin implements FileHelper {
         try {
             Iterable<Result<Item>> results = minioClient.listObjects(ListObjectsArgs.builder()
                     .bucket(bucketName)
-                    .prefix(dir)
+                    .prefix(normalizeObjectName(dir))
                     .recursive(true)
                     .build());
 
@@ -103,7 +103,7 @@ public class MinioHelper extends AbstractPlugin implements FileHelper {
     @Override
     public void rm(String path) throws IOException {
         try {
-            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucketName).object(path).build());
+            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucketName).object(normalizeObjectName(path)).build());
         } catch (Exception e) {
             throw new IOException("Failed to delete: " + path, e);
         }
@@ -115,10 +115,10 @@ public class MinioHelper extends AbstractPlugin implements FileHelper {
             // 先复制，再删除
             minioClient.copyObject(CopyObjectArgs.builder()
                     .bucket(bucketName)
-                    .source(CopySource.builder().bucket(bucketName).object(from).build())
-                    .object(to)
+                    .source(CopySource.builder().bucket(bucketName).object(normalizeObjectName(from)).build())
+                    .object(normalizeObjectName(to))
                     .build());
-            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucketName).object(from).build());
+            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucketName).object(normalizeObjectName(from)).build());
             return true;
         } catch (Exception e) {
             throw new IOException("Failed to move " + from + " to " + to, e);
@@ -130,7 +130,7 @@ public class MinioHelper extends AbstractPlugin implements FileHelper {
         try {
             return minioClient.getObject(GetObjectArgs.builder()
                     .bucket(bucketName)
-                    .object(processingPath(path, name))
+                    .object(normalizeObjectName(processingPath(path, name)))
                     .build());
         } catch (Exception e) {
             throw new IOException("Failed to get input stream for: " + processingPath(path, name), e);
@@ -145,9 +145,9 @@ public class MinioHelper extends AbstractPlugin implements FileHelper {
                 byte[] data = toByteArray();
                 try (InputStream inputStream = new ByteArrayInputStream(data)) {
                     minioClient.putObject(PutObjectArgs.builder()
-                            .bucket(bucketName)
-                            .object(processingPath(path, name))
-                            .stream(inputStream, data.length, -1)
+                        .bucket(bucketName)
+                        .object(normalizeObjectName(processingPath(path, name)))
+                        .stream(inputStream, data.length, -1)
                             .contentType("application/octet-stream")
                             .build());
                 } catch (Exception e) {
@@ -161,10 +161,7 @@ public class MinioHelper extends AbstractPlugin implements FileHelper {
     public void readFile(String absPath, String fileType, java.util.function.Consumer<java.util.Map<String, Object>> row, Configuration options) throws IOException {
         // 从绝对路径中提取对象名称（MinIO使用对象路径）
         // absPath格式可能为 "bucket/path/to/file" 或 "/bucket/path/to/file"
-        String objectName = absPath;
-        if (objectName.startsWith("/")) {
-            objectName = objectName.substring(1);
-        }
+        String objectName = normalizeObjectName(absPath);
 
         try (InputStream is = minioClient.getObject(GetObjectArgs.builder()
                 .bucket(bucketName)
@@ -189,5 +186,17 @@ public class MinioHelper extends AbstractPlugin implements FileHelper {
             httpClient.dispatcher().executorService().shutdown();
         }
         connected = false;
+    }
+
+    private String normalizeObjectName(String path) {
+        String objectName = path == null ? "" : path.trim().replace('\\', '/');
+        while (objectName.startsWith("/")) {
+            objectName = objectName.substring(1);
+        }
+        String bucketPrefix = bucketName == null ? "" : bucketName.trim() + "/";
+        if (bucketName != null && !bucketName.trim().isEmpty() && objectName.startsWith(bucketPrefix)) {
+            objectName = objectName.substring(bucketPrefix.length());
+        }
+        return objectName;
     }
 }

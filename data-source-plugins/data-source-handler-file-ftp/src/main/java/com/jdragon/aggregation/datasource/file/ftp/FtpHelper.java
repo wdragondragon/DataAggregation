@@ -343,13 +343,28 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
             name = absPath;
         }
         
-        try (InputStream is = getInputStream(path, name)) {
-            if (is == null) {
-                throw new IOException("Cannot get input stream for file: " + absPath);
-            }
-            
+        InputStream inputStream = getInputStream(path, name);
+        if (inputStream == null) {
+            throw new IOException("Cannot get input stream for file: " + absPath);
+        }
+        try (InputStream is = inputStream) {
             FileParser.FileFormat format = FileParser.FileFormat.fromString(fileType);
             FileParser.parseInputStream(is, format, "UTF-8", row, options);
+        } finally {
+            completePendingReadCommand(absPath);
+        }
+    }
+
+    private void completePendingReadCommand(String absPath) throws IOException {
+        if (ftpClient == null || !ftpClient.isConnected()) {
+            return;
+        }
+        boolean completed = ftpClient.completePendingCommand();
+        if (!completed) {
+            String message = String.format("完成FTP文件[%s]读取命令失败, 状态码:%s, 回复:%s",
+                    absPath, ftpClient.getReplyCode(), ftpClient.getReplyString());
+            LOG.error(message);
+            throw new IOException(message);
         }
     }
 

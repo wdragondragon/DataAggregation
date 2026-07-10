@@ -84,21 +84,26 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
     @Override
     public String joinJdbcUrl(BaseDataSourceDTO dataSource) {
         String result = String.format(getJdbc(), dataSource.getHost(), dataSource.getPort(), dataSource.getDatabase());
+        Map<String, String> parameters = new LinkedHashMap<>(defaultJdbcParameters());
         if (StringUtils.isNotBlank(dataSource.getOther())) {
             Map<String, String> map = JSONObject.parseObject(dataSource.getOther(), new TypeReference<LinkedHashMap<String, String>>() {
             });
-            if (!map.isEmpty()) {
-                Set<String> keys = map.keySet();
-                StringBuilder str = new StringBuilder();
-                for (String key : keys) {
-                    str.append(String.format("%s=%s%s", key, map.get(key), getSeparator()));
-                }
-                str.deleteCharAt(str.length() - 1);
-                result += getExtraParameterStart() + str;
-            }
+            parameters.putAll(map);
 
         }
+        if (!parameters.isEmpty()) {
+            StringBuilder str = new StringBuilder();
+            for (Map.Entry<String, String> entry : parameters.entrySet()) {
+                str.append(String.format("%s=%s%s", entry.getKey(), entry.getValue(), getSeparator()));
+            }
+            str.deleteCharAt(str.length() - 1);
+            result += getExtraParameterStart() + str;
+        }
         return result;
+    }
+
+    protected Map<String, String> defaultJdbcParameters() {
+        return Collections.emptyMap();
     }
 
     @Override
@@ -204,7 +209,7 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
             ResultSetMetaData metaData = resultSet.getMetaData();
             int columnCount = metaData.getColumnCount();
             while (resultSet.next()) {
-                Map<String, Object> mapOfColValues = buildRecord(resultSet, metaData, columnCount, dataSource.getExtraParams().getOrDefault("mandatoryEncoding", "utf-8"), columnLabel);
+                Map<String, Object> mapOfColValues = buildRecord(resultSet, metaData, columnCount, mandatoryEncoding(dataSource), columnLabel);
 //                for (int i = 1; i <= columnCount; i++) {
 //                    String columnName = metaData.getColumnLabel(i);
 //                    Object value = resultSet.getObject(columnName);
@@ -262,9 +267,7 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
             resultSet = statement.executeQuery(sql);
             ResultSetMetaData metaData = resultSet.getMetaData();
             int columnCount = metaData.getColumnCount();
-            String encoding = dataSource.getExtraParams() != null
-                    ? dataSource.getExtraParams().getOrDefault("mandatoryEncoding", "utf-8")
-                    : "utf-8";
+            String encoding = mandatoryEncoding(dataSource);
             while (resultSet.next()) {
                 rowConsumer.accept(buildRecord(resultSet, metaData, columnCount, encoding, columnLabel));
             }
@@ -306,10 +309,10 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
             case Types.NVARCHAR:
             case Types.LONGNVARCHAR:
             case Types.SQLXML:
-                if (StringUtils.isBlank(mandatoryEncoding)) {
-                    rawData = rs.getString(i);
-                } else {
+                if (shouldDecodeBytes(mandatoryEncoding)) {
                     rawData = rs.getBytes(i) == null ? null : new String(rs.getBytes(i), mandatoryEncoding);
+                } else {
+                    rawData = rs.getString(i);
                 }
                 break;
             case Types.CLOB:
@@ -346,8 +349,16 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
                 break;
             case Types.NUMERIC:
             case Types.DECIMAL:
+                rawData = rs.getBigDecimal(i);
+                break;
             case Types.FLOAT:
             case Types.REAL:
+                if (StringUtils.isBlank(rs.getString(i))) {
+                    rawData = null;
+                } else {
+                    rawData = rs.getFloat(i);
+                }
+                break;
             case Types.DOUBLE:
                 if (StringUtils.isBlank(rs.getString(i))) {
                     rawData = null;
@@ -359,12 +370,16 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
                 if (StringUtils.isBlank(rs.getString(i))) {
                     rawData = null;
                 } else {
-                    rawData = rs.getTime(i).getTime();
+                    rawData = rs.getTime(i);
                 }
                 break;
             // for mysql bug, see http://bugs.mysql.com/bug.php?id=35115
             case Types.DATE:
-                rawData = resultSetToObject(rs.getDate(i));
+                if (isYearColumn(metaData, i)) {
+                    rawData = parseYear(rs.getString(i));
+                } else {
+                    rawData = resultSetToObject(rs.getDate(i));
+                }
                 break;
             case Types.TIMESTAMP:
                 rawData = resultSetToObject(rs.getTimestamp(i));
@@ -385,8 +400,7 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
                 break;
             case Types.BLOB:
                 Blob blob = rs.getBlob(i);
-                rawData = blob.getBytes(0, (int) blob.length());
-                rawData = resultSetToObject(rawData);
+                rawData = blob == null ? null : blob.getBytes(1, (int) blob.length());
                 break;
             case Types.OTHER:
                 rawData = rs.getObject(i);
@@ -411,6 +425,35 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
                 throw AggregationException.asException(String.format("您的配置文件中的列配置信息有误. 因为引擎不支持数据库读取这种字段类型. Types:[%s], 字段名:[%s], 字段名称:[%s], 字段Java类型:[%s]. 请尝试使用数据库函数将其转换引擎支持的类型 或者不同步该字段 .", columnType, metaData.getColumnName(i), metaData.getColumnType(i), metaData.getColumnClassName(i)));
         }
         record.put(fieldName, rawData);
+    }
+
+    private String mandatoryEncoding(BaseDataSourceDTO dataSource) {
+        if (dataSource == null || dataSource.getExtraParams() == null) {
+            return null;
+        }
+        return dataSource.getExtraParams().get("mandatoryEncoding");
+    }
+
+    private boolean shouldDecodeBytes(String mandatoryEncoding) {
+        return StringUtils.isNotBlank(mandatoryEncoding)
+                && !"utf-8".equalsIgnoreCase(mandatoryEncoding.trim())
+                && !"utf8".equalsIgnoreCase(mandatoryEncoding.trim());
+    }
+
+    private boolean isYearColumn(ResultSetMetaData metaData, int index) throws SQLException {
+        String typeName = metaData.getColumnTypeName(index);
+        return typeName != null && "year".equalsIgnoreCase(typeName.trim());
+    }
+
+    private Object parseYear(String value) {
+        if (StringUtils.isBlank(value)) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.length() >= 4) {
+            trimmed = trimmed.substring(0, 4);
+        }
+        return Integer.parseInt(trimmed);
     }
 
     private final DecimalFormat DOUBLE_VALUE_FORMAT = new DecimalFormat("#.###############");

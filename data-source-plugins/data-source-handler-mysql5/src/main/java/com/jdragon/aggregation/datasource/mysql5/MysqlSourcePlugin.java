@@ -6,6 +6,9 @@ import com.jdragon.aggregation.datasource.rdbms.DefaultSourceSql;
 import com.jdragon.aggregation.datasource.rdbms.RdbmsSourcePlugin;
 import lombok.Getter;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 
 @Getter
 public class MysqlSourcePlugin extends RdbmsSourcePlugin {
@@ -26,5 +29,13 @@ public class MysqlSourcePlugin extends RdbmsSourcePlugin {
 
     public MysqlSourcePlugin() {
         super(new DefaultSourceSql());
+    }
+
+    @Override
+    protected Map<String, String> defaultJdbcParameters() {
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("useUnicode", "true");
+        parameters.put("characterEncoding", "UTF-8");
+        return parameters;
     }
 }

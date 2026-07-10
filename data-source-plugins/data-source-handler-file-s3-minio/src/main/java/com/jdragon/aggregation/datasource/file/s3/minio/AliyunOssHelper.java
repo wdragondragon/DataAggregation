@@ -58,6 +58,7 @@ public class AliyunOssHelper extends AbstractPlugin implements FileHelper {
             if (StringUtils.isNotBlank(path)) {
                 name = processingPath(path, name);
             }
+            name = normalizeObjectName(name);
             return ossClient.doesObjectExist(bucketName, name);
         } catch (Exception e) {
             log.error("检查文件 {} 是否存在失败: {}", name, e.getMessage(), e);
@@ -70,7 +71,7 @@ public class AliyunOssHelper extends AbstractPlugin implements FileHelper {
         Set<String> fileNames = new HashSet<>();
         try {
             ListObjectsRequest request = new ListObjectsRequest(bucketName);
-            request.setPrefix(dir);
+            request.setPrefix(normalizeObjectName(dir));
             Pattern pattern = Pattern.compile(regex);
             ObjectListing objectListing;
             do {
@@ -107,7 +108,7 @@ public class AliyunOssHelper extends AbstractPlugin implements FileHelper {
     @Override
     public void rm(String path) {
         try {
-            ossClient.deleteObject(bucketName, path);
+            ossClient.deleteObject(bucketName, normalizeObjectName(path));
         } catch (Exception e) {
             log.error("删除文件 {} 失败: {}", path, e.getMessage(), e);
         }
@@ -117,10 +118,11 @@ public class AliyunOssHelper extends AbstractPlugin implements FileHelper {
     public boolean mv(String from, String to) {
         try {
             // 复制文件
-            CopyObjectRequest copyObjectRequest = new CopyObjectRequest(bucketName, from, bucketName, to);
+            CopyObjectRequest copyObjectRequest = new CopyObjectRequest(bucketName, normalizeObjectName(from),
+                    bucketName, normalizeObjectName(to));
             ossClient.copyObject(copyObjectRequest);
             // 删除原文件
-            ossClient.deleteObject(bucketName, from);
+            ossClient.deleteObject(bucketName, normalizeObjectName(from));
             return true;
         } catch (Exception e) {
             log.error("移动文件失败: {} -> {}, 错误: {}", from, to, e.getMessage(), e);
@@ -134,6 +136,7 @@ public class AliyunOssHelper extends AbstractPlugin implements FileHelper {
             if (StringUtils.isNotBlank(path)) {
                 name = processingPath(path, name);
             }
+            name = normalizeObjectName(name);
             OSSObject ossObject = ossClient.getObject(bucketName, name);
             return ossObject.getObjectContent();
         } catch (Exception e) {
@@ -146,6 +149,7 @@ public class AliyunOssHelper extends AbstractPlugin implements FileHelper {
         if (StringUtils.isNotBlank(path)) {
             name = processingPath(path, name);
         }
+        name = normalizeObjectName(name);
         String finalName = name;
         return new ByteArrayOutputStream() {
             @Override
@@ -164,20 +168,9 @@ public class AliyunOssHelper extends AbstractPlugin implements FileHelper {
     public void readFile(String absPath, String fileType, java.util.function.Consumer<java.util.Map<String, Object>> row, Configuration options) throws IOException {
         // 从绝对路径中提取对象名称（OSS使用对象路径）
         // absPath格式可能为 "bucket/path/to/file" 或 "/bucket/path/to/file"
-        String objectName = absPath;
-        if (objectName.startsWith("/")) {
-            objectName = objectName.substring(1);
-        }
+        String objectName = normalizeObjectName(absPath);
 
-        // 如果路径包含bucket名称，需要分离
-        String targetBucket = bucketName;
-        if (objectName.contains("/")) {
-            int firstSlash = objectName.indexOf('/');
-            targetBucket = objectName.substring(0, firstSlash);
-            objectName = objectName.substring(firstSlash + 1);
-        }
-
-        try (InputStream is = ossClient.getObject(targetBucket, objectName).getObjectContent()) {
+        try (InputStream is = ossClient.getObject(bucketName, objectName).getObjectContent()) {
             if (is == null) {
                 throw new IOException("Cannot get input stream for file: " + absPath);
             }
@@ -196,5 +189,17 @@ public class AliyunOssHelper extends AbstractPlugin implements FileHelper {
             ossClient.shutdown();
         }
         connected = false;
+    }
+
+    private String normalizeObjectName(String path) {
+        String objectName = StringUtils.trimToEmpty(path).replace('\\', '/');
+        while (objectName.startsWith("/")) {
+            objectName = objectName.substring(1);
+        }
+        String bucketPrefix = StringUtils.trimToEmpty(bucketName) + "/";
+        if (StringUtils.isNotBlank(bucketName) && objectName.startsWith(bucketPrefix)) {
+            objectName = objectName.substring(bucketPrefix.length());
+        }
+        return objectName;
     }
 }
