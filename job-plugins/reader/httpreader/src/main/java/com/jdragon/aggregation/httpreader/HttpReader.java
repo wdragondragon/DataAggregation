@@ -2,20 +2,18 @@ package com.jdragon.aggregation.httpreader;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import com.alibaba.fastjson.TypeReference;
 import com.jdragon.aggregation.commons.element.Record;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.commons.util.FastJsonMemory;
-import com.jdragon.aggregation.commons.util.RetryUtil;
+import com.jdragon.aggregation.datasource.http.HttpSourceConfig;
+import com.jdragon.aggregation.datasource.http.HttpSourceScanner;
+import com.jdragon.aggregation.datasource.http.PageRepeatGuard;
 import com.jdragon.aggregation.core.plugin.RecordSender;
 import com.jdragon.aggregation.core.plugin.spi.Reader;
-import com.jdragon.aggregation.plugin.httpdyn.util.HttpUtils;
 import com.jdragon.aggregation.plugin.httpdyn.HttpDynColumnExecuteHandler;
 import com.jdragon.aggregation.unstructuredstorage.ColumnEntry;
-import com.jdragon.aggregation.unstructuredstorage.SoapToJSON;
 import com.jdragon.aggregation.unstructuredstorage.UnstructuredStorageReaderUtil;
-import com.jdragon.aggregation.unstructuredstorage.XmlToJSON;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
@@ -26,6 +24,8 @@ import java.util.Map;
 @Slf4j
 public class HttpReader extends Reader.Job {
     private Configuration readerSliceConfig = null;
+    private HttpSourceConfig sourceConfig;
+    private final HttpSourceScanner sourceScanner = new HttpSourceScanner();
 
     private List<ColumnEntry> columnEntries = null;
 
@@ -64,6 +64,7 @@ public class HttpReader extends Reader.Job {
     @Override
     public void init() {
         this.readerSliceConfig = super.getPluginJobConf();
+        this.sourceConfig = HttpSourceConfig.fromConfiguration(this.readerSliceConfig);
 
         this.url = readerSliceConfig.getNecessaryValue(Key.URL, HttpReaderErrorCode.REQUIRED_VALUE);
         this.requestType = readerSliceConfig.getNecessaryValue(Key.MODE, HttpReaderErrorCode.REQUIRED_VALUE);
@@ -96,124 +97,68 @@ public class HttpReader extends Reader.Job {
 
     @Override
     public void startRead(RecordSender recordSender) {
+        sourceScanner.validatePaginationConfig(sourceConfig);
         HttpDynColumnExecuteHandler.replaceStaticVal(httpContent);
+        offset = 0L;
+        PageRepeatGuard pageRepeatGuard = new PageRepeatGuard(sourceConfig.getMaxRepeatedPages());
 
         Integer pageNum = 1;
         String resultStr = connectToGetData(new HashMap<>(httpContent), pageNum);
+        if (StringUtils.isBlank(resultStr)) {
+            if (StringUtils.isNotBlank(this.totalCodePath)) {
+                throw AggregationException.asException(HttpReaderErrorCode.RESPONSE_PAGE_ERROR,
+                        "HTTP 分页响应提前结束: page=1, 已配置总量节点但首页响应为空");
+            }
+            return;
+        }
 
-        FastJsonMemory resultJson = new FastJsonMemory(resultStr);
-        Integer recordNum = sendAnalysisDataToWriter(resultJson, recordSender);
+        FastJsonMemory resultJson = parseResponseJson(resultStr);
+        Integer recordNum = sendAnalysisDataToWriter(resultJson, resultStr, recordSender, pageRepeatGuard, pageNum);
         if (this.pageRead) {
             log.info("进入pageRead读取模式");
             while (checkPage(pageNum, recordNum, resultJson)) {
                 pageNum++;
                 offset += pageSize;
-                try {
-                    resultStr = connectToGetData(new HashMap<>(httpContent), pageNum);
-                    resultJson = new FastJsonMemory(resultStr);
-                    recordNum = sendAnalysisDataToWriter(resultJson, recordSender);
-                } catch (Exception e) {
-                    log.info("转换异常，数据为：{}", resultStr);
-                    throw new AggregationException(HttpReaderErrorCode.RESULT_RO_JSON_ERROR, "响应转换json异常");
+                resultStr = connectToGetData(new HashMap<>(httpContent), pageNum);
+                if (StringUtils.isBlank(resultStr)) {
+                    if (StringUtils.isNotBlank(this.totalCodePath)) {
+                        throw AggregationException.asException(HttpReaderErrorCode.RESPONSE_PAGE_ERROR,
+                                "HTTP 分页响应提前结束: page=" + pageNum + ", 已知仍有未读取数据");
+                    }
+                    break;
                 }
+                resultJson = parseResponseJson(resultStr);
+                recordNum = sendAnalysisDataToWriter(resultJson, resultStr, recordSender, pageRepeatGuard, pageNum);
             }
         }
 
     }
 
     public String connectToGetData(Map<String, String> httpContent, Integer pageNum) {
-        //每次发送请求时，替换掉page
-        HttpDynColumnExecuteHandler.replacePage(httpContent, String.valueOf(pageNum));
-        HttpDynColumnExecuteHandler.replacePageSize(httpContent, String.valueOf(pageSize));
-        //替换offset
-        HttpDynColumnExecuteHandler.replaceOffset(httpContent, String.valueOf(offset));
-        // 替换动态参数
-        HttpDynColumnExecuteHandler.replaceDynVal(httpContent);
-
-        Map<String, String> headerMap = JSONObject.parseObject(httpContent.get(Key.HEADER), new TypeReference<Map<String, String>>() {
-        });
-
-        Map<String, String> paramMap = JSONObject.parseObject(httpContent.get(Key.PARAM_STR), new TypeReference<Map<String, String>>() {
-        });
-
-        HttpUtils httpUtils = HttpUtils.init();
-        httpUtils.setUrl(url);
-        httpUtils.setHeader("Content-Type", contentType);
-        httpUtils.setMethod(requestType);
-
-        httpUtils.setHeaderMap(headerMap);
-        if (StringUtils.isNotBlank(soapAction) && !containsHeaderIgnoreCase(headerMap, "SOAPAction")) {
-            httpUtils.setHeader("SOAPAction", soapAction);
+        if (sourceConfig == null) {
+            throw new IllegalStateException("HTTP reader is not initialized");
         }
-        httpUtils.setParamMap(paramMap);
-        String requestBody = httpContent.get(Key.REQUEST_BODY);
-        httpUtils.setRawBody(requestBody == null ? this.bodyStr : requestBody);
-        String resultStr;
-        try {
-            resultStr = RetryUtil.executeWithRetry(() -> {
-                Map<String, String> exec = httpUtils.exec();
-                if (!"200".equals(exec.get("statusCode"))) {
-                    throw new RuntimeException("请求异常：" + exec.get("result"));
-                }
-                return exec.get("result");
-            }, 3, 1000L, false);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-
-        if (Boolean.TRUE.equals(soapFaultFail)) {
-            String faultMessage = SoapToJSON.faultMessage(resultStr);
-            if (StringUtils.isNotBlank(faultMessage)) {
-                throw AggregationException.asException(HttpReaderErrorCode.RESPONSE_STATUS_ERROR,
-                        "SOAP Fault: " + faultMessage);
-            }
-        }
-
-        if (ReadResultTypeEnum.XML.name().equalsIgnoreCase(this.resultDataType)) {
-            try {
-                JSONObject result2 = XmlToJSON.toJson(resultStr);
-                resultStr = JSONObject.toJSONString(result2);
-            } catch (Exception e) {
-                throw AggregationException.asException(HttpReaderErrorCode.RESULT_RO_JSON_ERROR,
-                        "XML response parse failed: " + e.getMessage());
-            }
-        } else if (ReadResultTypeEnum.SOAP.name().equalsIgnoreCase(this.resultDataType)) {
-            try {
-                JSONObject result2 = SoapToJSON.toJson(resultStr);
-                resultStr = JSONObject.toJSONString(result2);
-            } catch (Exception e) {
-                throw AggregationException.asException(HttpReaderErrorCode.RESULT_RO_JSON_ERROR,
-                        "SOAP response parse failed: " + e.getMessage());
-            }
-        }
-
-        //判断是否有设置返回状态码
-        if (null != this.responseStatus && !responseStatus.isEmpty()) {
-            FastJsonMemory resultObj = new FastJsonMemory(resultStr);
-            //获取path
-            Object pathValue = resultObj.get((String) responseStatus.get("path"));
-            String codeValue = (String) responseStatus.get("code");
-            if (null != pathValue && null != codeValue) {
-                String resultCode = String.valueOf(pathValue);
-                if (!resultCode.equalsIgnoreCase(codeValue)) {
-                    throw AggregationException.asException(HttpReaderErrorCode.RESPONSE_STATUS_ERROR, String.format("业务成功状态码：[%s],请求返回状态码：[%S]", codeValue, resultCode));
-                }
-            } else {
-                throw AggregationException.asException(HttpReaderErrorCode.REQUIRED_VALUE, "状态码path和code为不能为空！");
-            }
-        }
-
-        return resultStr;
+        return sourceScanner.connectToGetData(sourceConfig, httpContent, pageNum, offset);
     }
 
-    private Integer sendAnalysisDataToWriter(FastJsonMemory resultJson, RecordSender recordSender) {
+    private Integer sendAnalysisDataToWriter(FastJsonMemory resultJson,
+                                             String pageContent,
+                                             RecordSender recordSender,
+                                             PageRepeatGuard pageRepeatGuard,
+                                             int pageNum) {
         // 解析json为record
         JSONArray arrayResult;
         try {
             arrayResult = UnstructuredStorageReaderUtil.detailJson(resultJson, this.columnEntries);
         } catch (Exception e) {
-            log.info("采集出错，采集结果：{}", resultJson);
-            throw new RuntimeException(e);
+            log.warn("HTTP 响应数据提取失败，异常类型：{}", e.getClass().getSimpleName());
+            throw AggregationException.asException(HttpReaderErrorCode.RESULT_RO_JSON_ERROR,
+                    "HTTP response data extraction failed");
+        }
+        if (pageRead && pageRepeatGuard.observe(pageContent)) {
+            throw AggregationException.asException(HttpReaderErrorCode.RESPONSE_PAGE_ERROR,
+                    "HTTP 分页检测到重复的完整页或短页，已停止读取: page=" + pageNum
+                            + ", maxRepeatedPages=" + sourceConfig.getMaxRepeatedPages());
         }
         //判断是主节点为对象还是数组
         for (int i = 0; i < arrayResult.size(); i++) {
@@ -223,10 +168,16 @@ public class HttpReader extends Reader.Job {
 //                LOG.info("pageRead读取模式数据[{}]", jsonObject);
         }
         log.info("pageRead读取模式返回结果集size:[{}]", arrayResult.size());
-        if (arrayResult.size() <= 5) {
-            log.info("输出数据样例:{}", resultJson);
-        }
         return arrayResult.size();
+    }
+
+    private FastJsonMemory parseResponseJson(String resultStr) {
+        try {
+            return new FastJsonMemory(resultStr);
+        } catch (Exception e) {
+            throw AggregationException.asException(HttpReaderErrorCode.RESULT_RO_JSON_ERROR,
+                    "HTTP response JSON parse failed");
+        }
     }
 
     private Boolean checkPage(Integer pageNum, Integer recordNum, FastJsonMemory jsonUtil) {
@@ -234,9 +185,15 @@ public class HttpReader extends Reader.Job {
         if (StringUtils.isNotBlank(this.totalCodePath)) {
             Object totalObj = jsonUtil.get(this.totalCodePath);
             if (null != totalObj) {
-                Long total = Long.valueOf(String.valueOf(totalObj));
+                long total;
+                try {
+                    total = sourceScanner.parseTotalCount(totalObj);
+                } catch (IllegalArgumentException ex) {
+                    throw AggregationException.asException(HttpReaderErrorCode.RESPONSE_PAGE_ERROR,
+                            "HTTP 分页总量配置无效: path=" + this.totalCodePath + ", " + ex.getMessage());
+                }
                 //根据pageSize,total计算总页数
-                Long totalPage = total % this.pageSize == 0 ? total / this.pageSize : total / this.pageSize + 1;
+                long totalPage = total % this.pageSize == 0 ? total / this.pageSize : total / this.pageSize + 1;
                 return pageNum < totalPage;
             } else {
                 throw AggregationException.asException(HttpReaderErrorCode.RESPONSE_PAGE_ERROR, String.format("获取返回数据总量值失败:获取路径[%s],实际返回:[%s]", this.totalCodePath, totalObj));
@@ -270,15 +227,4 @@ public class HttpReader extends Reader.Job {
                 || ReadResultTypeEnum.SOAP.name().equalsIgnoreCase(readerSliceConfig.getString(Key.RESULT_DATA_TYPE, ""));
     }
 
-    private boolean containsHeaderIgnoreCase(Map<String, String> headerMap, String headerName) {
-        if (headerMap == null || headerName == null) {
-            return false;
-        }
-        for (String key : headerMap.keySet()) {
-            if (headerName.equalsIgnoreCase(key)) {
-                return true;
-            }
-        }
-        return false;
-    }
 }

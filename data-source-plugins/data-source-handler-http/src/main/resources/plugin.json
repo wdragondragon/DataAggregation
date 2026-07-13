@@ -1,0 +1,6 @@
+{
+  "name": "http",
+  "class": "com.jdragon.aggregation.datasource.http.HttpSourcePlugin",
+  "description": "HTTP source plugin",
+  "developer": "jdragon"
+}

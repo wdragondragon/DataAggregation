@@ -130,10 +130,123 @@ public class HttpDynColumnExecuteHandler {
             patternParams.setOriginalParams(matcher.group());
             patternParams.setExecuteCode(matcher.group(1) + "}");
             //待会测试有括号的，但是不带参数的情况
-            patternParams.setParamStrArr(matcher.group(2).split(","));
+            patternParams.setParamStrArr(splitFunctionParameters(matcher.group(2)));
             result.add(patternParams);
         }
         return result;
+    }
+
+    static String[] splitFunctionParameters(String value) {
+        if (value == null || value.isEmpty()) {
+            return new String[]{""};
+        }
+        List<String> result = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        char quote = 0;
+        boolean escaped = false;
+        int objectDepth = 0;
+        int arrayDepth = 0;
+        int parenthesisDepth = 0;
+        for (int index = 0; index < value.length(); index++) {
+            char item = value.charAt(index);
+            if (escaped) {
+                current.append('\\').append(item);
+                escaped = false;
+                continue;
+            }
+            if (item == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (quote != 0) {
+                current.append(item);
+                if (item == quote) {
+                    quote = 0;
+                }
+                continue;
+            }
+            if (item == '\'' || item == '"') {
+                quote = item;
+                current.append(item);
+                continue;
+            }
+            if (item == '{') {
+                objectDepth++;
+            } else if (item == '}') {
+                objectDepth = Math.max(0, objectDepth - 1);
+            } else if (item == '[') {
+                arrayDepth++;
+            } else if (item == ']') {
+                arrayDepth = Math.max(0, arrayDepth - 1);
+            } else if (item == '(') {
+                parenthesisDepth++;
+            } else if (item == ')') {
+                parenthesisDepth = Math.max(0, parenthesisDepth - 1);
+            }
+            if (item == ',' && objectDepth == 0 && arrayDepth == 0 && parenthesisDepth == 0) {
+                result.add(normalizeFunctionParameter(current.toString()));
+                current.setLength(0);
+            } else {
+                current.append(item);
+            }
+        }
+        if (escaped) {
+            current.append('\\');
+        }
+        result.add(normalizeFunctionParameter(current.toString()));
+        return result.toArray(new String[0]);
+    }
+
+    private static String normalizeFunctionParameter(String value) {
+        String normalized = StringUtils.defaultString(value).trim();
+        if (normalized.length() >= 2) {
+            char first = normalized.charAt(0);
+            char last = normalized.charAt(normalized.length() - 1);
+            if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+                return unescapeQuotedParameter(normalized.substring(1, normalized.length() - 1), first);
+            }
+        }
+        return unescapeParameterDelimiter(normalized);
+    }
+
+    private static String unescapeQuotedParameter(String value, char quote) {
+        StringBuilder result = new StringBuilder(value.length());
+        boolean escaped = false;
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            if (!escaped) {
+                if (current == '\\') {
+                    escaped = true;
+                } else {
+                    result.append(current);
+                }
+                continue;
+            }
+            if (current == quote || current == '\\' || current == ',') {
+                result.append(current);
+            } else {
+                result.append('\\').append(current);
+            }
+            escaped = false;
+        }
+        if (escaped) {
+            result.append('\\');
+        }
+        return result.toString();
+    }
+
+    private static String unescapeParameterDelimiter(String value) {
+        StringBuilder result = new StringBuilder(value.length());
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            if (current == '\\' && index + 1 < value.length() && value.charAt(index + 1) == ',') {
+                result.append(',');
+                index++;
+            } else {
+                result.append(current);
+            }
+        }
+        return result.toString();
     }
 
     /**
@@ -163,7 +276,7 @@ public class HttpDynColumnExecuteHandler {
                         if (reflectObject != null) {
                             BaseHttpDynExecutor baseHttpDynExecutor = (BaseHttpDynExecutor) reflectObject;
                             String exeResultStr = baseHttpDynExecutor.execute();
-                            str = str.replaceAll(RegexUtil.escapeExprSpecialWord(dynStr), exeResultStr);
+                            str = str.replaceAll(RegexUtil.escapeExprSpecialWord(dynStr), Matcher.quoteReplacement(exeResultStr));
                         }
                     }
                 }
@@ -190,7 +303,7 @@ public class HttpDynColumnExecuteHandler {
                         if (reflectObject != null) {
                             BaseHttpDynExecutor baseHttpDynExecutor = (BaseHttpDynExecutor) reflectObject;
                             String exeResultStr = baseHttpDynExecutor.execute((Object[]) httpDynParam.getParamStrArr());
-                            str = str.replaceAll(RegexUtil.escapeExprSpecialWord(httpDynParam.getOriginalParams()), exeResultStr);
+                            str = str.replaceAll(RegexUtil.escapeExprSpecialWord(httpDynParam.getOriginalParams()), Matcher.quoteReplacement(exeResultStr));
                         }
                     }
                 }
@@ -235,7 +348,7 @@ public class HttpDynColumnExecuteHandler {
                     if (reflectObject != null) {
                         BaseHttpDynExecutor baseHttpDynExecutor = (BaseHttpDynExecutor) reflectObject;
                         String exeResultStr = baseHttpDynExecutor.execute();
-                        str = str.replaceAll(RegexUtil.escapeExprSpecialWord(dynStr), exeResultStr);
+                        str = str.replaceAll(RegexUtil.escapeExprSpecialWord(dynStr), Matcher.quoteReplacement(exeResultStr));
                     }
                 }
             }
@@ -264,7 +377,7 @@ public class HttpDynColumnExecuteHandler {
                     if (reflectObject != null) {
                         BaseHttpDynExecutor baseHttpDynExecutor = (BaseHttpDynExecutor) reflectObject;
                         String exeResultStr = baseHttpDynExecutor.execute((Object[]) httpDynParam.getParamStrArr());
-                        str = str.replaceAll(RegexUtil.escapeExprSpecialWord(httpDynParam.getOriginalParams()), exeResultStr);
+                        str = str.replaceAll(RegexUtil.escapeExprSpecialWord(httpDynParam.getOriginalParams()), Matcher.quoteReplacement(exeResultStr));
                     }
                 }
             }
@@ -331,7 +444,7 @@ public class HttpDynColumnExecuteHandler {
                         if (reflectObject != null) {
                             BaseHttpDynExecutor baseHttpDynExecutor = (BaseHttpDynExecutor) reflectObject;
                             String exeResultStr = baseHttpDynExecutor.execute();
-                            str = str.replaceAll(RegexUtil.escapeExprSpecialWord(dynStr), exeResultStr);
+                            str = str.replaceAll(RegexUtil.escapeExprSpecialWord(dynStr), Matcher.quoteReplacement(exeResultStr));
                             httpContent.put(key, str);
                         }
                     }
@@ -365,12 +478,14 @@ public class HttpDynColumnExecuteHandler {
                             for (int i1 = 0; i1 < paramStrArr.length; i1++) {
                                 List<String> depends = keyMap.get(key);
                                 for (String depend : depends) {
-                                    paramStrArr[i1] = paramStrArr[i1].replaceAll("\\{%(" + depend + ")%}", httpContent.get(depend));
+                                    paramStrArr[i1] = paramStrArr[i1].replaceAll(
+                                            "\\{%(" + depend + ")%}",
+                                            Matcher.quoteReplacement(StringUtils.defaultString(httpContent.get(depend))));
                                 }
                             }
-                            log.info("执行动态参数：{}，参数：{}", httpDynParam.getExecuteCode(), paramStrArr);
+                            log.info("执行动态参数：{}，参数数量：{}", httpDynParam.getExecuteCode(), paramStrArr.length);
                             String exeResultStr = baseHttpDynExecutor.execute((Object[]) paramStrArr);
-                            str = str.replaceAll(RegexUtil.escapeExprSpecialWord(httpDynParam.getOriginalParams()), exeResultStr);
+                            str = str.replaceAll(RegexUtil.escapeExprSpecialWord(httpDynParam.getOriginalParams()), Matcher.quoteReplacement(exeResultStr));
                             httpContent.put(key, str);
                         }
                     }

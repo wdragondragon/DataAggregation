@@ -7,21 +7,18 @@ package com.jdragon.aggregation.plugin.httpdyn.exception;
  * @Description:
  */
 public class HttpException extends RuntimeException {
-    private String message;
-
     public HttpException() {
     }
 
     public HttpException(String message) {
-        this.message = message;
+        super(message);
     }
 
     public HttpException(Throwable e) {
         super(e);
     }
 
-    @Override
-    public String getMessage() {
-        return message;
+    public HttpException(String message, Throwable cause) {
+        super(message, cause);
     }
 }

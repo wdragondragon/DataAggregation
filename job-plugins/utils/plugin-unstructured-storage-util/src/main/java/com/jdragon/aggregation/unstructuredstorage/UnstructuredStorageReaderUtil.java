@@ -31,7 +31,8 @@ public class UnstructuredStorageReaderUtil {
         return result;
     }
     public static JSONArray detailJson(FastJsonMemory json, List<ColumnEntry> columnEntryList) {
-        Map<String, List<ColumnEntry>> columnGroupByParent = columnEntryList.stream().collect(Collectors.groupingBy(ColumnEntry::getParentNode));
+        Map<String, List<ColumnEntry>> columnGroupByParent = columnEntryList.stream()
+                .collect(Collectors.groupingBy(entry -> StringUtils.defaultString(entry.getParentNode())));
         List<String> parentNodes = new ArrayList<>(columnGroupByParent.keySet());
         //以那个node为基准取数据。
         Pattern pattern = Pattern.compile("(.*)\\[(\\d+)]");
@@ -56,6 +57,19 @@ public class UnstructuredStorageReaderUtil {
                 }
             }
         }
+        if (StringUtils.isBlank(baseParent)) {
+            for (String parentNode : parentNodes) {
+                if (StringUtils.isNotBlank(parentNode) && json.get(parentNode) != null) {
+                    baseParent = parentNode;
+                    break;
+                }
+            }
+        }
+        boolean rootParentConfigured = parentNodes.stream()
+                .anyMatch(parentNode -> StringUtils.isBlank(parentNode) || "$".equals(parentNode));
+        if (StringUtils.isBlank(baseParent) && !rootParentConfigured) {
+            return new JSONArray();
+        }
 
         //筛选出处于基准node下的数据，这些数据成为对应插入每一行的基准数据
         Map<String, List<ColumnEntry>> baseEntryMap = new HashMap<>();
@@ -64,8 +78,8 @@ public class UnstructuredStorageReaderUtil {
         Map<String, List<ColumnEntry>> columnEntryMap = new HashMap<>();
         Map<String, Object> dataMap = new HashMap<>();
         for (ColumnEntry columnEntry : columnEntryList) {
-            String parentNode = columnEntry.getParentNode();
-            if (columnEntry.getParentNode().startsWith(baseParent)) {
+            String parentNode = StringUtils.defaultString(columnEntry.getParentNode());
+            if (parentNode.startsWith(baseParent)) {
                 String s = "";
                 if (!baseParent.equals(parentNode)) {
                     s = parentNode.replaceAll(RegexUtil.escapeExprSpecialWord(baseParent + "."), "");
@@ -79,7 +93,7 @@ public class UnstructuredStorageReaderUtil {
                     columnEntryMap.put(parentNode, new LinkedList<>());
                 }
                 columnEntryMap.get(parentNode).add(columnEntry);
-                dataMap.put(columnEntry.getParentNode(), json.get(parentNode));
+                dataMap.put(parentNode, json.get(parentNode));
             }
         }
 
@@ -87,10 +101,12 @@ public class UnstructuredStorageReaderUtil {
         Object o1 = json.get(baseParent);
         if (o1 instanceof JSONArray) {
             baseJsonArray = (JSONArray) o1;
-        } else {
+        } else if (o1 instanceof JSONObject) {
             baseJsonArray = new JSONArray();
             JSONObject baseJsonObject = (JSONObject) o1;
             baseJsonArray.add(baseJsonObject);
+        } else {
+            return new JSONArray();
         }
         JSONObject item = new JSONObject();
 

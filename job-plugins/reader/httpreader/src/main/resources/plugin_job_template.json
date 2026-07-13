@@ -11,6 +11,10 @@
     "totalCodePath": "data.total",
     "pageRead": true,
     "pageSize": 10,
+    "maxRepeatedPages": 2,
+    "retryTimes": 3,
+    "retryIntervalMs": 1000,
+    "retryNonIdempotent": false,
     "responseStatus": {
       "code": "200",
       "path": "code"

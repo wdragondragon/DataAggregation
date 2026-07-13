@@ -1,0 +1,17 @@
+{
+  "url": "http://127.0.0.1:8080/api",
+  "mode": "GET",
+  "protocolMode": "REST_JSON",
+  "contentType": "application/json;charset=utf-8",
+  "header": "{}",
+  "params": "{}",
+  "requestBody": "",
+  "resultType": "json",
+  "pageRead": false,
+  "pageSize": 500,
+  "maxRepeatedPages": 2,
+  "retryTimes": 3,
+  "retryIntervalMs": 1000,
+  "retryNonIdempotent": false,
+  "columns": []
+}

@@ -29,6 +29,10 @@ public final class Key {
     //分页相关
     public final static String PAGE_READ = "pageRead";
     public final static String PAGE_SIZE = "pageSize";
+    public final static String MAX_REPEATED_PAGES = "maxRepeatedPages";
+    public final static String RETRY_TIMES = "retryTimes";
+    public final static String RETRY_INTERVAL_MS = "retryIntervalMs";
+    public final static String RETRY_NON_IDEMPOTENT = "retryNonIdempotent";
     //总量
     public final static String TOTAL_CODE_PATH = "totalCodePath";
     //返回状态map,里面包含code,path
