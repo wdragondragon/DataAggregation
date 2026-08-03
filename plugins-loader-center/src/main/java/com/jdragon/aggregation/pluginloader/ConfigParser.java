@@ -2,23 +2,33 @@ package com.jdragon.aggregation.pluginloader;
 
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.pluginloader.constant.SystemConstants;
+import com.jdragon.aggregation.pluginloader.runtime.PluginRuntimeSession;
+import com.jdragon.aggregation.pluginloader.runtime.PluginRuntimeResolvers;
+import com.jdragon.aggregation.pluginloader.runtime.ResolvedPlugin;
 import com.jdragon.aggregation.pluginloader.type.IPluginType;
 import org.apache.commons.lang.StringUtils;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
 import java.util.Map;
 
 public class ConfigParser {
 
-    private static final Map<String, Configuration> pluginConfigMap = new HashMap<>();
+    private static final Map<String, Configuration> pluginConfigMap = new ConcurrentHashMap<>();
 
     public static Configuration parseOnePluginConfig(IPluginType pluginType, String pluginName) {
-        String pluginConfigPath = StringUtils.join(
-                new String[]{SystemConstants.PLUGIN_HOME, pluginType.getName(), pluginName}, File.separator);
-        return ConfigParser.parseOnePluginConfig(pluginConfigPath, pluginType);
+        PluginRuntimeSession session = PluginRuntimeSession.current();
+        ResolvedPlugin resolved = session == null
+                ? PluginRuntimeResolvers.resolve(pluginType, pluginName)
+                : session.resolve(pluginType, pluginName);
+        return parseOnePluginConfig(resolved, pluginType);
+    }
+
+    public static Configuration parseOnePluginConfig(ResolvedPlugin resolvedPlugin, IPluginType pluginType) {
+        return parseOnePluginConfig(resolvedPlugin.getDirectory().toString(), pluginType,
+                resolvedPlugin.getRuntimeKey());
     }
 
     public static Configuration parsePluginConfig(List<IPluginType> wantPluginTypes) {
@@ -37,10 +47,17 @@ public class ConfigParser {
 
     public static Configuration parseOnePluginConfig(final String path,
                                                      final IPluginType type) {
+        return parseOnePluginConfig(path, type, path);
+    }
+
+    private static Configuration parseOnePluginConfig(final String path,
+                                                      final IPluginType type,
+                                                      final String cacheNamespace) {
         String fileName = type.getName().equals("transformer") ? "transformer.json" : "plugin.json";
         String filePath = path + File.separator + fileName;
-        if (pluginConfigMap.containsKey(filePath)) {
-            return pluginConfigMap.get(filePath);
+        String cacheKey = cacheNamespace + "|" + filePath;
+        if (pluginConfigMap.containsKey(cacheKey)) {
+            return pluginConfigMap.get(cacheKey);
         }
 
         Configuration configuration = Configuration.from(new File(filePath));
@@ -58,8 +75,12 @@ public class ConfigParser {
         result.set(
                 String.format("plugin.%s.%s", type.getName(), pluginName),
                 configuration.getInternal());
-        pluginConfigMap.put(filePath, result);
+        pluginConfigMap.put(cacheKey, result);
         return result;
+    }
+
+    public static void clearCache() {
+        pluginConfigMap.clear();
     }
 
     private static List<String> getDirAsList(String path) {

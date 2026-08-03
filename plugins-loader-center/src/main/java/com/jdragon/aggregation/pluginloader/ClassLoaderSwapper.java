@@ -1,9 +1,11 @@
 package com.jdragon.aggregation.pluginloader;
 
 import com.jdragon.aggregation.pluginloader.type.IPluginType;
+import com.jdragon.aggregation.pluginloader.runtime.PluginRuntimeSession;
 
 public final class ClassLoaderSwapper{
     private ClassLoader storeClassLoader = null;
+    private PluginRuntimeSession ownedRuntimeSession;
 
     private ClassLoaderSwapper() {
     }
@@ -19,9 +21,21 @@ public final class ClassLoaderSwapper{
     }
 
     public void setCurrentThreadClassLoader(IPluginType pluginType, String pluginName) {
-
-        JarLoader jarLoader = LoadUtil.getJarLoader(pluginType, pluginName);
-        setCurrentThreadClassLoader(jarLoader);
+        boolean openedRuntimeSession = false;
+        if (PluginRuntimeSession.current() == null) {
+            ownedRuntimeSession = PluginRuntimeSession.open();
+            openedRuntimeSession = true;
+        }
+        try {
+            JarLoader jarLoader = LoadUtil.getJarLoader(pluginType, pluginName);
+            setCurrentThreadClassLoader(jarLoader);
+        } catch (RuntimeException | Error ex) {
+            if (openedRuntimeSession) {
+                ownedRuntimeSession.close();
+                ownedRuntimeSession = null;
+            }
+            throw ex;
+        }
     }
 
     /**
@@ -40,6 +54,10 @@ public final class ClassLoaderSwapper{
         ClassLoader classLoader = Thread.currentThread()
                 .getContextClassLoader();
         Thread.currentThread().setContextClassLoader(this.storeClassLoader);
+        if (ownedRuntimeSession != null) {
+            ownedRuntimeSession.close();
+            ownedRuntimeSession = null;
+        }
         return classLoader;
     }
 }

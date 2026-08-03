@@ -89,9 +89,8 @@ public class Configuration {
      * 从包括json的File对象加载Configuration
      */
     public static Configuration from(File file) {
-        try {
-            return Configuration.from(IOUtils
-                    .toString(new FileInputStream(file), Charset.defaultCharset()));
+        try (FileInputStream input = new FileInputStream(file)) {
+            return Configuration.from(IOUtils.toString(input, Charset.defaultCharset()));
         } catch (FileNotFoundException e) {
             throw AggregationException.asException(CommonErrorCode.CONFIG_ERROR,
                     String.format("配置信息错误，您提供的配置文件[%s]不存在. 请检查您的配置文件.", file.getAbsolutePath()));
