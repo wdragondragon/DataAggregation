@@ -1,10 +1,15 @@
 package com.jdragon.aggregation.core.streaming;
 
+import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.type.TypeFactory;
+import com.fasterxml.jackson.databind.util.LRUMap;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -17,7 +22,8 @@ import java.util.List;
  */
 public class AppendOnlySpillList<T> extends AbstractList<T> implements AutoCloseable {
 
-    private final Type itemType;
+    private final ObjectMapper objectMapper;
+    private final JavaType itemType;
     private final RandomAccessFile file;
     private final Path filePath;
     private final List<Long> offsets = new ArrayList<>();
@@ -27,7 +33,11 @@ public class AppendOnlySpillList<T> extends AbstractList<T> implements AutoClose
     }
 
     public AppendOnlySpillList(String prefix, Type itemType, String baseDirectory) {
-        this.itemType = itemType;
+        TypeFactory typeFactory = TypeFactory.defaultInstance()
+                .withCache(new LRUMap<Object, JavaType>(16, 200))
+                .withClassLoader(resolveClassLoader(itemType));
+        this.objectMapper = new ObjectMapper().setTypeFactory(typeFactory);
+        this.itemType = typeFactory.constructType(itemType);
         try {
             Path directory;
             if (baseDirectory == null || baseDirectory.trim().isEmpty()) {
@@ -55,7 +65,7 @@ public class AppendOnlySpillList<T> extends AbstractList<T> implements AutoClose
             int length = file.readInt();
             byte[] payload = new byte[length];
             file.readFully(payload);
-            return RowCodec.decode(new String(payload, StandardCharsets.UTF_8), itemType);
+            return objectMapper.readValue(payload, itemType);
         } catch (IOException e) {
             throw new RuntimeException("Failed to read spill element", e);
         }
@@ -64,7 +74,7 @@ public class AppendOnlySpillList<T> extends AbstractList<T> implements AutoClose
     @Override
     public synchronized boolean add(T element) {
         try {
-            byte[] payload = RowCodec.encode(element).getBytes(StandardCharsets.UTF_8);
+            byte[] payload = objectMapper.writeValueAsBytes(element);
             long offset = file.length();
             file.seek(offset);
             file.writeInt(payload.length);
@@ -83,6 +93,16 @@ public class AppendOnlySpillList<T> extends AbstractList<T> implements AutoClose
 
     public Path getFilePath() {
         return filePath;
+    }
+
+    private static ClassLoader resolveClassLoader(Type type) {
+        if (type instanceof Class<?>) {
+            return ((Class<?>) type).getClassLoader();
+        }
+        if (type instanceof ParameterizedType) {
+            return resolveClassLoader(((ParameterizedType) type).getRawType());
+        }
+        return Thread.currentThread().getContextClassLoader();
     }
 
     @Override
