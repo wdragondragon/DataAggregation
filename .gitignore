@@ -38,4 +38,5 @@ build/
 .DS_Store
 .idea/
 *.log
-package_all/
+package_all/*
+!package_all/build_plugin_repository.sh
