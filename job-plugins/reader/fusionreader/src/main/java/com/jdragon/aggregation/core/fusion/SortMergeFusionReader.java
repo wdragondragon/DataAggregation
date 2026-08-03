@@ -63,4 +63,11 @@ public class SortMergeFusionReader extends Reader.Job {
         FusionDetailOutput.Summary summary = fusionContext.getDetailRecorder().getOutput().getSummary();
         getJobPointReporter().getTrackCommunication().addMessage("fusion_summary", JSONObject.toJSONString(summary));
     }
+
+    @Override
+    public void destroy() {
+        if (pluginManager != null) {
+            pluginManager.clearCache();
+        }
+    }
 }

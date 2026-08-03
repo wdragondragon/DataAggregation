@@ -3,6 +3,7 @@ package com.jdragon.aggregation.core.job.pipline.asyn;
 
 import com.jdragon.aggregation.core.transport.channel.Channel;
 import com.jdragon.aggregation.core.transport.channel.memory.MemoryChannel;
+import com.jdragon.aggregation.pluginloader.runtime.PluginRuntimeSession;
 
 public class Pipeline extends PipelineAbstract {
     public Pipeline(String name, StreamHandler... nodes) {
@@ -22,14 +23,16 @@ public class Pipeline extends PipelineAbstract {
     // 启动流管道，依次处理所有流处理器
     @Override
     public void process() throws InterruptedException {
+        PluginRuntimeSession runtimeSession = PluginRuntimeSession.current();
         for (StreamHandler node : getNodes()) {
-            getExecutorService().submit(() -> {
+            Runnable task = () -> {
                 try {
                     node.process();  // 启动流处理器任务
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
-            });
+            };
+            getExecutorService().submit(runtimeSession == null ? task : runtimeSession.bind(task));
         }
     }
 

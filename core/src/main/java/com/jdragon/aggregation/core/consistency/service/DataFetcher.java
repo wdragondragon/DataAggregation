@@ -9,7 +9,8 @@ import com.jdragon.aggregation.datasource.AbstractDataSourcePlugin;
 import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
 import com.jdragon.aggregation.datasource.SourcePluginType;
 import com.jdragon.aggregation.datasource.file.FileHelper;
-import com.jdragon.aggregation.pluginloader.LoadUtil;
+import com.jdragon.aggregation.pluginloader.PluginClassLoaderCloseable;
+import com.jdragon.aggregation.pluginloader.runtime.PluginRuntimeSession;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
@@ -17,6 +18,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -76,9 +78,10 @@ public class DataFetcher {
 
     private Map<String, List<Map<String, Object>>> fetchDataFromSourcesParallel(List<DataSourceConfig> dataSourceConfigs) {
         Map<String, CompletableFuture<List<Map<String, Object>>>> futures = new LinkedHashMap<>();
+        PluginRuntimeSession runtimeSession = PluginRuntimeSession.current();
 
         for (DataSourceConfig config : dataSourceConfigs) {
-            CompletableFuture<List<Map<String, Object>>> future = CompletableFuture.supplyAsync(() -> {
+            Supplier<List<Map<String, Object>>> fetchTask = () -> {
                 try {
                     List<Map<String, Object>> data = fetchFromSource(config);
                     log.info("Fetched {} records from source: {}", data.size(), config.getSourceName());
@@ -88,7 +91,9 @@ public class DataFetcher {
                     throw AggregationException.asException(CommonErrorCode.RUNTIME_ERROR,
                             "Failed to fetch data from source: " + config.getSourceName(), e);
                 }
-            });
+            };
+            CompletableFuture<List<Map<String, Object>>> future = CompletableFuture.supplyAsync(
+                    runtimeSession == null ? fetchTask : () -> runtimeSession.call(fetchTask));
             futures.put(config.getSourceId(), future);
         }
 
@@ -167,7 +172,9 @@ public class DataFetcher {
         List<Map<String, Object>> results = new ArrayList<>();
 
         // 加载FileHelper插件
-        try (FileHelper fileHelper = LoadUtil.loadJobPlugin(SourcePluginType.SOURCE, config.getPluginName());) {
+        try (PluginClassLoaderCloseable loader = PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(
+                SourcePluginType.SOURCE, config.getPluginName());
+             FileHelper fileHelper = loader.loadPlugin()) {
             // 初始化连接
             if (!fileHelper.connect(config.getConnectionConfig())) {
                 throw new RuntimeException("Failed to connect to file source: " + config.getSourceName());

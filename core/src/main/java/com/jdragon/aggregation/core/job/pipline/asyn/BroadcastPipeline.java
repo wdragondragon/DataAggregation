@@ -4,6 +4,7 @@ import com.jdragon.aggregation.commons.element.Record;
 import com.jdragon.aggregation.core.transport.channel.memory.MemoryChannel;
 import com.jdragon.aggregation.core.transport.record.DefaultRecord;
 import com.jdragon.aggregation.core.transport.record.TerminateRecord;
+import com.jdragon.aggregation.pluginloader.runtime.PluginRuntimeSession;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -25,19 +26,21 @@ public class BroadcastPipeline extends PipelineAbstract {
     @Override
     public void process() throws InterruptedException {
         StreamHandler[] consumers = getNodes();
+        PluginRuntimeSession runtimeSession = PluginRuntimeSession.current();
 
         // 启动所有消费者线程
         for (StreamHandler consumer : consumers) {
-            getExecutorService().submit(() -> {
+            Runnable consumerTask = () -> {
                 try {
                     consumer.process();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
-            });
+            };
+            getExecutorService().submit(runtimeSession == null ? consumerTask : runtimeSession.bind(consumerTask));
         }
         // 广播线程，从本Pipeline的输入队列拉数据，然后广播到所有消费者的输入队列
-        getExecutorService().submit(() -> {
+        Runnable broadcastTask = () -> {
             while (true) {
                 Record record = getInputQueue().pull();
                 if (record == null || record instanceof TerminateRecord) {
@@ -52,7 +55,8 @@ public class BroadcastPipeline extends PipelineAbstract {
                     consumer.getInputQueue().push(deepCopyRecord(record));
                 }
             }
-        });
+        };
+        getExecutorService().submit(runtimeSession == null ? broadcastTask : runtimeSession.bind(broadcastTask));
     }
 
     @Override

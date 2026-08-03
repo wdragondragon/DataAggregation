@@ -2,6 +2,7 @@ package com.jdragon.aggregation.core.job.simple;
 
 import com.jdragon.aggregation.core.job.Message;
 import com.jdragon.aggregation.core.util.MdcTaskDecorator;
+import com.jdragon.aggregation.pluginloader.runtime.PluginRuntimeSession;
 
 import java.util.List;
 import java.util.concurrent.*;
@@ -16,7 +17,8 @@ public class ContinuousStream {
 
     // 启动源端推送线程
     public void startProducer(Supplier<String> dataSupplier) {
-        executor.submit(MdcTaskDecorator.wrap(() -> {
+        PluginRuntimeSession runtimeSession = PluginRuntimeSession.current();
+        Runnable task = MdcTaskDecorator.wrap(() -> {
             try {
                 while (true) {
                     String data = dataSupplier.get();
@@ -32,12 +34,14 @@ public class ContinuousStream {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
-        }));
+        });
+        executor.submit(runtimeSession == null ? task : runtimeSession.bind(task));
     }
 
     // 启动消费者线程
     public void startConsumer() {
-        executor.submit(MdcTaskDecorator.wrap(() -> {
+        PluginRuntimeSession runtimeSession = PluginRuntimeSession.current();
+        Runnable task = MdcTaskDecorator.wrap(() -> {
             try {
                 while (true) {
                     Message message = queue.take();  // 获取消息
@@ -48,7 +52,8 @@ public class ContinuousStream {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
-        }));
+        });
+        executor.submit(runtimeSession == null ? task : runtimeSession.bind(task));
     }
 
     // 注册Transformer

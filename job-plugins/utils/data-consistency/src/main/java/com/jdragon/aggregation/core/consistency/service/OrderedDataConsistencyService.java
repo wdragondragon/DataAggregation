@@ -39,4 +39,13 @@ public class OrderedDataConsistencyService extends DataConsistencyService {
             return result;
         }
     }
+
+    @Override
+    public void shutdown() {
+        try {
+            pluginManager.clearCache();
+        } finally {
+            super.shutdown();
+        }
+    }
 }

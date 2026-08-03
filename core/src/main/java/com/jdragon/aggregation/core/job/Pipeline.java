@@ -3,6 +3,7 @@ package com.jdragon.aggregation.core.job;
 
 import com.jdragon.aggregation.commons.element.Record;
 import com.jdragon.aggregation.core.util.MdcTaskDecorator;
+import com.jdragon.aggregation.pluginloader.runtime.PluginRuntimeSession;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -25,14 +26,16 @@ public class Pipeline extends PipelineAbstract {
     // 启动流管道，依次处理所有流处理器
     @Override
     public void process() throws InterruptedException {
+        PluginRuntimeSession runtimeSession = PluginRuntimeSession.current();
         for (StreamHandler node : getNodes()) {
-            getExecutorService().submit(MdcTaskDecorator.wrap(() -> {
+            Runnable task = MdcTaskDecorator.wrap(() -> {
                 try {
                     node.process();  // 启动流处理器任务
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
-            }));
+            });
+            getExecutorService().submit(runtimeSession == null ? task : runtimeSession.bind(task));
         }
     }
 

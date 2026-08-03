@@ -6,6 +6,8 @@ import com.jdragon.aggregation.datasource.AbstractDataSourcePlugin;
 import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
 import com.jdragon.aggregation.datasource.SourcePluginType;
 import com.jdragon.aggregation.pluginloader.LoadUtil;
+import com.jdragon.aggregation.pluginloader.runtime.ResolvedPlugin;
+import com.jdragon.aggregation.pluginloader.runtime.PluginRuntimeSession;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
@@ -14,12 +16,30 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
-public class DataSourcePluginManager {
+public class DataSourcePluginManager implements AutoCloseable {
 
-    private static final Map<String, AbstractDataSourcePlugin> pluginCache = new ConcurrentHashMap<>();
+    private final Map<String, AbstractDataSourcePlugin> pluginCache = new ConcurrentHashMap<>();
+    private PluginRuntimeSession ownedRuntimeSession;
 
     public AbstractDataSourcePlugin getDataSourcePlugin(String pluginName) {
-        return pluginCache.computeIfAbsent(pluginName, this::loadPlugin);
+        PluginRuntimeSession currentSession = PluginRuntimeSession.current();
+        if (currentSession != null) {
+            return getDataSourcePluginInCurrentSession(pluginName);
+        }
+        PluginRuntimeSession session = ownedSession();
+        return session.call(() -> getDataSourcePluginInCurrentSession(pluginName));
+    }
+
+    private AbstractDataSourcePlugin getDataSourcePluginInCurrentSession(String pluginName) {
+        ResolvedPlugin resolvedPlugin = LoadUtil.resolvePlugin(SourcePluginType.SOURCE, pluginName);
+        return pluginCache.computeIfAbsent(resolvedPlugin.getRuntimeKey(), ignored -> loadPlugin(pluginName));
+    }
+
+    private synchronized PluginRuntimeSession ownedSession() {
+        if (ownedRuntimeSession == null || ownedRuntimeSession.isClosed()) {
+            ownedRuntimeSession = PluginRuntimeSession.createDetached();
+        }
+        return ownedRuntimeSession;
     }
 
     private AbstractDataSourcePlugin loadPlugin(String pluginName) {
@@ -36,13 +56,17 @@ public class DataSourcePluginManager {
     }
 
     public void unloadPlugin(String pluginName) {
-        AbstractDataSourcePlugin plugin = pluginCache.remove(pluginName);
-        if (plugin != null) {
-            try {
-                plugin.destroy();
-                log.info("Data source plugin unloaded: {}", pluginName);
-            } catch (Exception e) {
-                log.warn("Error while destroying plugin: {}", pluginName, e);
+        for (String key : new java.util.ArrayList<String>(pluginCache.keySet())) {
+            if (key.startsWith(SourcePluginType.SOURCE.getName() + "/" + pluginName + "@")) {
+                AbstractDataSourcePlugin plugin = pluginCache.remove(key);
+                if (plugin != null) {
+                    try {
+                        plugin.destroy();
+                        log.info("Data source plugin unloaded: {}", pluginName);
+                    } catch (Exception e) {
+                        log.warn("Error while destroying plugin: {}", pluginName, e);
+                    }
+                }
             }
         }
     }
@@ -56,7 +80,18 @@ public class DataSourcePluginManager {
             }
         });
         pluginCache.clear();
+        synchronized (this) {
+            if (ownedRuntimeSession != null) {
+                ownedRuntimeSession.close();
+                ownedRuntimeSession = null;
+            }
+        }
         log.info("Cleared all data source plugins cache");
+    }
+
+    @Override
+    public void close() {
+        clearCache();
     }
 
     public static BaseDataSourceDTO createDataSourceDTO(com.jdragon.aggregation.core.consistency.model.DataSourceConfig config) {

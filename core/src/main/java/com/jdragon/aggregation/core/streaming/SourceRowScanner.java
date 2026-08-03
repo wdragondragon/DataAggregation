@@ -9,7 +9,8 @@ import com.jdragon.aggregation.datasource.AbstractDataSourcePlugin;
 import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
 import com.jdragon.aggregation.datasource.SourcePluginType;
 import com.jdragon.aggregation.datasource.file.FileHelper;
-import com.jdragon.aggregation.pluginloader.LoadUtil;
+import com.jdragon.aggregation.pluginloader.PluginClassLoaderCloseable;
+import com.jdragon.aggregation.pluginloader.runtime.PluginRuntimeSession;
 import com.jdragon.aggregation.core.util.MdcTaskDecorator;
 import lombok.extern.slf4j.Slf4j;
 
@@ -44,11 +45,14 @@ public class SourceRowScanner {
                     scan(config, row -> consumer.accept(config.getSourceId(), row));
                 }
             } else {
+                PluginRuntimeSession runtimeSession = PluginRuntimeSession.current();
                 CompletableFuture<?>[] futures = new CompletableFuture<?>[configs.size()];
                 for (int i = 0; i < configs.size(); i++) {
                     final DataSourceConfig config = configs.get(i);
+                    Runnable scanTask = () -> scan(config, row -> consumer.accept(config.getSourceId(), row));
+                    Runnable runtimeBoundTask = runtimeSession == null ? scanTask : runtimeSession.bind(scanTask);
                     futures[i] = CompletableFuture.runAsync(
-                            MdcTaskDecorator.wrap(() -> scan(config, row -> consumer.accept(config.getSourceId(), row))),
+                            MdcTaskDecorator.wrap(runtimeBoundTask),
                             executor
                     );
                 }
@@ -92,7 +96,9 @@ public class SourceRowScanner {
     }
 
     private void scanFileSource(DataSourceConfig config, Consumer<Map<String, Object>> consumer) {
-        try (FileHelper fileHelper = LoadUtil.loadJobPlugin(SourcePluginType.SOURCE, config.getPluginName())) {
+        try (PluginClassLoaderCloseable loader = PluginClassLoaderCloseable.newCurrentThreadClassLoaderSwapper(
+                SourcePluginType.SOURCE, config.getPluginName());
+             FileHelper fileHelper = loader.loadPlugin()) {
             if (!fileHelper.connect(config.getConnectionConfig())) {
                 throw new RuntimeException("Failed to connect to file source: " + config.getSourceName());
             }

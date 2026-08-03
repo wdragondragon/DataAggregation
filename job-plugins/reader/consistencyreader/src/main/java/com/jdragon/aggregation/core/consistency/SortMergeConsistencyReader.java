@@ -24,6 +24,7 @@ public class SortMergeConsistencyReader extends Reader.Job {
 
     private ConsistencyRule rule;
     private AdaptiveSortMergeConsistencyExecutor executor;
+    private DataSourcePluginManager pluginManager;
     private List<String> targetColumns;
     private final ConsistencyRecordProjector projector = new ConsistencyRecordProjector();
 
@@ -37,7 +38,7 @@ public class SortMergeConsistencyReader extends Reader.Job {
             rule.setOutputConfig(outputConfig);
         }
 
-        DataSourcePluginManager pluginManager = new DataSourcePluginManager();
+        pluginManager = new DataSourcePluginManager();
         String outputDirectory = rule.getOutputConfig().getOutputPath();
         if (outputDirectory == null || outputDirectory.trim().isEmpty()) {
             outputDirectory = "./consistency-results";
@@ -62,5 +63,12 @@ public class SortMergeConsistencyReader extends Reader.Job {
         }
         getJobPointReporter().getTrackCommunication().addMessage("consistency_summary", JSONObject.toJSONString(result.getSummary()));
         getJobPointReporter().getTrackCommunication().addMessage("consistency_result", JSONObject.toJSONString(result));
+    }
+
+    @Override
+    public void destroy() {
+        if (pluginManager != null) {
+            pluginManager.clearCache();
+        }
     }
 }

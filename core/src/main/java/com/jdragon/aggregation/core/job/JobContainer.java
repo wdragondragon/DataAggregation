@@ -25,6 +25,7 @@ import com.jdragon.aggregation.core.util.MdcTaskDecorator;
 import com.jdragon.aggregation.core.utils.*;
 import com.jdragon.aggregation.pluginloader.ClassLoaderSwapper;
 import com.jdragon.aggregation.pluginloader.PluginClassLoaderCloseable;
+import com.jdragon.aggregation.pluginloader.runtime.PluginRuntimeSession;
 import com.jdragon.aggregation.pluginloader.constant.SystemConstants;
 import com.jdragon.aggregation.pluginloader.type.IPluginType;
 import lombok.Getter;
@@ -59,6 +60,10 @@ public class JobContainer {
 
     private Thread writerThread;
 
+    private Thread reporterThread;
+
+    private PluginRuntimeSession pluginRuntimeSession;
+
     private final Map<String, Object> runContext = new HashMap<>();
 
     public static void main(String[] args) {
@@ -77,57 +82,75 @@ public class JobContainer {
     }
 
     public void start() {
-        Long jobId = (Long) this.runContext.getOrDefault("jobId", 1L);
-        this.configuration.set("jobId", jobId);
-        this.jobPointReporter.loadReporter(this.configuration);
-
-        startTime = System.currentTimeMillis();
-
-        log.info("start job from configuration: \n{}", filterSensitiveConfiguration(configuration.clone()).beautify());
-        // 初始化全局channel 和 communication
-        Communication jobCommunication = new Communication();
-        jobCommunication.setTimestamp(startTime);
-        Channel channel = new MemoryChannel();
-        channel.setCommunication(jobCommunication);
-
-        jobPointReporter.setTrackCommunication(jobCommunication);
-        jobPointReporter.recovery();
-        // 启动上报线程
-        Thread jobPointReportThread = MdcTaskDecorator.newThread(jobPointReporter,
-                String.format("DataAggregation-Thread-reporter-%d", jobId));
-        jobPointReportThread.start();
+        pluginRuntimeSession = PluginRuntimeSession.open();
         try {
-            // 启动作业
-            this.startJob(configuration, channel, jobCommunication, jobPointReporter);
-            // 持续输出作业状态
-            this.holdDoStat(jobCommunication, configuration);
-        } catch (AggregationException e) {
-            log.error("", e);
-            if (!(e.getCause() instanceof InterruptedException)) {
+            Long jobId = (Long) this.runContext.getOrDefault("jobId", 1L);
+            this.configuration.set("jobId", jobId);
+            this.jobPointReporter.loadReporter(this.configuration);
+
+            startTime = System.currentTimeMillis();
+
+            log.info("start job from configuration: \n{}", filterSensitiveConfiguration(configuration.clone()).beautify());
+            // 初始化全局channel 和 communication
+            Communication jobCommunication = new Communication();
+            jobCommunication.setTimestamp(startTime);
+            Channel channel = new MemoryChannel();
+            channel.setCommunication(jobCommunication);
+
+            jobPointReporter.setTrackCommunication(jobCommunication);
+            jobPointReporter.recovery();
+            // 启动上报线程
+            reporterThread = MdcTaskDecorator.newThread(pluginRuntimeSession.bind(jobPointReporter),
+                    String.format("DataAggregation-Thread-reporter-%d", jobId));
+            reporterThread.start();
+
+            try {
+                // 启动作业
+                this.startJob(configuration, channel, jobCommunication, jobPointReporter);
+                // 持续输出作业状态
+                this.holdDoStat(jobCommunication, configuration);
+            } catch (RuntimeException e) {
+                log.error("", e);
+                if (jobCommunication.getThrowable() == null) {
+                    jobCommunication.setThrowable(e);
+                }
                 jobCommunication.setState(State.FAILED);
-                throw e;
+                if (!(e instanceof AggregationException)
+                        || !(e.getCause() instanceof InterruptedException)) {
+                    throw e;
+                }
+            } finally {
+                // Any abrupt exit must make the reporter observe a terminal state.
+                if (!jobCommunication.isFinished()) {
+                    jobCommunication.setState(State.FAILED);
+                }
+                // 最后一次上报作业运行状态
+                jobPointReporter.openReport().report();
+                if (readerThread != null && readerThread.isAlive()) {
+                    readerThread.interrupt();
+                }
+                if (writerThread != null && writerThread.isAlive()) {
+                    writerThread.interrupt();
+                }
+                //最后打印cpu的平均消耗，GC的统计
+                endTime = System.currentTimeMillis();
+                long totalCosts = (endTime - startTime) / 1000;
+                SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                log.info("任务运行结束==>开始时间：{} | 结束时间：{} | 耗时：{}s | 任务状态：{}",
+                        dateFormat.format(new Date(startTime)), dateFormat.format(new Date()), totalCosts,
+                        jobCommunication.getState());
+                VMInfo vmInfo = VMInfo.getVmInfo();
+                if (vmInfo != null) {
+                    vmInfo.getDelta(false);
+                    log.info(vmInfo.totalString());
+                }
             }
-            jobCommunication.setState(State.FAILED);
         } finally {
-            // 最后一次上报作业运行状态
-            jobPointReporter.openReport().report();
-            if (readerThread != null && readerThread.isAlive()) {
-                readerThread.interrupt();
-            }
-            if (writerThread != null && writerThread.isAlive()) {
-                writerThread.interrupt();
-            }
-            //最后打印cpu的平均消耗，GC的统计
-            endTime = System.currentTimeMillis();
-            long totalCosts = (endTime - startTime) / 1000;
-            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-            log.info("任务运行结束==>开始时间：{} | 结束时间：{} | 耗时：{}s | 任务状态：{}",
-                    dateFormat.format(new Date(startTime)), dateFormat.format(new Date()), totalCosts,
-                    jobCommunication.getState());
-            VMInfo vmInfo = VMInfo.getVmInfo();
-            if (vmInfo != null) {
-                vmInfo.getDelta(false);
-                log.info(vmInfo.totalString());
+            if (pluginRuntimeSession != null) {
+                Map<String, String> pluginRevisions = pluginRuntimeSession.revisions();
+                runContext.put("pluginRevisions", pluginRevisions);
+                pluginRuntimeSession.closeAfterThreads(readerThread, writerThread, reporterThread);
+                pluginRuntimeSession = null;
             }
         }
     }
@@ -269,7 +292,8 @@ public class JobContainer {
         }
         runner.setJobId(jobId);
         runner.setRunnerCommunication(jobCommunication);
-        Thread runThread = MdcTaskDecorator.newThread(runner,
+        Runnable runtimeBoundRunner = pluginRuntimeSession == null ? runner : pluginRuntimeSession.bind(runner);
+        Thread runThread = MdcTaskDecorator.newThread(runtimeBoundRunner,
                 String.format("DataAggregation-Thread-%s-%d", pluginType.getName(), jobId));
         runThread.setContextClassLoader(jobPlugin.getClassLoader());
         return runThread;
