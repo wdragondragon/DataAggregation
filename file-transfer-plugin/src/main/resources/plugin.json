@@ -1,0 +1,6 @@
+{
+  "name": "filetransfer",
+  "class": "com.jdragon.aggregation.transfer.plugin.FileTransferJobPlugin",
+  "description": "binary file transfer job",
+  "developer": "jdragon"
+}
