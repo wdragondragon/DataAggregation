@@ -1,0 +1,8 @@
+{
+  "endpoint": "",
+  "accessKey": "",
+  "secretKey": "",
+  "bucket": "",
+  "rootPath": "",
+  "createBucket": false
+}

@@ -1,0 +1,6 @@
+{
+  "name": "oss",
+  "class": "com.jdragon.aggregation.datasource.file.oss.OssSourcePlugin",
+  "description": "Aliyun OSS file source",
+  "developer": "jdragon"
+}

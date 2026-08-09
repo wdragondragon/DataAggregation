@@ -2,7 +2,11 @@ package com.jdragon.aggregation.datasource.file.ftp;
 
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.util.Configuration;
-import com.jdragon.aggregation.datasource.file.FileHelper;
+import com.jdragon.aggregation.datasource.file.transfer.StorageCapabilities;
+import com.jdragon.aggregation.datasource.file.transfer.TransferFileEntry;
+import com.jdragon.aggregation.datasource.file.transfer.TransferFilePage;
+import com.jdragon.aggregation.datasource.file.transfer.TransferFileSystem;
+import com.jdragon.aggregation.datasource.file.transfer.TransferWriteSession;
 import com.jdragon.aggregation.datasource.file.utils.FileParser;
 import com.jdragon.aggregation.pluginloader.spi.AbstractPlugin;
 import lombok.extern.slf4j.Slf4j;
@@ -15,18 +19,28 @@ import org.apache.commons.net.ftp.*;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.nio.charset.Charset;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.NoSuchFileException;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
 
 @Slf4j
-public class FtpHelper extends AbstractPlugin implements FileHelper {
+public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
 
     private static final Logger LOG = LoggerFactory.getLogger(FtpHelper.class);
+    private static final int COPY_BUFFER_SIZE = 64 * 1024;
+    private static final int OPTIONAL_COMPLETION_REPLY_TIMEOUT_MILLIS = 100;
+    private static final StorageCapabilities CAPABILITIES =
+            new StorageCapabilities(true, true, true, false, false, false, Set.of("SHA-256"));
 
     private FTPClient ftpClient = null;
 
@@ -365,6 +379,370 @@ public class FtpHelper extends AbstractPlugin implements FileHelper {
                     absPath, ftpClient.getReplyCode(), ftpClient.getReplyString());
             LOG.error(message);
             throw new IOException(message);
+        }
+    }
+
+    @Override
+    public TransferFileEntry stat(String path) throws IOException {
+        String resolved = resolveRemotePath(path);
+        FTPFile file = findFile(resolved);
+        if (file == null) {
+            throw new NoSuchFileException(path);
+        }
+        long modified = file.getTimestamp() == null ? 0L : file.getTimestamp().getTimeInMillis();
+        return new TransferFileEntry(resolved, remoteName(resolved), file.isDirectory(),
+                file.isDirectory() ? 0L : file.getSize(), modified, null);
+    }
+
+    @Override
+    public TransferFilePage listPage(String directory, String cursor, int pageSize) throws IOException {
+        String resolved = resolveRemotePath(directory);
+        FTPFile[] files = ftpClient.listFiles(resolved);
+        List<TransferFileEntry> entries = new ArrayList<>();
+        for (FTPFile file : files) {
+            if (StringUtils.equalsAny(file.getName(), ".", "..")) {
+                continue;
+            }
+            String path = processingPath(resolved, file.getName());
+            long modified = file.getTimestamp() == null ? 0L : file.getTimestamp().getTimeInMillis();
+            entries.add(new TransferFileEntry(path, file.getName(), file.isDirectory(),
+                    file.isDirectory() ? 0L : file.getSize(), modified, null));
+        }
+        entries.sort(Comparator.comparing(TransferFileEntry::directory).reversed()
+                .thenComparing(TransferFileEntry::name, String.CASE_INSENSITIVE_ORDER));
+        int offset = parseCursor(cursor);
+        int limit = Math.max(1, Math.min(pageSize, 1_000));
+        int from = Math.min(offset, entries.size());
+        int to = Math.min(from + limit, entries.size());
+        boolean truncated = to < entries.size();
+        return new TransferFilePage(entries.subList(from, to), truncated ? String.valueOf(to) : null, truncated);
+    }
+
+    @Override
+    public InputStream openRead(String path, long offset, long length) throws IOException {
+        if (offset < 0 || length < 0) {
+            throw new IllegalArgumentException("offset and length must be non-negative");
+        }
+        String resolved = resolveRemotePath(path);
+        FTPFile file = findFile(resolved);
+        if (file == null || !file.isFile()) {
+            throw new NoSuchFileException(path);
+        }
+        if (offset > file.getSize()) {
+            throw new IOException("read offset exceeds file size: " + offset);
+        }
+        ftpClient.setFileType(FTP.BINARY_FILE_TYPE);
+        ftpClient.setRestartOffset(offset);
+        InputStream stream = ftpClient.retrieveFileStream(resolved);
+        if (stream == null) {
+            ftpClient.setRestartOffset(0);
+            throw new IOException("FTP server did not open read stream for " + resolved
+                    + ", reply: " + ftpClient.getReplyString());
+        }
+        pendingCommand = true;
+        boolean reachesEnd = length >= file.getSize() - offset;
+        return new FtpRangeInputStream(stream, length, resolved, reachesEnd);
+    }
+
+    @Override
+    public TransferWriteSession prepareWrite(String temporaryPath, String sessionId) throws IOException {
+        String resolved = resolveRemotePath(temporaryPath);
+        createParentDirectory(resolved);
+        FTPFile file = findFile(resolved);
+        if (file != null && file.isDirectory()) {
+            throw new IOException("temporary path is a directory: " + temporaryPath);
+        }
+        long offset = file == null ? 0L : file.getSize();
+        if (file == null) {
+            try (InputStream empty = InputStream.nullInputStream()) {
+                if (!ftpClient.storeFile(resolved, empty)) {
+                    throw new IOException("failed to create FTP temporary file " + resolved
+                            + ", reply: " + ftpClient.getReplyString());
+                }
+            }
+        }
+        return new TransferWriteSession(sessionId, resolved, offset, Map.of());
+    }
+
+    @Override
+    public long append(TransferWriteSession session, long offset, InputStream source, long length)
+            throws IOException {
+        if (offset < 0 || length < 0) {
+            throw new IllegalArgumentException("offset and length must be non-negative");
+        }
+        String path = resolveRemotePath(session.temporaryPath());
+        FTPFile existing = findFile(path);
+        long size = existing == null ? 0L : existing.getSize();
+        if (size != offset) {
+            throw new IOException("temporary file offset mismatch, expected " + offset + " but was " + size);
+        }
+        ftpClient.setFileType(FTP.BINARY_FILE_TYPE);
+        ftpClient.setRestartOffset(offset);
+        OutputStream output = ftpClient.storeFileStream(path);
+        if (output == null) {
+            ftpClient.setRestartOffset(0);
+            throw new IOException("FTP server did not open write stream for " + path
+                    + ", reply: " + ftpClient.getReplyString());
+        }
+        pendingCommand = true;
+        long written = 0L;
+        IOException failure = null;
+        try (OutputStream target = output) {
+            byte[] buffer = new byte[COPY_BUFFER_SIZE];
+            long remaining = length;
+            while (remaining > 0) {
+                int read = source.read(buffer, 0, (int) Math.min(buffer.length, remaining));
+                if (read < 0) {
+                    break;
+                }
+                if (read == 0) {
+                    continue;
+                }
+                target.write(buffer, 0, read);
+                written += read;
+                remaining -= read;
+            }
+        } catch (IOException e) {
+            failure = e;
+        }
+        try {
+            completePendingTransfer(path);
+        } catch (IOException completionError) {
+            if (failure != null) {
+                failure.addSuppressed(completionError);
+            } else {
+                failure = completionError;
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
+        return written;
+    }
+
+    @Override
+    public void commit(TransferWriteSession session, String targetPath, boolean replaceExisting)
+            throws IOException {
+        move(session.temporaryPath(), targetPath, replaceExisting);
+    }
+
+    @Override
+    public void abort(TransferWriteSession session) throws IOException {
+        ftpClient.deleteFile(resolveRemotePath(session.temporaryPath()));
+    }
+
+    @Override
+    public void move(String sourcePath, String targetPath, boolean replaceExisting) throws IOException {
+        String source = resolveRemotePath(sourcePath);
+        String target = resolveRemotePath(targetPath);
+        if (transferExists(target)) {
+            if (!replaceExisting) {
+                throw new FileAlreadyExistsException(targetPath);
+            }
+            if (!ftpClient.deleteFile(target)) {
+                throw new IOException("failed to replace FTP target " + target
+                        + ", reply: " + ftpClient.getReplyString());
+            }
+        }
+        createParentDirectory(target);
+        if (!ftpClient.rename(source, target)) {
+            throw new IOException("failed to rename FTP path " + source + " to " + target
+                    + ", reply: " + ftpClient.getReplyString());
+        }
+    }
+
+    @Override
+    public void delete(String path) throws IOException {
+        String resolved = resolveRemotePath(path);
+        FTPFile file = findFile(resolved);
+        if (file == null) {
+            return;
+        }
+        if (file.isDirectory()) {
+            FTPFile[] children = ftpClient.listFiles(resolved);
+            for (FTPFile child : children) {
+                if (!StringUtils.equalsAny(child.getName(), ".", "..")) {
+                    delete(processingPath(resolved, child.getName()));
+                }
+            }
+            if (!ftpClient.removeDirectory(resolved)) {
+                throw new IOException("failed to remove FTP directory " + resolved);
+            }
+        } else if (!ftpClient.deleteFile(resolved)) {
+            throw new IOException("failed to delete FTP file " + resolved);
+        }
+    }
+
+    @Override
+    public StorageCapabilities capabilities() {
+        return CAPABILITIES;
+    }
+
+    @Override
+    public boolean transferExists(String path) throws IOException {
+        return findFile(resolveRemotePath(path)) != null;
+    }
+
+    private FTPFile findFile(String path) throws IOException {
+        String resolved = normalizeRemotePath(path);
+        if (StringUtils.isBlank(resolved) || "/".equals(resolved)) {
+            FTPFile root = new FTPFile();
+            root.setName("/");
+            root.setType(FTPFile.DIRECTORY_TYPE);
+            return root;
+        }
+        int slash = resolved.lastIndexOf('/');
+        String parent = slash < 0 ? "." : slash == 0 ? "/" : resolved.substring(0, slash);
+        return findListedFile(ftpClient.listFiles(parent), remoteName(resolved));
+    }
+
+    static FTPFile findListedFile(FTPFile[] listed, String expectedName) {
+        if (listed == null || expectedName == null) {
+            return null;
+        }
+        for (FTPFile candidate : listed) {
+            if (candidate != null && expectedName.equals(candidate.getName())) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private void createParentDirectory(String path) throws IOException {
+        int slash = path.lastIndexOf('/');
+        if (slash > 0) {
+            mkdir(path.substring(0, slash));
+        }
+    }
+
+    private String remoteName(String path) {
+        int slash = path.lastIndexOf('/');
+        return slash < 0 ? path : path.substring(slash + 1);
+    }
+
+    private int parseCursor(String cursor) {
+        if (StringUtils.isBlank(cursor)) {
+            return 0;
+        }
+        try {
+            return Math.max(0, Integer.parseInt(cursor));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("invalid FTP page cursor: " + cursor, e);
+        }
+    }
+
+    private void completePendingTransfer(String path) throws IOException {
+        try {
+            if (!ftpClient.completePendingCommand()) {
+                throw new IOException("FTP data transfer did not complete for " + path
+                        + ", reply: " + ftpClient.getReplyString());
+            }
+        } finally {
+            ftpClient.setRestartOffset(0);
+            pendingCommand = false;
+        }
+    }
+
+    void completePartialTransfer(String path) throws IOException {
+        try {
+            boolean completed = ftpClient.completePendingCommand();
+            int replyCode = ftpClient.getReplyCode();
+            if (!completed && replyCode == FTPReply.TRANSFER_ABORTED) {
+                consumeOptionalCompletionReply(path);
+                completed = true;
+            }
+            if (!completed) {
+                throw new IOException("FTP partial data transfer did not complete for " + path
+                        + ", reply: " + ftpClient.getReplyString());
+            }
+        } finally {
+            ftpClient.setRestartOffset(0);
+            pendingCommand = false;
+        }
+    }
+
+    private void consumeOptionalCompletionReply(String path) throws IOException {
+        int originalTimeout = ftpClient.getSoTimeout();
+        try {
+            ftpClient.setSoTimeout(OPTIONAL_COMPLETION_REPLY_TIMEOUT_MILLIS);
+            try {
+                if (!ftpClient.completePendingCommand()) {
+                    throw new IOException("FTP partial data transfer returned an unexpected trailing reply for "
+                            + path + ", reply: " + ftpClient.getReplyString());
+                }
+            } catch (SocketTimeoutException ignored) {
+                // Some servers terminate an intentionally shortened RETR with only a 426 reply.
+            }
+        } finally {
+            ftpClient.setSoTimeout(originalTimeout);
+        }
+    }
+
+    private final class FtpRangeInputStream extends java.io.FilterInputStream {
+        private long remaining;
+        private final String path;
+        private final boolean reachesEnd;
+        private boolean closed;
+
+        private FtpRangeInputStream(InputStream input, long remaining, String path, boolean reachesEnd) {
+            super(input);
+            this.remaining = remaining;
+            this.path = path;
+            this.reachesEnd = reachesEnd;
+        }
+
+        @Override
+        public int read() throws IOException {
+            if (remaining <= 0) {
+                return -1;
+            }
+            int value = super.read();
+            if (value >= 0) {
+                remaining--;
+            }
+            return value;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            if (remaining <= 0) {
+                return -1;
+            }
+            int read = super.read(buffer, offset, (int) Math.min(length, remaining));
+            if (read > 0) {
+                remaining -= read;
+            }
+            return read;
+        }
+
+        @Override
+        public void close() throws IOException {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            IOException failure = null;
+            try {
+                super.close();
+            } catch (IOException e) {
+                failure = e;
+            }
+            try {
+                if (reachesEnd) {
+                    completePendingTransfer(path);
+                } else {
+                    completePartialTransfer(path);
+                }
+            } catch (IOException completionError) {
+                if (failure != null) {
+                    failure.addSuppressed(completionError);
+                } else {
+                    failure = completionError;
+                }
+            }
+            if (failure != null) {
+                throw failure;
+            }
         }
     }
 
