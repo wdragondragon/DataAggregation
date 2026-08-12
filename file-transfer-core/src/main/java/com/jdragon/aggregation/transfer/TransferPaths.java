@@ -62,15 +62,29 @@ public final class TransferPaths {
     }
 
     public static String relativeTo(String root, String path) {
+        return relativeTo(root, path, true);
+    }
+
+    public static String relativeTo(String root, String path, boolean caseSensitive) {
         String normalizedRoot = normalize(root);
         String normalizedPath = normalize(path);
-        if (normalizedRoot.equalsIgnoreCase(normalizedPath)) {
+        if (equals(normalizedRoot, normalizedPath, caseSensitive)) {
             return fileName(normalizedPath);
         }
         String prefix = normalizedRoot.endsWith("/") ? normalizedRoot : normalizedRoot + "/";
-        if (!normalizedPath.regionMatches(true, 0, prefix, 0, prefix.length())) {
+        if (!startsWith(normalizedPath, prefix, caseSensitive)) {
             throw new IllegalArgumentException("path is outside selection root: " + path);
         }
         return normalizedPath.substring(prefix.length());
+    }
+
+    static boolean equals(String left, String right, boolean caseSensitive) {
+        return caseSensitive ? left.equals(right) : left.equalsIgnoreCase(right);
+    }
+
+    static boolean startsWith(String value, String prefix, boolean caseSensitive) {
+        return caseSensitive
+                ? value.startsWith(prefix)
+                : value.regionMatches(true, 0, prefix, 0, prefix.length());
     }
 }

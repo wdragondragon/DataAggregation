@@ -109,13 +109,14 @@ public class TransferEngineLocalIntegrationTest {
     }
 
     @Test
-    public void opensTargetOnlyAfterSourceChecksumCompletes() throws Exception {
+    public void streamsSourceChecksumWhenTargetDoesNotExist() throws Exception {
         Path source = temporaryFolder.newFolder("source-before-target-source").toPath();
         Path target = temporaryFolder.newFolder("source-before-target-target").toPath();
         Files.writeString(source.resolve("item.txt"), "payload");
         PreparedTransfer prepared = prepare(spec(source, target, List.of("item.txt"), List.of(),
                 TransferPolicy.defaults(), runtime(1)), "run-source-before-target");
         AtomicBoolean targetOpened = new AtomicBoolean();
+        AtomicBoolean sourceChecksumCalled = new AtomicBoolean();
 
         TransferResult result = new TransferEngine().execute(prepared, () -> {
             Configuration configuration = Configuration.newDefault();
@@ -123,8 +124,7 @@ public class TransferEngineLocalIntegrationTest {
             LocalSourcePlugin plugin = new LocalSourcePlugin() {
                 @Override
                 public String checksum(String path, String algorithm) throws java.io.IOException {
-                    assertFalse("target must stay closed while source checksum is running",
-                            targetOpened.get());
+                    sourceChecksumCalled.set(true);
                     return super.checksum(path, algorithm);
                 }
             };
@@ -137,6 +137,8 @@ public class TransferEngineLocalIntegrationTest {
 
         assertEquals(TransferRunStatus.SUCCESS, result.status());
         assertTrue(targetOpened.get());
+        assertFalse("a missing target should not require a source pre-read", sourceChecksumCalled.get());
+        assertEquals("payload", Files.readString(target.resolve("item.txt")));
     }
 
     @Test

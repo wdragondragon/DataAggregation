@@ -41,8 +41,9 @@ public class FileTransferJobPlugin extends AbstractPlugin {
         String runId = configuration.getString("runId", UUID.randomUUID().toString());
         Instant plannedAt = parsePlannedAt(configuration.getString("plannedAt"));
         try (PluginRuntimeSession session = PluginRuntimeSession.open();
-             TransferFileSystem source = new SourceTransferFileSystemFactory(spec.source()).open()) {
-            return new TransferPlanner().prepare(spec, source, runId, plannedAt, listener);
+             TransferFileSystem source = new SourceTransferFileSystemFactory(spec.source()).open();
+             TransferFileSystem target = new SourceTransferFileSystemFactory(spec.target()).open()) {
+            return new TransferPlanner().prepare(spec, source, target, runId, plannedAt, listener);
         }
     }
 
@@ -58,8 +59,9 @@ public class FileTransferJobPlugin extends AbstractPlugin {
             SourceTransferFileSystemFactory sourceFactory = new SourceTransferFileSystemFactory(spec.source());
             SourceTransferFileSystemFactory targetFactory = new SourceTransferFileSystemFactory(spec.target());
             PreparedTransfer prepared;
-            try (TransferFileSystem source = sourceFactory.open()) {
-                prepared = new TransferPlanner().prepare(spec, source, runId, plannedAt, events);
+            try (TransferFileSystem source = sourceFactory.open();
+                 TransferFileSystem target = targetFactory.open()) {
+                prepared = new TransferPlanner().prepare(spec, source, target, runId, plannedAt, events);
             }
             TransferEngine engine = new TransferEngine(session::bind);
             return engine.execute(prepared, sourceFactory, targetFactory,

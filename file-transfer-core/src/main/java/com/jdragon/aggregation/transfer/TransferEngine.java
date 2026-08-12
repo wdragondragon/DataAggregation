@@ -21,10 +21,14 @@ import com.jdragon.aggregation.transfer.model.TransferRuntimeOptions;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.FileAlreadyExistsException;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -204,11 +208,12 @@ public class TransferEngine {
             TransferFileEntry currentSource = source.stat(item.sourcePath());
             ensureSourceSnapshot(item.sourceSnapshot(), currentSource);
 
-            String sourceChecksum = source.checksum(item.sourcePath(), policy.checksumAlgorithm());
             try (TransferFileSystem target = targetFactory.open()) {
             boolean targetExisted = target.transferExists(item.targetPath());
+            String sourceChecksum = null;
             String originalTargetChecksum = null;
             if (targetExisted) {
+                sourceChecksum = source.checksum(item.sourcePath(), policy.checksumAlgorithm());
                 originalTargetChecksum = target.checksum(item.targetPath(), policy.checksumAlgorithm());
                 if (sourceChecksum.equals(originalTargetChecksum)) {
                     checkpoints.delete(plan.runId(), item.itemId());
@@ -230,12 +235,23 @@ public class TransferEngine {
             long offset = resume.session().confirmedOffset();
             long resumedBytes = offset;
             long attemptStartedNanos = System.nanoTime();
+            MessageDigest streamingDigest = sourceChecksum == null
+                    ? newDigest(policy.checksumAlgorithm())
+                    : null;
+            if (streamingDigest != null && offset > 0) {
+                try (InputStream prefix = source.openRead(item.sourcePath(), 0, offset)) {
+                    updateDigest(prefix, offset, streamingDigest, item.sourcePath());
+                }
+            }
             while (offset < item.sourceSnapshot().size()) {
                 offset = pauseOrCancel(plan, item, state, control, events, attempt, offset);
                 long length = Math.min(runtime.chunkSizeBytes(), item.sourceSnapshot().size() - offset);
                 long written;
                 try (InputStream input = source.openRead(item.sourcePath(), offset, length)) {
-                    written = target.append(resume.session(), offset, input, length);
+                    InputStream transferInput = streamingDigest == null
+                            ? input
+                            : new DigestInputStream(input, streamingDigest);
+                    written = target.append(resume.session(), offset, transferInput, length);
                 }
                 if (written != length) {
                     throw new IOException("unexpected EOF: expected " + length + " bytes but wrote " + written);
@@ -252,6 +268,9 @@ public class TransferEngine {
                         TransferItemStatus.TRANSFERRING, offset, item.sourceSnapshot().size(), attempt,
                         "file block transferred", null, Map.of("resumedBytes", resumedBytes)));
                 throttle(runtime, offset - resumedBytes, attemptStartedNanos);
+            }
+            if (streamingDigest != null) {
+                sourceChecksum = HexFormat.of().formatHex(streamingDigest.digest());
             }
 
             transition(plan, item, state, TransferItemStatus.VERIFYING, offset, attempt, events,
@@ -296,6 +315,31 @@ public class TransferEngine {
                         startedAt, Instant.now());
             }
             }
+        }
+    }
+
+    private MessageDigest newDigest(String algorithm) {
+        try {
+            return MessageDigest.getInstance(algorithm);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalArgumentException("unsupported checksum algorithm: " + algorithm, e);
+        }
+    }
+
+    private void updateDigest(InputStream input, long length, MessageDigest digest, String path)
+            throws IOException {
+        byte[] buffer = new byte[64 * 1024];
+        long remaining = length;
+        while (remaining > 0) {
+            int read = input.read(buffer, 0, (int) Math.min(buffer.length, remaining));
+            if (read < 0) {
+                throw new IOException("unexpected EOF while checksumming " + path);
+            }
+            if (read == 0) {
+                continue;
+            }
+            digest.update(buffer, 0, read);
+            remaining -= read;
         }
     }
 

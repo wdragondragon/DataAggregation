@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -35,6 +36,12 @@ public class TransferPlanner {
 
     public PreparedTransfer prepare(TransferSpec spec, TransferFileSystem source, String runId,
                                     Instant plannedAt, TransferEventListener listener) throws IOException {
+        return prepare(spec, source, null, runId, plannedAt, listener);
+    }
+
+    public PreparedTransfer prepare(TransferSpec spec, TransferFileSystem source,
+                                    TransferFileSystem target, String runId,
+                                    Instant plannedAt, TransferEventListener listener) throws IOException {
         TransferEventListener events = listener == null ? TransferEventListener.NOOP : listener;
         Instant effectivePlannedAt = plannedAt == null ? Instant.now() : plannedAt;
         TransferSpec resolved = templateResolver.resolve(spec, runId, effectivePlannedAt);
@@ -43,9 +50,13 @@ public class TransferPlanner {
 
         List<TransferPlanItem> items = new ArrayList<>();
         Set<String> targetPaths = new HashSet<>();
+        boolean targetCaseSensitive = target == null || target.capabilities().pathCaseSensitive();
         discovery.discover(source, resolved.selection(), file -> {
             TransferPlanItem item = toPlanItem(resolved, runId, file);
-            String targetKey = TransferPaths.normalize(item.targetPath()).toLowerCase();
+            String targetKey = TransferPaths.normalize(item.targetPath());
+            if (!targetCaseSensitive) {
+                targetKey = targetKey.toLowerCase(Locale.ROOT);
+            }
             if (!targetPaths.add(targetKey)) {
                 throw new IllegalArgumentException("multiple source files map to target path: " + item.targetPath());
             }

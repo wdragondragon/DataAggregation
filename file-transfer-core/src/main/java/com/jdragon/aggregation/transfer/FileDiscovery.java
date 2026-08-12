@@ -19,6 +19,7 @@ public class FileDiscovery {
 
     public int discover(TransferFileSystem source, TransferSelection selection,
                         Consumer<DiscoveredFile> consumer) throws IOException {
+        boolean sourceCaseSensitive = source.capabilities().pathCaseSensitive();
         TransferFileEntry configuredRoot = source.stat(selection.rootPath());
         String relativeRoot = configuredRoot.directory()
                 ? configuredRoot.path()
@@ -30,28 +31,29 @@ public class FileDiscovery {
         int[] count = {0};
         for (String selectedPath : selectedPaths) {
             String resolvedPath = resolveSelectedPath(selection.rootPath(), selectedPath,
-                    selection.paths().isEmpty());
+                    selection.paths().isEmpty(), sourceCaseSensitive);
             TransferFileEntry entry = source.stat(resolvedPath);
             if (entry.directory()) {
                 walkDirectory(source, relativeRoot, entry.path(), selection.recursive(), matcher, consumer,
-                        selection.maxFiles(), count);
+                        selection.maxFiles(), count, sourceCaseSensitive);
             } else {
-                accept(relativeRoot, entry, matcher, consumer, selection.maxFiles(), count);
+                accept(relativeRoot, entry, matcher, consumer, selection.maxFiles(), count,
+                        sourceCaseSensitive);
             }
         }
         return count[0];
     }
 
-    private String resolveSelectedPath(String rootPath, String selectedPath, boolean rootSelection) {
+    private String resolveSelectedPath(String rootPath, String selectedPath, boolean rootSelection,
+                                       boolean caseSensitive) {
         if (rootSelection || selectedPath == null || selectedPath.isBlank()) {
             return rootPath;
         }
         String normalizedRoot = TransferPaths.normalize(rootPath);
         String normalizedSelected = TransferPaths.normalize(selectedPath);
         if (TransferPaths.isAbsolute(normalizedSelected)
-                || normalizedSelected.equalsIgnoreCase(normalizedRoot)
-                || normalizedSelected.regionMatches(true, 0, normalizedRoot + "/", 0,
-                normalizedRoot.length() + 1)) {
+                || TransferPaths.equals(normalizedSelected, normalizedRoot, caseSensitive)
+                || TransferPaths.startsWith(normalizedSelected, normalizedRoot + "/", caseSensitive)) {
             return normalizedSelected;
         }
         return TransferPaths.join(rootPath, selectedPath);
@@ -59,7 +61,7 @@ public class FileDiscovery {
 
     private void walkDirectory(TransferFileSystem source, String root, String start,
                                boolean recursive, FileMatcher matcher, Consumer<DiscoveredFile> consumer,
-                               int maxFiles, int[] count) throws IOException {
+                               int maxFiles, int[] count, boolean caseSensitive) throws IOException {
         Deque<String> directories = new ArrayDeque<>();
         directories.add(start);
         while (!directories.isEmpty()) {
@@ -73,7 +75,7 @@ public class FileDiscovery {
                             directories.addLast(child.path());
                         }
                     } else {
-                        accept(root, child, matcher, consumer, maxFiles, count);
+                        accept(root, child, matcher, consumer, maxFiles, count, caseSensitive);
                     }
                 }
                 String next = page.nextCursor();
@@ -86,10 +88,11 @@ public class FileDiscovery {
     }
 
     private void accept(String root, TransferFileEntry entry, FileMatcher matcher,
-                        Consumer<DiscoveredFile> consumer, int maxFiles, int[] count) throws IOException {
+                        Consumer<DiscoveredFile> consumer, int maxFiles, int[] count,
+                        boolean caseSensitive) throws IOException {
         String relativePath;
         try {
-            relativePath = TransferPaths.relativeTo(root, entry.path());
+            relativePath = TransferPaths.relativeTo(root, entry.path(), caseSensitive);
         } catch (IllegalArgumentException e) {
             throw new IOException(e.getMessage(), e);
         }
