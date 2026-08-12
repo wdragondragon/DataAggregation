@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -39,7 +40,8 @@ public class LocalFileHelper extends AbstractPlugin implements TransferFileSyste
 
     private static final int COPY_BUFFER_SIZE = 64 * 1024;
     private static final StorageCapabilities CAPABILITIES =
-            new StorageCapabilities(true, true, true, true, false, false, Set.of("SHA-256"));
+            new StorageCapabilities(true, true, true, true, false, false, Set.of("SHA-256"),
+                    !System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win"));
 
     private List<Path> allowedRoots = List.of();
 

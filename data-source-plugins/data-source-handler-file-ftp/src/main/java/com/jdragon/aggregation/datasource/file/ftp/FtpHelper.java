@@ -39,9 +39,6 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
     private static final Logger LOG = LoggerFactory.getLogger(FtpHelper.class);
     private static final int COPY_BUFFER_SIZE = 64 * 1024;
     private static final int OPTIONAL_COMPLETION_REPLY_TIMEOUT_MILLIS = 100;
-    private static final StorageCapabilities CAPABILITIES =
-            new StorageCapabilities(true, true, true, false, false, false, Set.of("SHA-256"));
-
     private FTPClient ftpClient = null;
 
     private String ftpTLS;
@@ -60,6 +57,8 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
 
     private String baseDirectory;
 
+    private boolean pathCaseSensitive = false;
+
     private boolean pendingCommand;
 
     @Override
@@ -71,6 +70,7 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
         port = configuration.getInt("port", Constant.DEFAULT_FTP_PORT);
         connectMode = configuration.getString("connectMode", Constant.DEFAULT_FTP_CONNECT_PATTERN);
         timeout = configuration.getInt("timeout", Constant.DEFAULT_TIMEOUT);
+        pathCaseSensitive = configuration.getBool("pathCaseSensitive", false);
 
         try {
             if (StringUtils.isBlank(ftpTLS) || Objects.equals(ftpTLS, "none")) {
@@ -139,7 +139,7 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
     @Override
     public boolean exists(String path, String name) throws IOException {
         boolean isExitFlag = false;
-        String filePath = processingPath(resolveRemotePath(path), name);
+        String filePath = resolveLegacyRemotePath(processingPath(path, name));
         try {
             FTPFile[] ftpFiles = ftpClient.listFiles(new String(filePath.getBytes(), FTP.DEFAULT_CONTROL_ENCODING));
             if (ftpFiles.length == 1 && ftpFiles[0].isFile()) {
@@ -155,7 +155,7 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
 
     @Override
     public Set<String> listFile(String dir, String regex) throws IOException {
-        FTPFile[] ftpFiles = this.ftpClient.listFiles(resolveRemotePath(dir));
+        FTPFile[] ftpFiles = this.ftpClient.listFiles(resolveLegacyRemotePath(dir));
         Set<String> fileList = new HashSet<>();
         for (FTPFile fileStatus : ftpFiles) {
             String name = fileStatus.getName();
@@ -168,7 +168,7 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
 
     @Override
     public boolean isFile(String dir, String fileName) throws IOException {
-        FTPFile ftpFile = this.ftpClient.mlistFile(processingPath(resolveRemotePath(dir), fileName));
+        FTPFile ftpFile = this.ftpClient.mlistFile(resolveLegacyRemotePath(processingPath(dir, fileName)));
         if (ftpFile == null) {
             return false;
         }
@@ -177,7 +177,7 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
 
     @Override
     public void mkdir(String directoryPath) throws IOException {
-        String targetDirectory = resolveRemotePath(directoryPath);
+        String targetDirectory = resolveLegacyRemotePath(directoryPath);
         if (StringUtils.isBlank(targetDirectory)) {
             return;
         }
@@ -215,7 +215,7 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
     @Override
     public void rm(String path) throws IOException {
         try {
-            this.ftpClient.deleteFile(resolveRemotePath(path));
+            this.ftpClient.deleteFile(resolveLegacyRemotePath(path));
         } catch (IOException e) {
             throw AggregationException.asException(FtpHelperErrorCode.RM_FILE_EXCEPTION, e);
         }
@@ -230,7 +230,7 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
     @Override
     public boolean mv(String from, String to) throws Exception {
         try {
-            return this.ftpClient.rename(resolveRemotePath(from), resolveRemotePath(to));
+            return this.ftpClient.rename(resolveLegacyRemotePath(from), resolveLegacyRemotePath(to));
         } catch (IOException e) {
             throw AggregationException.asException(FtpHelperErrorCode.MV_FILE_EXCEPTION, e);
         }
@@ -238,7 +238,7 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
 
     @Override
     public InputStream getInputStream(String path, String name) throws IOException {
-        String filePath = processingPath(resolveRemotePath(path), name);
+        String filePath = resolveLegacyRemotePath(processingPath(path, name));
         try {
             return ftpClient.retrieveFileStream(new String(filePath.getBytes(), FTP.DEFAULT_CONTROL_ENCODING));
         } catch (IOException e) {
@@ -250,8 +250,8 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
 
     @Override
     public OutputStream getOutputStream(String path, String name) throws IOException {
-        String directoryPath = resolveRemotePath(path);
-        String filePath = processingPath(directoryPath, name);
+        String directoryPath = resolveLegacyRemotePath(path);
+        String filePath = resolveLegacyRemotePath(processingPath(path, name));
         try {
             this.printWorkingDirectory();
             this.ftpClient.setFileType(FTPClient.BINARY_FILE_TYPE);
@@ -288,16 +288,62 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
         }
     }
 
-    private String resolveRemotePath(String path) {
+    String resolveRemotePath(String path) {
+        String normalized = normalizeLogicalPath(path);
+        String base = normalizeRemotePath(StringUtils.defaultIfBlank(baseDirectory, "/"));
+        if ("/".equals(normalized)) {
+            return base;
+        }
+        return processingPath(base, StringUtils.removeStart(normalized, "/"));
+    }
+
+    String resolveLegacyRemotePath(String path) {
         String normalized = normalizeRemotePath(path);
-        if (StringUtils.isBlank(normalized) || StringUtils.startsWith(normalized, "/")) {
+        validateRemotePath(normalized);
+        if (StringUtils.isBlank(normalized) || normalized.startsWith("/")) {
             return normalized;
         }
-        String base = StringUtils.defaultIfBlank(baseDirectory, "");
-        if (StringUtils.isBlank(base)) {
-            return normalized;
+        String base = normalizeRemotePath(StringUtils.defaultIfBlank(baseDirectory, ""));
+        return StringUtils.isBlank(base) ? normalized : processingPath(base, normalized);
+    }
+
+    String toLogicalPath(String remotePath) {
+        String normalized = normalizeRemotePath(remotePath);
+        String base = normalizeRemotePath(StringUtils.defaultIfBlank(baseDirectory, "/"));
+        if (!isWithinBase(normalized, base)) {
+            throw new IllegalArgumentException("FTP path is outside the login directory: " + remotePath);
         }
-        return processingPath(base, normalized);
+        if (normalized.equals(base)) {
+            return "/";
+        }
+        if ("/".equals(base)) {
+            return normalized.startsWith("/") ? normalized : "/" + normalized;
+        }
+        return normalized.substring(base.length());
+    }
+
+    private String normalizeLogicalPath(String path) {
+        String normalized = normalizeRemotePath(path);
+        if (StringUtils.isBlank(normalized) || ".".equals(normalized)) {
+            return "/";
+        }
+        validateRemotePath(normalized);
+        return normalized.startsWith("/") ? normalized : "/" + normalized;
+    }
+
+    private void validateRemotePath(String path) {
+        if (path.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException("FTP path must not contain NUL");
+        }
+        for (String segment : path.split("/")) {
+            if ("..".equals(segment)) {
+                throw new IllegalArgumentException("FTP path must not contain '..'");
+            }
+        }
+    }
+
+    private boolean isWithinBase(String path, String base) {
+        return "/".equals(base) || path.equals(base) || path.startsWith(base + "/");
     }
 
     private String normalizeRemotePath(String path) {
@@ -384,13 +430,17 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
 
     @Override
     public TransferFileEntry stat(String path) throws IOException {
+        String logical = normalizeLogicalPath(path);
+        if ("/".equals(logical)) {
+            return new TransferFileEntry("/", "/", true, 0L, 0L, null);
+        }
         String resolved = resolveRemotePath(path);
         FTPFile file = findFile(resolved);
         if (file == null) {
             throw new NoSuchFileException(path);
         }
         long modified = file.getTimestamp() == null ? 0L : file.getTimestamp().getTimeInMillis();
-        return new TransferFileEntry(resolved, remoteName(resolved), file.isDirectory(),
+        return new TransferFileEntry(toLogicalPath(resolved), remoteName(resolved), file.isDirectory(),
                 file.isDirectory() ? 0L : file.getSize(), modified, null);
     }
 
@@ -403,7 +453,7 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
             if (StringUtils.equalsAny(file.getName(), ".", "..")) {
                 continue;
             }
-            String path = processingPath(resolved, file.getName());
+            String path = toLogicalPath(processingPath(resolved, file.getName()));
             long modified = file.getTimestamp() == null ? 0L : file.getTimestamp().getTimeInMillis();
             entries.add(new TransferFileEntry(path, file.getName(), file.isDirectory(),
                     file.isDirectory() ? 0L : file.getSize(), modified, null));
@@ -446,7 +496,8 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
 
     @Override
     public TransferWriteSession prepareWrite(String temporaryPath, String sessionId) throws IOException {
-        String resolved = resolveRemotePath(temporaryPath);
+        String logical = normalizeLogicalPath(temporaryPath);
+        String resolved = resolveRemotePath(logical);
         createParentDirectory(resolved);
         FTPFile file = findFile(resolved);
         if (file != null && file.isDirectory()) {
@@ -461,7 +512,7 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
                 }
             }
         }
-        return new TransferWriteSession(sessionId, resolved, offset, Map.of());
+        return new TransferWriteSession(sessionId, logical, offset, Map.of());
     }
 
     @Override
@@ -535,7 +586,7 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
     public void move(String sourcePath, String targetPath, boolean replaceExisting) throws IOException {
         String source = resolveRemotePath(sourcePath);
         String target = resolveRemotePath(targetPath);
-        if (transferExists(target)) {
+        if (findFile(target) != null) {
             if (!replaceExisting) {
                 throw new FileAlreadyExistsException(targetPath);
             }
@@ -553,7 +604,10 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
 
     @Override
     public void delete(String path) throws IOException {
-        String resolved = resolveRemotePath(path);
+        deleteResolved(resolveRemotePath(path));
+    }
+
+    private void deleteResolved(String resolved) throws IOException {
         FTPFile file = findFile(resolved);
         if (file == null) {
             return;
@@ -562,7 +616,7 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
             FTPFile[] children = ftpClient.listFiles(resolved);
             for (FTPFile child : children) {
                 if (!StringUtils.equalsAny(child.getName(), ".", "..")) {
-                    delete(processingPath(resolved, child.getName()));
+                    deleteResolved(processingPath(resolved, child.getName()));
                 }
             }
             if (!ftpClient.removeDirectory(resolved)) {
@@ -575,7 +629,8 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
 
     @Override
     public StorageCapabilities capabilities() {
-        return CAPABILITIES;
+        return new StorageCapabilities(true, true, true, false, false, false,
+                Set.of("SHA-256"), pathCaseSensitive);
     }
 
     @Override

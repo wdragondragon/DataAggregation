@@ -13,6 +13,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThrows;
 
 public class FtpHelperTest {
 
@@ -23,6 +24,33 @@ public class FtpHelperTest {
 
         assertSame(existing, FtpHelper.findListedFile(new FTPFile[]{existing}, "existing"));
         assertNull(FtpHelper.findListedFile(new FTPFile[]{existing}, "missing"));
+    }
+
+    @Test
+    public void resolvesAllClientPathsBelowTheLoginDirectory() throws Exception {
+        FtpHelper helper = new FtpHelper();
+        setBaseDirectory(helper, "/home/ftp-user");
+
+        assertEquals("/home/ftp-user", helper.resolveRemotePath("/"));
+        assertEquals("/home/ftp-user/inbox/file.txt", helper.resolveRemotePath("/inbox/file.txt"));
+        assertEquals("/home/ftp-user/home/ftp-user/legacy.txt",
+                helper.resolveRemotePath("/home/ftp-user/legacy.txt"));
+        assertEquals("/home/ftp-user/legacy.txt",
+                helper.resolveLegacyRemotePath("/home/ftp-user/legacy.txt"));
+        assertEquals("/inbox/file.txt", helper.toLogicalPath("/home/ftp-user/inbox/file.txt"));
+        assertThrows(IllegalArgumentException.class,
+                () -> helper.resolveRemotePath("/inbox/../../outside.txt"));
+        assertThrows(IllegalArgumentException.class,
+                () -> helper.toLogicalPath("/home/another-user/file.txt"));
+    }
+
+    @Test
+    public void logicalDirectoryNamedLikeTheLoginRootDoesNotResolveBackToRoot() throws Exception {
+        FtpHelper helper = new FtpHelper();
+        setBaseDirectory(helper, "/data");
+
+        assertEquals("/data/data", helper.resolveRemotePath("/data"));
+        assertEquals("/data", helper.toLogicalPath("/data/data"));
     }
 
     @Test
@@ -80,6 +108,12 @@ public class FtpHelperTest {
         Field field = FtpHelper.class.getDeclaredField("pendingCommand");
         field.setAccessible(true);
         field.setBoolean(helper, pending);
+    }
+
+    private static void setBaseDirectory(FtpHelper helper, String baseDirectory) throws Exception {
+        Field field = FtpHelper.class.getDeclaredField("baseDirectory");
+        field.setAccessible(true);
+        field.set(helper, baseDirectory);
     }
 
     private static boolean pendingCommand(FtpHelper helper) throws Exception {

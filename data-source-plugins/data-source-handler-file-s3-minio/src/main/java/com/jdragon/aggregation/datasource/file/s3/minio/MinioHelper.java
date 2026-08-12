@@ -52,7 +52,7 @@ public class MinioHelper extends AbstractPlugin implements TransferFileSystem {
     private static final int MAX_COMPOSE_PARTS = 10_000;
     private static final int PIPE_BUFFER_SIZE = 64 * 1024;
     private static final StorageCapabilities CAPABILITIES =
-            new StorageCapabilities(true, true, false, true, true, true, Set.of("SHA-256"));
+            new StorageCapabilities(true, true, false, true, true, true, Set.of("SHA-256"), true);
 
     private final Set<String> activeTemporaryObjects = ConcurrentHashMap.newKeySet();
     private MinioClient minioClient;

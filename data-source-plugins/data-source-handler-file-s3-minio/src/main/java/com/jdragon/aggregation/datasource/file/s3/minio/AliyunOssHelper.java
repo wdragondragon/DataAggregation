@@ -44,7 +44,7 @@ public class AliyunOssHelper extends AbstractPlugin implements TransferFileSyste
 
     private static final int PIPE_BUFFER_SIZE = 64 * 1024;
     private static final StorageCapabilities CAPABILITIES =
-            new StorageCapabilities(true, true, false, true, true, true, Set.of("SHA-256"));
+            new StorageCapabilities(true, true, false, true, true, true, Set.of("SHA-256"), true);
 
     private OSS ossClient;
     private String bucketName;
@@ -181,33 +181,43 @@ public class AliyunOssHelper extends AbstractPlugin implements TransferFileSyste
     public TransferFilePage listPage(String directory, String cursor, int pageSize) throws IOException {
         int limit = Math.max(1, Math.min(pageSize, 1_000));
         String prefix = directoryPrefix(objectName(directory));
-        ListObjectsRequest request = new ListObjectsRequest(bucketName).withPrefix(prefix)
-                .withDelimiter("/").withMaxKeys(limit);
-        if (StringUtils.isNotBlank(cursor)) {
-            request.setMarker(cursor);
-        }
+        String marker = cursor;
         try {
-            ObjectListing listing = ossClient.listObjects(request);
-            List<TransferFileEntry> entries = new ArrayList<>();
-            for (String commonPrefix : listing.getCommonPrefixes()) {
-                String path = trimDirectorySuffix(commonPrefix);
-                entries.add(new TransferFileEntry(path, entryName(path), true, 0L, 0L, null));
-            }
-            for (OSSObjectSummary summary : listing.getObjectSummaries()) {
-                if (summary.getKey().equals(prefix)) {
-                    continue;
+            while (true) {
+                ListObjectsRequest request = new ListObjectsRequest(bucketName).withPrefix(prefix)
+                        .withDelimiter("/").withMaxKeys(limit);
+                if (StringUtils.isNotBlank(marker)) {
+                    request.setMarker(marker);
                 }
-                boolean directoryMarker = summary.getKey().endsWith("/");
-                String path = trimDirectorySuffix(summary.getKey());
-                entries.add(new TransferFileEntry(path, entryName(path), directoryMarker,
-                        directoryMarker ? 0L : summary.getSize(),
-                        summary.getLastModified() == null ? 0L : summary.getLastModified().getTime(),
-                        summary.getETag()));
+                ObjectListing listing = ossClient.listObjects(request);
+                List<TransferFileEntry> entries = new ArrayList<>();
+                for (String commonPrefix : listing.getCommonPrefixes()) {
+                    String path = trimDirectorySuffix(commonPrefix);
+                    entries.add(new TransferFileEntry(path, entryName(path), true, 0L, 0L, null));
+                }
+                for (OSSObjectSummary summary : listing.getObjectSummaries()) {
+                    if (summary.getKey().equals(prefix)) {
+                        continue;
+                    }
+                    boolean directoryMarker = summary.getKey().endsWith("/");
+                    String path = trimDirectorySuffix(summary.getKey());
+                    entries.add(new TransferFileEntry(path, entryName(path), directoryMarker,
+                            directoryMarker ? 0L : summary.getSize(),
+                            summary.getLastModified() == null ? 0L : summary.getLastModified().getTime(),
+                            summary.getETag()));
+                }
+                entries.sort(Comparator.comparing(TransferFileEntry::directory).reversed()
+                        .thenComparing(TransferFileEntry::name, String.CASE_INSENSITIVE_ORDER));
+                String nextMarker = listing.isTruncated() ? listing.getNextMarker() : null;
+                if (!entries.isEmpty() || !listing.isTruncated()
+                        || StringUtils.isBlank(nextMarker) || nextMarker.equals(marker)) {
+                    return new TransferFilePage(entries, nextMarker, listing.isTruncated());
+                }
+                // A directory marker can consume a one-item OSS page and is
+                // intentionally hidden from callers. Continue until a visible
+                // descendant is found or the listing is exhausted.
+                marker = nextMarker;
             }
-            entries.sort(Comparator.comparing(TransferFileEntry::directory).reversed()
-                    .thenComparing(TransferFileEntry::name, String.CASE_INSENSITIVE_ORDER));
-            return new TransferFilePage(entries, listing.isTruncated() ? listing.getNextMarker() : null,
-                    listing.isTruncated());
         } catch (RuntimeException e) {
             throw new IOException("failed to list OSS directory " + directory, e);
         }

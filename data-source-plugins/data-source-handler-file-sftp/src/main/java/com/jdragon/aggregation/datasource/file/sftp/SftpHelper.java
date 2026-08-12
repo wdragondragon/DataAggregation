@@ -26,7 +26,12 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
 
     private static final int COPY_BUFFER_SIZE = 64 * 1024;
     private static final StorageCapabilities CAPABILITIES =
-            new StorageCapabilities(true, true, true, false, false, false, Set.of("SHA-256"));
+            new StorageCapabilities(true, true, true, false, false, false, Set.of("SHA-256"), true);
+    private static final String LEGACY_KEX_ALGORITHMS =
+            "diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1";
+    private static final String LEGACY_HOST_KEY_ALGORITHMS = "ssh-rsa,ssh-dss";
+    private static final String LEGACY_CIPHER_ALGORITHMS = "aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc";
+    private static final String LEGACY_MAC_ALGORITHMS = "hmac-md5,hmac-md5-96";
 
     private Session session = null;
 
@@ -64,9 +69,7 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
             }
 
             session.setPassword(password); // 设置密码
-            Properties config = new Properties();
-            config.put("StrictHostKeyChecking", "no");
-            session.setConfig(config); // 为Session对象设置properties
+            session.setConfig(buildSessionConfig(configuration));
             session.setTimeout(timeout); // 设置timeout时间
             session.connect(); // 通过Session建立链接
             channelSftp = (ChannelSftp) session.openChannel("sftp"); // 打开SFTP通道
@@ -77,6 +80,13 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
             //String fileEncoding = System.getProperty("file.encoding");
             //channelSftp.setFilenameEncoding(fileEncoding);
         } catch (JSchException | SftpException e) {
+            if (isAlgorithmNegotiationFailure(e)) {
+                String message = "与SFTP服务器协商SSH算法失败。请优先由服务端启用现代SSH算法；"
+                        + "仅当确认服务器只能使用旧算法时，才在数据源中开启 allowLegacyAlgorithms 后重试。"
+                        + "原始错误: " + StringUtils.defaultString(e.getMessage());
+                log.error(message, e);
+                throw AggregationException.asException(SftpHelperErrorCode.FAIL_LOGIN, message, e);
+            }
             if (null != e.getCause()) {
                 String cause = e.getCause().toString();
                 String unknownHostException = "java.net.UnknownHostException: " + host;
@@ -106,6 +116,51 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
             }
         }
         return true;
+    }
+
+    static Properties buildSessionConfig(Configuration configuration) {
+        Properties config = new Properties();
+        config.put("StrictHostKeyChecking", "no");
+        if (!Boolean.TRUE.equals(configuration.getBool("allowLegacyAlgorithms", false))) {
+            return config;
+        }
+        config.put("kex", appendAlgorithms(JSch.getConfig("kex"), LEGACY_KEX_ALGORITHMS));
+        config.put("server_host_key", appendAlgorithms(JSch.getConfig("server_host_key"), LEGACY_HOST_KEY_ALGORITHMS));
+        config.put("cipher.c2s", appendAlgorithms(JSch.getConfig("cipher.c2s"), LEGACY_CIPHER_ALGORITHMS));
+        config.put("cipher.s2c", appendAlgorithms(JSch.getConfig("cipher.s2c"), LEGACY_CIPHER_ALGORITHMS));
+        config.put("mac.c2s", appendAlgorithms(JSch.getConfig("mac.c2s"), LEGACY_MAC_ALGORITHMS));
+        config.put("mac.s2c", appendAlgorithms(JSch.getConfig("mac.s2c"), LEGACY_MAC_ALGORITHMS));
+        config.put("PubkeyAcceptedAlgorithms",
+                appendAlgorithms(JSch.getConfig("PubkeyAcceptedAlgorithms"), LEGACY_HOST_KEY_ALGORITHMS));
+        return config;
+    }
+
+    static boolean isAlgorithmNegotiationFailure(Exception exception) {
+        String message = exception == null ? null : exception.getMessage();
+        return StringUtils.containsIgnoreCase(message, "algorithm negotiation fail")
+                || StringUtils.containsIgnoreCase(message, "no matching key exchange method")
+                || StringUtils.containsIgnoreCase(message, "no matching host key type")
+                || StringUtils.containsIgnoreCase(message, "no matching cipher")
+                || StringUtils.containsIgnoreCase(message, "no matching mac");
+    }
+
+    private static String appendAlgorithms(String defaults, String additions) {
+        LinkedHashSet<String> algorithms = new LinkedHashSet<>();
+        addAlgorithms(algorithms, defaults);
+        addAlgorithms(algorithms, additions);
+        return String.join(",", algorithms);
+    }
+
+    private static void addAlgorithms(Set<String> algorithms, String values) {
+        if (StringUtils.isBlank(values)) {
+            return;
+        }
+        for (String algorithm : values.split(",")) {
+            String normalized = StringUtils.trimToNull(algorithm);
+            if (normalized != null) {
+                algorithms.add(normalized);
+            }
+        }
     }
 
 
@@ -159,6 +214,14 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
 
     @Override
     public void mkdir(String directoryPath) throws IOException {
+        // Preserve the original FileHelper contract: absolute paths are
+        // passed to the SFTP server unchanged. Relative paths retain the
+        // caller's original behavior and are not silently rebased.
+        mkdirResolved(normalizeRemotePath(directoryPath));
+    }
+
+    /** Creates an already resolved SFTP path one level at a time. */
+    private void mkdirResolved(String directoryPath) throws IOException {
         boolean isDirExist = false;
         try {
             this.printWorkingDirectory();
@@ -316,7 +379,8 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
         String resolved = resolveRemotePath(path);
         try {
             SftpATTRS attributes = channelSftp.lstat(resolved);
-            return new TransferFileEntry(resolved, remoteName(resolved), attributes.isDir(),
+            String logical = toLogicalPath(resolved);
+            return new TransferFileEntry(logical, "/".equals(logical) ? "/" : remoteName(resolved), attributes.isDir(),
                     attributes.isDir() ? 0L : attributes.getSize(), attributes.getMTime() * 1_000L, null);
         } catch (SftpException e) {
             if (e.id == ChannelSftp.SSH_FX_NO_SUCH_FILE) {
@@ -338,7 +402,7 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
                     continue;
                 }
                 SftpATTRS attributes = child.getAttrs();
-                entries.add(new TransferFileEntry(joinRemote(resolved, child.getFilename()),
+                entries.add(new TransferFileEntry(toLogicalPath(joinRemote(resolved, child.getFilename())),
                         child.getFilename(), attributes.isDir(),
                         attributes.isDir() ? 0L : attributes.getSize(),
                         attributes.getMTime() * 1_000L, null));
@@ -363,7 +427,7 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
             throw new IllegalArgumentException("offset and length must be non-negative");
         }
         String resolved = resolveRemotePath(path);
-        TransferFileEntry entry = stat(resolved);
+        TransferFileEntry entry = stat(path);
         if (entry.directory()) {
             throw new IOException("cannot read SFTP directory " + path);
         }
@@ -407,10 +471,15 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
             throw new IllegalArgumentException("offset and length must be non-negative");
         }
         String path = resolveRemotePath(session.temporaryPath());
-        TransferFileEntry current = stat(path);
-        if (current.size() != offset) {
+        final SftpATTRS current;
+        try {
+            current = channelSftp.lstat(path);
+        } catch (SftpException e) {
+            throw new IOException("failed to inspect SFTP temporary path " + session.temporaryPath(), e);
+        }
+        if (current.getSize() != offset) {
             throw new IOException("temporary file offset mismatch, expected " + offset
-                    + " but was " + current.size());
+                    + " but was " + current.getSize());
         }
         long written = 0L;
         try (OutputStream target = channelSftp.put(path, ChannelSftp.APPEND)) {
@@ -449,11 +518,11 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
     public void move(String sourcePath, String targetPath, boolean replaceExisting) throws IOException {
         String source = resolveRemotePath(sourcePath);
         String target = resolveRemotePath(targetPath);
-        if (transferExists(target)) {
+        if (resolvedExists(target)) {
             if (!replaceExisting) {
                 throw new FileAlreadyExistsException(targetPath);
             }
-            delete(target);
+            deleteResolved(target);
         }
         createParentDirectory(target);
         try {
@@ -465,7 +534,10 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
 
     @Override
     public void delete(String path) throws IOException {
-        String resolved = resolveRemotePath(path);
+        deleteResolved(resolveRemotePath(path));
+    }
+
+    private void deleteResolved(String resolved) throws IOException {
         final SftpATTRS attributes;
         try {
             attributes = channelSftp.lstat(resolved);
@@ -473,7 +545,7 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
             if (e.id == ChannelSftp.SSH_FX_NO_SUCH_FILE) {
                 return;
             }
-            throw new IOException("failed to inspect SFTP path before delete " + path, e);
+            throw new IOException("failed to inspect SFTP path before delete " + resolved, e);
         }
         try {
             if (attributes.isDir()) {
@@ -481,7 +553,7 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
                 Vector<ChannelSftp.LsEntry> children = channelSftp.ls(resolved);
                 for (ChannelSftp.LsEntry child : children) {
                     if (!StringUtils.equalsAny(child.getFilename(), ".", "..")) {
-                        delete(joinRemote(resolved, child.getFilename()));
+                        deleteResolved(joinRemote(resolved, child.getFilename()));
                     }
                 }
                 channelSftp.rmdir(resolved);
@@ -489,7 +561,7 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
                 channelSftp.rm(resolved);
             }
         } catch (SftpException e) {
-            throw new IOException("failed to delete SFTP path " + path, e);
+            throw new IOException("failed to delete SFTP path " + resolved, e);
         }
     }
 
@@ -499,34 +571,47 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
     }
 
     @Override
+    public String initialPath() {
+        return normalizeRemotePath(StringUtils.defaultIfBlank(baseDirectory, "/"));
+    }
+
+    @Override
     public boolean transferExists(String path) throws IOException {
+        return resolvedExists(resolveRemotePath(path));
+    }
+
+    private boolean resolvedExists(String resolved) throws IOException {
         try {
-            channelSftp.lstat(resolveRemotePath(path));
+            channelSftp.lstat(resolved);
             return true;
         } catch (SftpException e) {
             if (e.id == ChannelSftp.SSH_FX_NO_SUCH_FILE) {
                 return false;
             }
-            throw new IOException("failed to inspect SFTP path " + path, e);
+            throw new IOException("failed to inspect SFTP path " + resolved, e);
         }
     }
 
     private void createParentDirectory(String path) throws IOException {
         int slash = path.lastIndexOf('/');
         if (slash > 0) {
-            mkdir(path.substring(0, slash));
+            mkdirResolved(path.substring(0, slash));
         }
     }
 
-    private String resolveRemotePath(String path) {
+    String resolveRemotePath(String path) {
         String normalized = normalizeRemotePath(path);
         if (normalized.isBlank()) {
-            return baseDirectory;
+            return normalizeRemotePath(StringUtils.defaultIfBlank(baseDirectory, "/"));
         }
         if (normalized.startsWith("/")) {
             return normalized;
         }
         return joinRemote(baseDirectory, normalized);
+    }
+
+    String toLogicalPath(String remotePath) {
+        return normalizeRemotePath(remotePath);
     }
 
     private String normalizeRemotePath(String path) {

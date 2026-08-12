@@ -10,6 +10,14 @@ import java.util.HexFormat;
 
 public interface TransferFileSystem extends FileHelper {
 
+    /**
+     * Returns the path the remote client starts in after connecting. Most
+     * providers use the protocol root; SFTP exposes the server-reported pwd.
+     */
+    default String initialPath() {
+        return "/";
+    }
+
     TransferFileEntry stat(String path) throws IOException;
 
     TransferFilePage listPage(String directory, String cursor, int pageSize) throws IOException;
