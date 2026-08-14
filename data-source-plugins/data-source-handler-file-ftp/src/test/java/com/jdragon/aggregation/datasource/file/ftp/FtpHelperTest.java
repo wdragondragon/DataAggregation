@@ -33,6 +33,7 @@ public class FtpHelperTest {
 
         assertEquals("/home/ftp-user", helper.resolveRemotePath("/"));
         assertEquals("/home/ftp-user/inbox/file.txt", helper.resolveRemotePath("/inbox/file.txt"));
+        assertEquals("/home/ftp-user/plugin.zip", helper.resolveRemotePath("//plugin.zip"));
         assertEquals("/home/ftp-user/home/ftp-user/legacy.txt",
                 helper.resolveRemotePath("/home/ftp-user/legacy.txt"));
         assertEquals("/home/ftp-user/legacy.txt",

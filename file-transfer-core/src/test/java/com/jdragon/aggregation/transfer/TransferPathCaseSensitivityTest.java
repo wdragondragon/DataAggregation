@@ -38,6 +38,12 @@ public class TransferPathCaseSensitivityTest {
     }
 
     @Test
+    public void joiningBelowLogicalRootDoesNotCreateADoubleSlash() {
+        assertEquals("/plugin.zip", TransferPaths.join("/", "plugin.zip"));
+        assertEquals("/nested/file.txt", TransferPaths.join("//nested//", "file.txt"));
+    }
+
+    @Test
     public void plannerAllowsTargetsThatDifferOnlyByCase() throws Exception {
         FileDiscovery discovery = new FileDiscovery() {
             @Override

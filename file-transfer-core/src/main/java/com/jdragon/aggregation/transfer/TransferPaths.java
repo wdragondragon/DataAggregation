@@ -40,7 +40,7 @@ public final class TransferPaths {
         if (normalizedParent.isEmpty() || ".".equals(normalizedParent)) {
             return normalizedChild;
         }
-        return normalizedParent + "/" + normalizedChild;
+        return normalize(normalizedParent + "/" + normalizedChild);
     }
 
     public static String parent(String value) {
