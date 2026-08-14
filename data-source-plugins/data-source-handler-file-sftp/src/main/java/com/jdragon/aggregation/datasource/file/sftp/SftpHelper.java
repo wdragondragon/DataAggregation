@@ -465,6 +465,34 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
     }
 
     @Override
+    public Optional<TransferWriteSession> recoverWriteSession(
+            TransferWriteSession session, long confirmedOffset) throws IOException {
+        if (confirmedOffset < 0) {
+            throw new IllegalArgumentException("confirmedOffset must be non-negative");
+        }
+        String path = resolveRemotePath(session.temporaryPath());
+        try {
+            SftpATTRS attributes = channelSftp.lstat(path);
+            if (attributes.isDir() || attributes.getSize() < confirmedOffset) {
+                return Optional.empty();
+            }
+            if (attributes.getSize() > confirmedOffset) {
+                attributes.setSIZE(confirmedOffset);
+                channelSftp.setStat(path, attributes);
+                if (channelSftp.lstat(path).getSize() != confirmedOffset) {
+                    return Optional.empty();
+                }
+            }
+            return Optional.of(new TransferWriteSession(session.sessionId(),
+                    path, confirmedOffset, session.metadata()));
+        } catch (SftpException e) {
+            log.warn("failed to align SFTP temporary target {} to checkpoint offset {}",
+                    path, confirmedOffset, e);
+            return Optional.empty();
+        }
+    }
+
+    @Override
     public long append(TransferWriteSession session, long offset, InputStream source, long length)
             throws IOException {
         if (offset < 0 || length < 0) {

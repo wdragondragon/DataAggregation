@@ -30,6 +30,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 
@@ -516,6 +517,23 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
     }
 
     @Override
+    public Optional<TransferWriteSession> recoverWriteSession(
+            TransferWriteSession session, long confirmedOffset) throws IOException {
+        if (confirmedOffset < 0) {
+            throw new IllegalArgumentException("confirmedOffset must be non-negative");
+        }
+        String path = resolveRemotePath(session.temporaryPath());
+        FTPFile existing = findFile(path);
+        if (existing == null || existing.isDirectory() || existing.getSize() < confirmedOffset) {
+            return Optional.empty();
+        }
+        // FTP REST resumes at the requested offset. An unconfirmed tail is
+        // overwritten by subsequent source blocks without a full-file copy.
+        return Optional.of(new TransferWriteSession(session.sessionId(),
+                session.temporaryPath(), confirmedOffset, session.metadata()));
+    }
+
+    @Override
     public long append(TransferWriteSession session, long offset, InputStream source, long length)
             throws IOException {
         if (offset < 0 || length < 0) {
@@ -524,8 +542,9 @@ public class FtpHelper extends AbstractPlugin implements TransferFileSystem {
         String path = resolveRemotePath(session.temporaryPath());
         FTPFile existing = findFile(path);
         long size = existing == null ? 0L : existing.getSize();
-        if (size != offset) {
-            throw new IOException("temporary file offset mismatch, expected " + offset + " but was " + size);
+        if (size < offset) {
+            throw new IOException("temporary file is shorter than the write offset, expected at least "
+                    + offset + " but was " + size);
         }
         ftpClient.setFileType(FTP.BINARY_FILE_TYPE);
         ftpClient.setRestartOffset(offset);

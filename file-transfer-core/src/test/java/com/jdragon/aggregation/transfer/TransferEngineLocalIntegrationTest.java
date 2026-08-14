@@ -8,9 +8,11 @@ import com.jdragon.aggregation.datasource.file.transfer.TransferFilePage;
 import com.jdragon.aggregation.datasource.file.transfer.TransferFileSystem;
 import com.jdragon.aggregation.datasource.file.transfer.TransferWriteSession;
 import com.jdragon.aggregation.transfer.model.ConflictPolicy;
+import com.jdragon.aggregation.transfer.model.CheckpointRecoveryMode;
 import com.jdragon.aggregation.transfer.model.SourceSuccessAction;
 import com.jdragon.aggregation.transfer.model.TransferCheckpoint;
 import com.jdragon.aggregation.transfer.model.TransferEndpoint;
+import com.jdragon.aggregation.transfer.model.TransferEvent;
 import com.jdragon.aggregation.transfer.model.TransferItemStatus;
 import com.jdragon.aggregation.transfer.model.TransferMapping;
 import com.jdragon.aggregation.transfer.model.TransferPlanItem;
@@ -25,13 +27,16 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.ByteArrayInputStream;
+import java.io.FilterInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -194,20 +199,152 @@ public class TransferEngineLocalIntegrationTest {
             assertEquals(4, targetPlugin.append(session, 0,
                     new ByteArrayInputStream("abcd".getBytes(StandardCharsets.UTF_8)), 4));
         }
-        checkpoints.save(new TransferCheckpoint(prepared.plan().runId(), item.itemId(),
-                item.sourceIdentity(), item.targetIdentity(), item.sourceSnapshot(), item.temporaryPath(),
-                4, Instant.now()));
+        checkpoints.save(resumableCheckpoint(prepared, item,
+                "abcd".getBytes(StandardCharsets.UTF_8)));
 
-        TransferResult result = execute(prepared, source, target, checkpoints);
+        List<TransferEvent> events = new ArrayList<TransferEvent>();
+        TransferResult result = new TransferEngine().execute(prepared,
+                () -> connected(source), () -> connected(target), checkpoints,
+                events::add, new TransferControl());
 
         assertEquals(TransferRunStatus.SUCCESS, result.status());
         assertEquals(4, result.items().get(0).resumedBytes());
+        TransferEvent resumed = events.stream()
+                .filter(event -> event.itemStatus() == TransferItemStatus.TRANSFERRING)
+                .findFirst().orElseThrow();
+        assertEquals(4L, resumed.transferredBytes());
+        assertEquals(4L, resumed.details().get("resumedBytes"));
+        assertEquals("RESUMING_TRANSFER", resumed.details().get("resumePhase"));
+        assertEquals("checkpoint restored; transfer resumes from confirmed offset", resumed.message());
         assertEquals("abcdefghij", Files.readString(target.resolve("item.txt")));
         assertTrue(checkpoints.load(prepared.plan().runId(), item.itemId()).isEmpty());
     }
 
     @Test
-    public void rejectsExternallyChangedTemporaryTarget() throws Exception {
+    public void fastResumeDoesNotReadTheConfirmedSourcePrefix() throws Exception {
+        Path source = temporaryFolder.newFolder("fast-resume-source").toPath();
+        Path target = temporaryFolder.newFolder("fast-resume-target").toPath();
+        byte[] content = "abcdefghij".getBytes(StandardCharsets.UTF_8);
+        Files.write(source.resolve("item.txt"), content);
+        PreparedTransfer prepared = prepare(spec(source, target, List.of("item.txt"), List.of(),
+                TransferPolicy.defaults(), runtime(1)), "run-fast-resume");
+        TransferPlanItem item = prepared.plan().items().get(0);
+        InMemoryTransferCheckpointStore checkpoints = new InMemoryTransferCheckpointStore();
+        try (LocalSourcePlugin targetPlugin = connected(target)) {
+            TransferWriteSession session = targetPlugin.prepareWrite(item.temporaryPath(), item.itemId());
+            assertEquals(4, targetPlugin.append(session, 0,
+                    new ByteArrayInputStream(content, 0, 4), 4));
+        }
+        checkpoints.save(resumableCheckpoint(prepared, item,
+                java.util.Arrays.copyOfRange(content, 0, 4)));
+        List<Long> offsets = new java.util.concurrent.CopyOnWriteArrayList<Long>();
+
+        TransferResult result = new TransferEngine().execute(prepared,
+                () -> trackingSource(source, offsets), () -> connected(target), checkpoints,
+                TransferEventListener.NOOP, new TransferControl());
+
+        assertEquals(TransferRunStatus.SUCCESS, result.status());
+        assertEquals(List.of(0L, 4L), offsets);
+        assertEquals("abcdefghij", Files.readString(target.resolve("item.txt")));
+    }
+
+    @Test
+    public void fastResumeDiscardsOnlyTheUnconfirmedTemporaryTail() throws Exception {
+        Path source = temporaryFolder.newFolder("tail-resume-source").toPath();
+        Path target = temporaryFolder.newFolder("tail-resume-target").toPath();
+        byte[] content = "abcdefghij".getBytes(StandardCharsets.UTF_8);
+        Files.write(source.resolve("item.txt"), content);
+        PreparedTransfer prepared = prepare(spec(source, target, List.of("item.txt"), List.of(),
+                TransferPolicy.defaults(), runtime(1)), "run-tail-resume");
+        TransferPlanItem item = prepared.plan().items().get(0);
+        InMemoryTransferCheckpointStore checkpoints = new InMemoryTransferCheckpointStore();
+        try (LocalSourcePlugin targetPlugin = connected(target)) {
+            TransferWriteSession session = targetPlugin.prepareWrite(item.temporaryPath(), item.itemId());
+            assertEquals(6, targetPlugin.append(session, 0,
+                    new ByteArrayInputStream(content, 0, 6), 6));
+        }
+        checkpoints.save(resumableCheckpoint(prepared, item,
+                java.util.Arrays.copyOfRange(content, 0, 4)));
+        List<TransferEvent> events = new java.util.concurrent.CopyOnWriteArrayList<TransferEvent>();
+
+        TransferResult result = new TransferEngine().execute(prepared,
+                () -> connected(source), () -> connected(target), checkpoints,
+                events::add, new TransferControl());
+
+        assertEquals(TransferRunStatus.SUCCESS, result.status());
+        assertEquals(4L, result.items().get(0).resumedBytes());
+        assertTrue(events.stream().anyMatch(event -> "RESUMING_TRANSFER".equals(
+                event.details().get("resumePhase"))));
+        assertEquals("abcdefghij", Files.readString(target.resolve("item.txt")));
+    }
+
+    @Test
+    public void fastModeRestartsLegacyCheckpointWithoutReadingItsPrefix() throws Exception {
+        Path source = temporaryFolder.newFolder("legacy-fast-source").toPath();
+        Path target = temporaryFolder.newFolder("legacy-fast-target").toPath();
+        byte[] content = "abcdefghij".getBytes(StandardCharsets.UTF_8);
+        Files.write(source.resolve("item.txt"), content);
+        PreparedTransfer prepared = prepare(spec(source, target, List.of("item.txt"), List.of(),
+                TransferPolicy.defaults(), runtime(1)), "run-legacy-fast");
+        TransferPlanItem item = prepared.plan().items().get(0);
+        InMemoryTransferCheckpointStore checkpoints = new InMemoryTransferCheckpointStore();
+        try (LocalSourcePlugin targetPlugin = connected(target)) {
+            TransferWriteSession session = targetPlugin.prepareWrite(item.temporaryPath(), item.itemId());
+            assertEquals(4, targetPlugin.append(session, 0,
+                    new ByteArrayInputStream(content, 0, 4), 4));
+        }
+        checkpoints.save(new TransferCheckpoint(prepared.plan().runId(), item.itemId(),
+                item.sourceIdentity(), item.targetIdentity(), item.sourceSnapshot(), item.temporaryPath(),
+                4, Instant.now()));
+        List<TransferEvent> events = new java.util.concurrent.CopyOnWriteArrayList<TransferEvent>();
+
+        TransferResult result = new TransferEngine().execute(prepared,
+                () -> connected(source), () -> connected(target), checkpoints,
+                events::add, new TransferControl());
+
+        assertEquals(TransferRunStatus.SUCCESS, result.status());
+        assertEquals(0L, result.items().get(0).resumedBytes());
+        TransferEvent restarted = events.stream()
+                .filter(event -> "RESTARTED_FROM_ZERO".equals(event.details().get("resumePhase")))
+                .findFirst().orElseThrow();
+        assertTrue(restarted.message().contains("legacy checkpoint"));
+        assertEquals("abcdefghij", Files.readString(target.resolve("item.txt")));
+    }
+
+    @Test
+    public void fastModeRestartsWhenCheckpointBoundaryFingerprintChanges() throws Exception {
+        Path source = temporaryFolder.newFolder("boundary-source").toPath();
+        Path target = temporaryFolder.newFolder("boundary-target").toPath();
+        byte[] content = "abcdefghij".getBytes(StandardCharsets.UTF_8);
+        Files.write(source.resolve("item.txt"), content);
+        PreparedTransfer prepared = prepare(spec(source, target, List.of("item.txt"), List.of(),
+                TransferPolicy.defaults(), runtime(1)), "run-boundary-restart");
+        TransferPlanItem item = prepared.plan().items().get(0);
+        InMemoryTransferCheckpointStore checkpoints = new InMemoryTransferCheckpointStore();
+        try (LocalSourcePlugin targetPlugin = connected(target)) {
+            TransferWriteSession session = targetPlugin.prepareWrite(item.temporaryPath(), item.itemId());
+            assertEquals(4, targetPlugin.append(session, 0,
+                    new ByteArrayInputStream(content, 0, 4), 4));
+        }
+        TransferCheckpoint valid = resumableCheckpoint(prepared, item,
+                java.util.Arrays.copyOfRange(content, 0, 4));
+        checkpoints.save(new TransferCheckpoint(valid.runId(), valid.itemId(), valid.sourceIdentity(),
+                valid.targetIdentity(), valid.sourceSnapshot(), valid.temporaryPath(), valid.confirmedOffset(),
+                valid.schemaVersion(), valid.checksumAlgorithm(), valid.checksumStateFormat(),
+                valid.checksumStateBase64(),
+                valid.checksumStateOffset(), valid.sourceChecksum(), valid.headOffset(),
+                valid.headLength(), valid.headSha256(), valid.boundaryOffset(),
+                valid.boundaryLength(), "00", valid.updatedAt()));
+
+        TransferResult result = execute(prepared, source, target, checkpoints);
+
+        assertEquals(TransferRunStatus.SUCCESS, result.status());
+        assertEquals(0L, result.items().get(0).resumedBytes());
+        assertEquals("abcdefghij", Files.readString(target.resolve("item.txt")));
+    }
+
+    @Test
+    public void restartsWhenTemporaryTargetDoesNotMatchCheckpoint() throws Exception {
         Path source = temporaryFolder.newFolder("invalid-source").toPath();
         Path target = temporaryFolder.newFolder("invalid-target").toPath();
         Files.writeString(source.resolve("item.txt"), "abcdefghij");
@@ -222,9 +359,8 @@ public class TransferEngineLocalIntegrationTest {
 
         TransferResult result = execute(prepared, source, target, checkpoints);
 
-        assertEquals(TransferRunStatus.FAILED, result.status());
-        assertEquals("CHECKPOINT_INVALID", result.items().get(0).errorCode());
-        assertFalse(Files.exists(target.resolve("item.txt")));
+        assertEquals(TransferRunStatus.SUCCESS, result.status());
+        assertEquals("abcdefghij", Files.readString(target.resolve("item.txt")));
     }
 
     @Test
@@ -282,6 +418,168 @@ public class TransferEngineLocalIntegrationTest {
         assertThrows(IllegalStateException.class, () -> state.transitionTo(TransferItemStatus.SUCCESS));
     }
 
+    @Test
+    public void publishesLiveProgressBeforeTheCurrentChunkIsCheckpointed() throws Exception {
+        Path source = temporaryFolder.newFolder("live-progress-source").toPath();
+        Path target = temporaryFolder.newFolder("live-progress-target").toPath();
+        byte[] content = new byte[64 * 1024];
+        Files.write(source.resolve("slow.bin"), content);
+        TransferRuntimeOptions runtime = new TransferRuntimeOptions(
+                1, 0, List.of(0L), 64 * 1024, 5L, 0L,
+                CheckpointRecoveryMode.STRICT);
+        PreparedTransfer prepared = prepare(spec(source, target, List.of("slow.bin"), List.of(),
+                TransferPolicy.defaults(), runtime), "run-live-progress");
+        List<TransferEvent> events = new java.util.concurrent.CopyOnWriteArrayList<TransferEvent>();
+
+        TransferResult result = new TransferEngine().execute(prepared,
+                () -> connected(source), () -> slowTarget(target), new InMemoryTransferCheckpointStore(),
+                events::add, new TransferControl());
+
+        assertEquals(TransferRunStatus.SUCCESS, result.status());
+        int liveIndex = indexOf(events, event -> Boolean.TRUE.equals(event.details().get("live")));
+        int checkpointIndex = indexOf(events, event -> event.type()
+                == com.jdragon.aggregation.transfer.model.TransferEventType.CHECKPOINT_SAVED);
+        assertTrue("a live event must be emitted before the 64 KiB chunk is confirmed", liveIndex >= 0);
+        assertTrue("live progress must precede the checkpoint event", liveIndex < checkpointIndex);
+        TransferEvent live = events.get(liveIndex);
+        assertEquals(0L, live.transferredBytes());
+        assertEquals(0L, live.details().get("confirmedBytes"));
+        assertTrue(((Number) live.details().get("observedBytes")).longValue() > 0L);
+    }
+
+    @Test
+    public void publishesChecksumRebuildActivityWithoutAdvancingConfirmedProgress() throws Exception {
+        Path source = temporaryFolder.newFolder("resume-activity-source").toPath();
+        Path target = temporaryFolder.newFolder("resume-activity-target").toPath();
+        byte[] content = new byte[64 * 1024];
+        Files.write(source.resolve("slow.bin"), content);
+        TransferRuntimeOptions runtime = new TransferRuntimeOptions(
+                1, 0, List.of(0L), 64 * 1024, 5L, 0L,
+                CheckpointRecoveryMode.STRICT);
+        PreparedTransfer prepared = prepare(spec(source, target, List.of("slow.bin"), List.of(),
+                TransferPolicy.defaults(), runtime), "run-resume-activity");
+        TransferPlanItem item = prepared.plan().items().get(0);
+        InMemoryTransferCheckpointStore checkpoints = new InMemoryTransferCheckpointStore();
+        long confirmedOffset = 32 * 1024L;
+        try (LocalSourcePlugin targetPlugin = connected(target)) {
+            TransferWriteSession session = targetPlugin.prepareWrite(item.temporaryPath(), item.itemId());
+            assertEquals(confirmedOffset, targetPlugin.append(session, 0,
+                    new ByteArrayInputStream(content, 0, (int) confirmedOffset), confirmedOffset));
+        }
+        checkpoints.save(new TransferCheckpoint(prepared.plan().runId(), item.itemId(),
+                item.sourceIdentity(), item.targetIdentity(), item.sourceSnapshot(), item.temporaryPath(),
+                confirmedOffset, Instant.now()));
+        List<TransferEvent> events = new java.util.concurrent.CopyOnWriteArrayList<TransferEvent>();
+
+        TransferResult result = new TransferEngine().execute(prepared,
+                () -> slowSource(source), () -> connected(target), checkpoints,
+                events::add, new TransferControl());
+
+        assertEquals(TransferRunStatus.SUCCESS, result.status());
+        TransferEvent rebuilding = events.stream()
+                .filter(event -> Boolean.TRUE.equals(event.details().get("live")))
+                .filter(event -> "REBUILDING_CHECKSUM".equals(event.details().get("resumePhase")))
+                .findFirst().orElseThrow();
+        assertEquals(confirmedOffset, rebuilding.transferredBytes());
+        assertEquals(confirmedOffset, rebuilding.details().get("confirmedBytes"));
+        assertEquals(confirmedOffset, rebuilding.details().get("observedBytes"));
+        assertTrue(((Number) rebuilding.details().get("activityBytes")).longValue() > confirmedOffset);
+        TransferEvent completedBlock = events.stream()
+                .filter(event -> event.type()
+                        == com.jdragon.aggregation.transfer.model.TransferEventType.ITEM_PROGRESS)
+                .filter(event -> !Boolean.TRUE.equals(event.details().get("live")))
+                .filter(event -> event.details().containsKey("resumedBytes"))
+                .findFirst().orElseThrow();
+        assertEquals(64 * 1024L, completedBlock.transferredBytes());
+        assertEquals(96 * 1024L, completedBlock.details().get("activityBytes"));
+    }
+
+    @Test
+    public void cancellationDuringChecksumRebuildIsReportedAsCanceled() throws Exception {
+        Path source = temporaryFolder.newFolder("cancel-resume-source").toPath();
+        Path target = temporaryFolder.newFolder("cancel-resume-target").toPath();
+        byte[] content = new byte[256 * 1024];
+        Files.write(source.resolve("slow.bin"), content);
+        TransferRuntimeOptions runtime = new TransferRuntimeOptions(
+                1, 0, List.of(0L), 64 * 1024, 5L, 0L,
+                CheckpointRecoveryMode.STRICT);
+        PreparedTransfer prepared = prepare(spec(source, target, List.of("slow.bin"), List.of(),
+                TransferPolicy.defaults(), runtime), "run-cancel-resume");
+        TransferPlanItem item = prepared.plan().items().get(0);
+        InMemoryTransferCheckpointStore checkpoints = new InMemoryTransferCheckpointStore();
+        long confirmedOffset = 128 * 1024L;
+        try (LocalSourcePlugin targetPlugin = connected(target)) {
+            TransferWriteSession session = targetPlugin.prepareWrite(item.temporaryPath(), item.itemId());
+            assertEquals(confirmedOffset, targetPlugin.append(session, 0,
+                    new ByteArrayInputStream(content, 0, (int) confirmedOffset), confirmedOffset));
+        }
+        checkpoints.save(new TransferCheckpoint(prepared.plan().runId(), item.itemId(),
+                item.sourceIdentity(), item.targetIdentity(), item.sourceSnapshot(), item.temporaryPath(),
+                confirmedOffset, Instant.now()));
+        TransferControl control = new TransferControl();
+        List<TransferEvent> events = new java.util.concurrent.CopyOnWriteArrayList<TransferEvent>();
+
+        TransferResult result = new TransferEngine().execute(prepared,
+                () -> slowSource(source), () -> connected(target), checkpoints,
+                event -> {
+                    events.add(event);
+                    if (Boolean.TRUE.equals(event.details().get("live"))
+                            && "REBUILDING_CHECKSUM".equals(event.details().get("resumePhase"))) {
+                        control.cancel();
+                    }
+                }, control);
+
+        assertEquals(TransferRunStatus.CANCELED, result.status());
+        assertEquals(TransferItemStatus.CANCELED, result.items().get(0).status());
+        assertTrue(checkpoints.load(prepared.plan().runId(), item.itemId()).isEmpty());
+        assertFalse(Files.exists(target.resolve("slow.bin")));
+    }
+
+    @Test
+    public void resumedTransferWithExistingConflictingTargetKeepsActivityMonotonic() throws Exception {
+        Path source = temporaryFolder.newFolder("resume-conflict-source").toPath();
+        Path target = temporaryFolder.newFolder("resume-conflict-target").toPath();
+        byte[] content = new byte[128 * 1024];
+        java.util.Arrays.fill(content, (byte) 's');
+        Files.write(source.resolve("item.bin"), content);
+        Files.write(target.resolve("item.bin"), "different-target".getBytes(StandardCharsets.UTF_8));
+        TransferRuntimeOptions runtime = new TransferRuntimeOptions(
+                1, 0, List.of(0L), 64 * 1024, 5L, 0L);
+        TransferPolicy policy = new TransferPolicy(ConflictPolicy.OVERWRITE, "SHA-256",
+                SourceSuccessAction.KEEP, null);
+        PreparedTransfer prepared = prepare(spec(source, target, List.of("item.bin"), List.of(),
+                policy, runtime), "run-resume-conflict");
+        TransferPlanItem item = prepared.plan().items().get(0);
+        InMemoryTransferCheckpointStore checkpoints = new InMemoryTransferCheckpointStore();
+        long confirmedOffset = 64 * 1024L;
+        try (LocalSourcePlugin targetPlugin = connected(target)) {
+            TransferWriteSession session = targetPlugin.prepareWrite(item.temporaryPath(), item.itemId());
+            assertEquals(confirmedOffset, targetPlugin.append(session, 0,
+                    new ByteArrayInputStream(content, 0, (int) confirmedOffset), confirmedOffset));
+        }
+        checkpoints.save(new TransferCheckpoint(prepared.plan().runId(), item.itemId(),
+                item.sourceIdentity(), item.targetIdentity(), item.sourceSnapshot(), item.temporaryPath(),
+                confirmedOffset, Instant.now()));
+        List<TransferEvent> events = new java.util.concurrent.CopyOnWriteArrayList<TransferEvent>();
+
+        TransferResult result = new TransferEngine().execute(prepared,
+                () -> slowSource(source), () -> slowTarget(target), checkpoints,
+                events::add, new TransferControl());
+
+        assertEquals(TransferRunStatus.SUCCESS, result.status());
+        List<TransferEvent> progress = events.stream()
+                .filter(event -> event.type()
+                        == com.jdragon.aggregation.transfer.model.TransferEventType.ITEM_PROGRESS)
+                .filter(event -> event.details().containsKey("activityBytes"))
+                .toList();
+        assertTrue(progress.size() >= 2);
+        for (int i = 1; i < progress.size(); i++) {
+            long previous = ((Number) progress.get(i - 1).details().get("activityBytes")).longValue();
+            long current = ((Number) progress.get(i).details().get("activityBytes")).longValue();
+            assertTrue("activity bytes must not move backwards", current >= previous);
+        }
+    }
+
     private PreparedTransfer prepare(TransferSpec spec, String runId) throws Exception {
         try (LocalSourcePlugin source = connected(Path.of(spec.selection().rootPath()))) {
             return new TransferPlanner().prepare(spec, source, runId,
@@ -310,12 +608,107 @@ public class TransferEngineLocalIntegrationTest {
         return new TransferRuntimeOptions(concurrency, 0, List.of(0L), 64 * 1024, 1_000, 0);
     }
 
+    private TransferCheckpoint resumableCheckpoint(PreparedTransfer prepared,
+                                                   TransferPlanItem item,
+                                                   byte[] confirmedBytes) throws Exception {
+        ResumableSha256 digest = ResumableSha256.create();
+        digest.update(confirmedBytes, 0, confirmedBytes.length);
+        MessageDigest boundary = MessageDigest.getInstance("SHA-256");
+        boundary.update(confirmedBytes);
+        return new TransferCheckpoint(prepared.plan().runId(), item.itemId(),
+                item.sourceIdentity(), item.targetIdentity(), item.sourceSnapshot(), item.temporaryPath(),
+                confirmedBytes.length, TransferCheckpoint.CURRENT_SCHEMA_VERSION, "SHA-256",
+                "BC-SHA256-ENCODED-V1", digest.encodedState(), confirmedBytes.length, null,
+                0L, confirmedBytes.length, HexFormat.of().formatHex(boundary.digest()),
+                0L, confirmedBytes.length,
+                sha256(confirmedBytes), Instant.now());
+    }
+
+    private String sha256(byte[] value) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        return HexFormat.of().formatHex(digest.digest(value));
+    }
+
+    private LocalSourcePlugin trackingSource(Path root, List<Long> offsets) {
+        Configuration configuration = Configuration.newDefault();
+        configuration.set("rootPath", root.toString());
+        LocalSourcePlugin plugin = new LocalSourcePlugin() {
+            @Override
+            public InputStream openRead(String path, long offset, long length) throws java.io.IOException {
+                offsets.add(offset);
+                return super.openRead(path, offset, length);
+            }
+        };
+        plugin.connect(configuration);
+        return plugin;
+    }
+
     private LocalSourcePlugin connected(Path root) {
         Configuration configuration = Configuration.newDefault();
         configuration.set("rootPath", root.toString());
         LocalSourcePlugin plugin = new LocalSourcePlugin();
         plugin.connect(configuration);
         return plugin;
+    }
+
+    private LocalSourcePlugin slowTarget(Path root) {
+        Configuration configuration = Configuration.newDefault();
+        configuration.set("rootPath", root.toString());
+        LocalSourcePlugin plugin = new LocalSourcePlugin() {
+            @Override
+            public long append(TransferWriteSession session, long offset, InputStream source, long length)
+                    throws java.io.IOException {
+                InputStream slow = new FilterInputStream(source) {
+                    @Override
+                    public int read(byte[] buffer, int bufferOffset, int requested) throws java.io.IOException {
+                        try {
+                            Thread.sleep(6L);
+                        } catch (InterruptedException exception) {
+                            Thread.currentThread().interrupt();
+                            throw new java.io.InterruptedIOException("slow target interrupted");
+                        }
+                        return super.read(buffer, bufferOffset, Math.min(requested, 4 * 1024));
+                    }
+                };
+                return super.append(session, offset, slow, length);
+            }
+        };
+        plugin.connect(configuration);
+        return plugin;
+    }
+
+    private LocalSourcePlugin slowSource(Path root) {
+        Configuration configuration = Configuration.newDefault();
+        configuration.set("rootPath", root.toString());
+        LocalSourcePlugin plugin = new LocalSourcePlugin() {
+            @Override
+            public InputStream openRead(String path, long offset, long length) throws java.io.IOException {
+                return new FilterInputStream(super.openRead(path, offset, length)) {
+                    @Override
+                    public int read(byte[] buffer, int bufferOffset, int requested) throws java.io.IOException {
+                        try {
+                            Thread.sleep(6L);
+                        } catch (InterruptedException exception) {
+                            Thread.currentThread().interrupt();
+                            throw new java.io.InterruptedIOException("slow source interrupted");
+                        }
+                        return super.read(buffer, bufferOffset, Math.min(requested, 4 * 1024));
+                    }
+                };
+            }
+        };
+        plugin.connect(configuration);
+        return plugin;
+    }
+
+    private int indexOf(List<TransferEvent> events,
+                        java.util.function.Predicate<TransferEvent> predicate) {
+        for (int index = 0; index < events.size(); index++) {
+            if (predicate.test(events.get(index))) {
+                return index;
+            }
+        }
+        return -1;
     }
 
     private static final class ObjectKeyFileSystem implements TransferFileSystem {

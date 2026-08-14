@@ -84,7 +84,14 @@ public class JsonFileTransferCheckpointStore implements TransferCheckpointStore 
             TransferCheckpoint checkpoint = new TransferCheckpoint(value.getString("runId"),
                     value.getString("itemId"), value.getString("sourceIdentity"),
                     value.getString("targetIdentity"), snapshot, value.getString("temporaryPath"),
-                    value.getLongValue("confirmedOffset"), Instant.parse(value.getString("updatedAt")));
+                    value.getLongValue("confirmedOffset"), value.getIntValue("schemaVersion"),
+                    value.getString("checksumAlgorithm"), value.getString("checksumStateFormat"),
+                    value.getString("checksumStateBase64"),
+                    value.getLongValue("checksumStateOffset"), value.getString("sourceChecksum"),
+                    value.getLongValue("headOffset"), value.getIntValue("headLength"),
+                    value.getString("headSha256"),
+                    value.getLongValue("boundaryOffset"), value.getIntValue("boundaryLength"),
+                    value.getString("boundarySha256"), Instant.parse(value.getString("updatedAt")));
             checkpoints.put(key(checkpoint.runId(), checkpoint.itemId()), checkpoint);
         }
     }
@@ -95,7 +102,7 @@ public class JsonFileTransferCheckpointStore implements TransferCheckpointStore 
             Files.createDirectories(parent);
         }
         JSONObject root = new JSONObject(true);
-        root.put("schemaVersion", 1);
+        root.put("schemaVersion", 2);
         root.put("runId", runId);
         root.put("jobFile", jobFile);
         JSONArray items = new JSONArray();
@@ -113,6 +120,18 @@ public class JsonFileTransferCheckpointStore implements TransferCheckpointStore 
             value.put("sourceSnapshot", snapshot);
             value.put("temporaryPath", checkpoint.temporaryPath());
             value.put("confirmedOffset", checkpoint.confirmedOffset());
+            value.put("schemaVersion", checkpoint.schemaVersion());
+            value.put("checksumAlgorithm", checkpoint.checksumAlgorithm());
+            value.put("checksumStateFormat", checkpoint.checksumStateFormat());
+            value.put("checksumStateBase64", checkpoint.checksumStateBase64());
+            value.put("checksumStateOffset", checkpoint.checksumStateOffset());
+            value.put("sourceChecksum", checkpoint.sourceChecksum());
+            value.put("headOffset", checkpoint.headOffset());
+            value.put("headLength", checkpoint.headLength());
+            value.put("headSha256", checkpoint.headSha256());
+            value.put("boundaryOffset", checkpoint.boundaryOffset());
+            value.put("boundaryLength", checkpoint.boundaryLength());
+            value.put("boundarySha256", checkpoint.boundarySha256());
             value.put("updatedAt", checkpoint.updatedAt().toString());
             items.add(value);
         }

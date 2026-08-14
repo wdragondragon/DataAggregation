@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.Optional;
 
 public interface TransferFileSystem extends FileHelper {
 
@@ -25,6 +26,16 @@ public interface TransferFileSystem extends FileHelper {
     InputStream openRead(String path, long offset, long length) throws IOException;
 
     TransferWriteSession prepareWrite(String temporaryPath, String sessionId) throws IOException;
+
+    /**
+     * Reconciles a temporary target that may contain bytes written after the
+     * last durable checkpoint. Providers that cannot safely realign it return
+     * an empty result so the transfer restarts from zero.
+     */
+    default Optional<TransferWriteSession> recoverWriteSession(
+            TransferWriteSession session, long confirmedOffset) throws IOException {
+        return Optional.empty();
+    }
 
     long append(TransferWriteSession session, long offset, InputStream source, long length) throws IOException;
 

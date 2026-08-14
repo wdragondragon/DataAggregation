@@ -7,7 +7,18 @@ public record TransferRuntimeOptions(int concurrency,
                                      List<Long> retryBackoffMillis,
                                      long chunkSizeBytes,
                                      long checkpointIntervalMillis,
-                                     long maxBytesPerSecond) {
+                                     long maxBytesPerSecond,
+                                     CheckpointRecoveryMode checkpointRecoveryMode) {
+
+    public TransferRuntimeOptions(int concurrency,
+                                  int maxRetries,
+                                  List<Long> retryBackoffMillis,
+                                  long chunkSizeBytes,
+                                  long checkpointIntervalMillis,
+                                  long maxBytesPerSecond) {
+        this(concurrency, maxRetries, retryBackoffMillis, chunkSizeBytes,
+                checkpointIntervalMillis, maxBytesPerSecond, CheckpointRecoveryMode.FAST);
+    }
 
     public TransferRuntimeOptions {
         if (concurrency < 1 || concurrency > 32) {
@@ -31,11 +42,14 @@ public record TransferRuntimeOptions(int concurrency,
         if (maxBytesPerSecond < 0) {
             throw new IllegalArgumentException("runtime maxBytesPerSecond must be non-negative");
         }
+        checkpointRecoveryMode = checkpointRecoveryMode == null
+                ? CheckpointRecoveryMode.FAST
+                : checkpointRecoveryMode;
     }
 
     public static TransferRuntimeOptions defaults() {
         return new TransferRuntimeOptions(4, 3, List.of(1_000L, 5_000L, 15_000L),
-                8L * 1024 * 1024, 1_000L, 0L);
+                8L * 1024 * 1024, 1_000L, 0L, CheckpointRecoveryMode.FAST);
     }
 
     public long retryDelayMillis(int retryNumber) {

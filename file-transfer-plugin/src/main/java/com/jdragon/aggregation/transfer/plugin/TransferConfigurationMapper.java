@@ -2,6 +2,7 @@ package com.jdragon.aggregation.transfer.plugin;
 
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.transfer.model.ConflictPolicy;
+import com.jdragon.aggregation.transfer.model.CheckpointRecoveryMode;
 import com.jdragon.aggregation.transfer.model.SourceSuccessAction;
 import com.jdragon.aggregation.transfer.model.TransferEndpoint;
 import com.jdragon.aggregation.transfer.model.TransferMapping;
@@ -55,7 +56,9 @@ public class TransferConfigurationMapper {
                 configuration.getLong("runtime.chunkSizeBytes", defaults.chunkSizeBytes()),
                 configuration.getLong("runtime.checkpointIntervalMillis",
                         defaults.checkpointIntervalMillis()),
-                configuration.getLong("runtime.maxBytesPerSecond", defaults.maxBytesPerSecond()));
+                configuration.getLong("runtime.maxBytesPerSecond", defaults.maxBytesPerSecond()),
+                enumValue(CheckpointRecoveryMode.class, configuration.getString(
+                        "runtime.checkpointRecoveryMode", defaults.checkpointRecoveryMode().name())));
         return new TransferSpec(schemaVersion, source, target, selection, mapping, policy, runtime,
                 configuration.getString("timeZone", "UTC"), parameters(configuration));
     }

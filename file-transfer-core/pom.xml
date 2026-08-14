@@ -18,6 +18,11 @@
             <version>1.0_jdk17-SNAPSHOT</version>
         </dependency>
         <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>1.78.1</version>
+        </dependency>
+        <dependency>
             <groupId>com.jdragon.aggregation</groupId>
             <artifactId>data-source-handler-file-local</artifactId>
             <version>1.0_jdk17-SNAPSHOT</version>

@@ -4,6 +4,7 @@ import com.jdragon.aggregation.datasource.file.transfer.TransferFileEntry;
 import com.jdragon.aggregation.datasource.file.transfer.TransferFileSystem;
 import com.jdragon.aggregation.datasource.file.transfer.TransferWriteSession;
 import com.jdragon.aggregation.transfer.model.ConflictPolicy;
+import com.jdragon.aggregation.transfer.model.CheckpointRecoveryMode;
 import com.jdragon.aggregation.transfer.model.SourceSnapshot;
 import com.jdragon.aggregation.transfer.model.SourceSuccessAction;
 import com.jdragon.aggregation.transfer.model.TransferCheckpoint;
@@ -21,14 +22,12 @@ import com.jdragon.aggregation.transfer.model.TransferRuntimeOptions;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.FileAlreadyExistsException;
-import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -126,6 +125,7 @@ public class TransferEngine {
         Instant startedAt = Instant.now();
         TransferItemStateMachine state = new TransferItemStateMachine(TransferItemStatus.QUEUED);
         int attempts = 0;
+        boolean integrityRestarted = false;
         while (true) {
             attempts++;
             try {
@@ -151,10 +151,33 @@ public class TransferEngine {
                 return failureResult(item, TransferItemStatus.CANCELED, attempts,
                         "INTERRUPTED", e.getMessage(), startedAt);
             } catch (Exception e) {
+                // Checkpoint checksum reconstruction reports through an InputStream callback,
+                // whose contract only permits IOException. Preserve the cancellation cause so
+                // a cancel during reconstruction is not misclassified as an ordinary I/O failure.
+                if (isCanceled(e)) {
+                    cleanupCanceled(plan, item, targetFactory, checkpoints);
+                    transition(plan, item, state, TransferItemStatus.CANCELED, 0, attempts, events,
+                            "transfer was canceled", "CANCELED");
+                    return failureResult(item, TransferItemStatus.CANCELED, attempts,
+                            "CANCELED", "transfer was canceled", startedAt);
+                }
+                if (e instanceof RestartFromZeroException && !integrityRestarted) {
+                    integrityRestarted = true;
+                    transition(plan, item, state, TransferItemStatus.FAILED, 0, attempts, events,
+                            safeMessage(e), "CHECKSUM_MISMATCH");
+                    events.onEvent(event(TransferEventType.ITEM_RETRYING, plan.runId(), item.itemId(),
+                            TransferItemStatus.FAILED, 0, item.sourceSnapshot().size(), attempts,
+                            "checksum validation failed; retrying once from zero",
+                            "CHECKSUM_MISMATCH", Map.of("restartFromZero", true)));
+                    transition(plan, item, state, TransferItemStatus.QUEUED, 0, attempts, events,
+                            "file queued for one integrity retry from zero", null);
+                    continue;
+                }
                 String errorCode = errorCode(e);
                 transition(plan, item, state, TransferItemStatus.FAILED, 0, attempts, events,
                         safeMessage(e), errorCode);
-                if (attempts > runtime.maxRetries() || !retryable(e)) {
+                if (e instanceof RestartFromZeroException
+                        || attempts > runtime.maxRetries() || !retryable(e)) {
                     return failureResult(item, TransferItemStatus.FAILED, attempts,
                             errorCode, safeMessage(e), startedAt);
                 }
@@ -230,47 +253,100 @@ public class TransferEngine {
                 }
             }
 
-            enterTransferring(plan, item, state, control, events, attempt, 0);
-            ResumeSession resume = prepareSession(plan, item, target, checkpoints);
+            ResumeSession resume = prepareSession(plan, item, source, target, checkpoints,
+                    runtime.checkpointRecoveryMode(), sourceChecksum != null);
             long offset = resume.session().confirmedOffset();
             long resumedBytes = offset;
+            // Validate the persisted checkpoint before publishing the initial
+            // transfer state, so a resumed item never visibly falls back to zero.
+            enterTransferring(plan, item, state, control, events, attempt, offset,
+                    resume.rebuildingChecksum(), resume.restartReason());
             long attemptStartedNanos = System.nanoTime();
-            MessageDigest streamingDigest = sourceChecksum == null
-                    ? newDigest(policy.checksumAlgorithm())
+            ResumableSha256 streamingDigest = sourceChecksum == null
+                    ? resume.checksum() == null ? ResumableSha256.create() : resume.checksum()
                     : null;
-            if (streamingDigest != null && offset > 0) {
-                try (InputStream prefix = source.openRead(item.sourcePath(), 0, offset)) {
-                    updateDigest(prefix, offset, streamingDigest, item.sourcePath());
+            byte[] headFingerprint = resume.headFingerprint();
+            // Activity is monotonic across a resumed attempt even when the source checksum
+            // was already calculated because the target existed and conflicted.
+            long activityBaseBytes = offset;
+            if (streamingDigest != null && offset > 0 && resume.rebuildingChecksum()) {
+                long confirmedResumeOffset = offset;
+                final long prefixActivityBase = confirmedResumeOffset;
+                try (InputStream prefix = source.openRead(item.sourcePath(), 0, confirmedResumeOffset)) {
+                    // The checksum rebuild reads the retained prefix, but it does not advance the
+                    // confirmed target offset. Activity includes the retained bytes plus this read.
+                    InputStream observedPrefix = new LiveProgressInputStream(prefix, 0L,
+                            runtime.checkpointIntervalMillis(), activityBytes ->
+                            publishChecksumRebuildProgress(plan, item, state, control, events, attempt,
+                                    confirmedResumeOffset, resumedBytes,
+                                    prefixActivityBase + activityBytes));
+                    updateDigest(observedPrefix, confirmedResumeOffset, streamingDigest, item.sourcePath());
                 }
+                activityBaseBytes = confirmedResumeOffset * 2L;
             }
             while (offset < item.sourceSnapshot().size()) {
                 offset = pauseOrCancel(plan, item, state, control, events, attempt, offset);
                 long length = Math.min(runtime.chunkSizeBytes(), item.sourceSnapshot().size() - offset);
                 long written;
+                CheckpointDigestInputStream digestInput = null;
                 try (InputStream input = source.openRead(item.sourcePath(), offset, length)) {
-                    InputStream transferInput = streamingDigest == null
-                            ? input
-                            : new DigestInputStream(input, streamingDigest);
+                    digestInput = streamingDigest == null
+                            ? null
+                            : new CheckpointDigestInputStream(input, streamingDigest);
+                    InputStream transferInput = digestInput == null ? input : digestInput;
+                    long confirmedOffset = offset;
+                    final long chunkActivityBase = activityBaseBytes;
+                    transferInput = new LiveProgressInputStream(transferInput, confirmedOffset,
+                            runtime.checkpointIntervalMillis(), observedBytes ->
+                            events.onEvent(event(TransferEventType.ITEM_PROGRESS, plan.runId(), item.itemId(),
+                                    TransferItemStatus.TRANSFERRING, confirmedOffset,
+                                    item.sourceSnapshot().size(), attempt,
+                                    "file block transfer in progress", null,
+                                    Map.of("live", true,
+                                            "confirmedBytes", confirmedOffset,
+                                            "observedBytes", observedBytes,
+                                            "activityBytes", chunkActivityBase + observedBytes - confirmedOffset,
+                                            "resumedBytes", resumedBytes))));
                     written = target.append(resume.session(), offset, transferInput, length);
                 }
                 if (written != length) {
                     throw new IOException("unexpected EOF: expected " + length + " bytes but wrote " + written);
                 }
                 offset += written;
+                activityBaseBytes += written;
+                if (headFingerprint == null && digestInput != null) {
+                    headFingerprint = digestInput.headBytes();
+                }
                 TransferCheckpoint checkpoint = new TransferCheckpoint(plan.runId(), item.itemId(),
                         item.sourceIdentity(), item.targetIdentity(), item.sourceSnapshot(),
-                        item.temporaryPath(), offset, Instant.now());
+                        item.temporaryPath(), offset, TransferCheckpoint.CURRENT_SCHEMA_VERSION,
+                        policy.checksumAlgorithm(),
+                        "BC-SHA256-ENCODED-V1",
+                        streamingDigest == null ? null : streamingDigest.encodedState(),
+                        streamingDigest == null ? 0L : offset,
+                        sourceChecksum,
+                        0L,
+                        headFingerprint == null ? 0 : headFingerprint.length,
+                        headFingerprint == null ? null : sha256(headFingerprint),
+                        digestInput == null ? 0L : offset - digestInput.tailLength(),
+                        digestInput == null ? 0 : digestInput.tailLength(),
+                        digestInput == null ? null : digestInput.tailSha256(),
+                        Instant.now());
                 checkpoints.save(checkpoint);
                 events.onEvent(event(TransferEventType.CHECKPOINT_SAVED, plan.runId(), item.itemId(),
                         TransferItemStatus.TRANSFERRING, offset, item.sourceSnapshot().size(), attempt,
-                        "transfer checkpoint saved", null, Map.of()));
+                        "transfer checkpoint saved", null,
+                        Map.of("activityBytes", activityBaseBytes,
+                                "resumedBytes", resumedBytes)));
                 events.onEvent(event(TransferEventType.ITEM_PROGRESS, plan.runId(), item.itemId(),
                         TransferItemStatus.TRANSFERRING, offset, item.sourceSnapshot().size(), attempt,
-                        "file block transferred", null, Map.of("resumedBytes", resumedBytes)));
+                        "file block transferred", null,
+                        Map.of("activityBytes", activityBaseBytes,
+                                "resumedBytes", resumedBytes)));
                 throttle(runtime, offset - resumedBytes, attemptStartedNanos);
             }
             if (streamingDigest != null) {
-                sourceChecksum = HexFormat.of().formatHex(streamingDigest.digest());
+                sourceChecksum = streamingDigest.digestHex();
             }
 
             transition(plan, item, state, TransferItemStatus.VERIFYING, offset, attempt, events,
@@ -283,7 +359,10 @@ public class TransferEngine {
             }
             String targetChecksum = target.checksum(item.temporaryPath(), policy.checksumAlgorithm());
             if (!sourceChecksum.equals(targetChecksum)) {
-                throw new IOException("SHA-256 verification failed");
+                target.abort(resume.session());
+                checkpoints.delete(plan.runId(), item.itemId());
+                throw new RestartFromZeroException(
+                        "SHA-256 verification failed; retained checkpoint was discarded");
             }
 
             transition(plan, item, state, TransferItemStatus.COMMITTING, offset, attempt, events,
@@ -326,7 +405,7 @@ public class TransferEngine {
         }
     }
 
-    private void updateDigest(InputStream input, long length, MessageDigest digest, String path)
+    private void updateDigest(InputStream input, long length, ResumableSha256 digest, String path)
             throws IOException {
         byte[] buffer = new byte[64 * 1024];
         long remaining = length;
@@ -343,31 +422,148 @@ public class TransferEngine {
         }
     }
 
+    private void publishChecksumRebuildProgress(TransferPlan plan, TransferPlanItem item,
+                                                TransferItemStateMachine state, TransferControl control,
+                                                TransferEventListener events, int attempt,
+                                                long confirmedOffset, long resumedBytes,
+                                                long activityBytes) throws IOException {
+        try {
+            pauseOrCancel(plan, item, state, control, events, attempt, confirmedOffset,
+                    "transfer paused while validating retained checkpoint checksum",
+                    "checkpoint checksum validation resumed");
+        } catch (TransferCanceledException e) {
+            throw new IOException("transfer canceled while validating retained checkpoint checksum", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new java.io.InterruptedIOException(
+                    "transfer interrupted while validating retained checkpoint checksum");
+        }
+        events.onEvent(event(TransferEventType.ITEM_PROGRESS, plan.runId(), item.itemId(),
+                TransferItemStatus.TRANSFERRING, confirmedOffset,
+                item.sourceSnapshot().size(), attempt,
+                "validating retained checkpoint checksum", null,
+                Map.of("live", true,
+                        "confirmedBytes", confirmedOffset,
+                        "observedBytes", confirmedOffset,
+                        "activityBytes", activityBytes,
+                        "resumePhase", "REBUILDING_CHECKSUM",
+                        "resumedBytes", resumedBytes)));
+    }
+
     private ResumeSession prepareSession(TransferPlan plan, TransferPlanItem item,
-                                         TransferFileSystem target,
-                                         TransferCheckpointStore checkpoints) throws IOException {
+                                         TransferFileSystem source, TransferFileSystem target,
+                                         TransferCheckpointStore checkpoints,
+                                         CheckpointRecoveryMode recoveryMode,
+                                         boolean checksumAlreadyKnown) throws IOException {
         Optional<TransferCheckpoint> existingCheckpoint = checkpoints.load(plan.runId(), item.itemId());
         TransferWriteSession session = target.prepareWrite(item.temporaryPath(), item.itemId());
         if (existingCheckpoint.isPresent()) {
             TransferCheckpoint checkpoint = existingCheckpoint.get();
             if (!checkpoint.matches(plan, item)) {
-                throw new IOException("checkpoint identity or source snapshot does not match the transfer item");
+                return restartSession(plan, item, target, checkpoints, session,
+                        "checkpoint identity or source snapshot changed; transfer restarted");
             }
-            if (session.confirmedOffset() != checkpoint.confirmedOffset()) {
-                throw new IOException("temporary target offset does not match checkpoint: expected "
-                        + checkpoint.confirmedOffset() + " but was " + session.confirmedOffset());
+            if (session.confirmedOffset() > item.sourceSnapshot().size()) {
+                return restartSession(plan, item, target, checkpoints, session,
+                        "temporary target exceeded source size; transfer restarted");
             }
+            if (session.confirmedOffset() < checkpoint.confirmedOffset()) {
+                return restartSession(plan, item, target, checkpoints, session,
+                        "temporary target was shorter than checkpoint; transfer restarted");
+            }
+            if (session.confirmedOffset() > checkpoint.confirmedOffset()) {
+                Optional<TransferWriteSession> recovered = target.recoverWriteSession(
+                        session, checkpoint.confirmedOffset());
+                if (recovered.isEmpty()
+                        || recovered.get().confirmedOffset() != checkpoint.confirmedOffset()) {
+                    return restartSession(plan, item, target, checkpoints, session,
+                            "temporary target could not be aligned to checkpoint; transfer restarted");
+                }
+                session = recovered.get();
+            }
+            if (session.confirmedOffset() == 0L || checksumAlreadyKnown) {
+                return new ResumeSession(session, null, false, null, null);
+            }
+            if (checkpoint.hasResumableChecksumState()) {
+                byte[] headFingerprint = checkpoint.hasBoundaryFingerprint()
+                        ? validatedHeadFingerprint(source, item.sourcePath(), checkpoint)
+                        : null;
+                if (headFingerprint == null) {
+                    return restartSession(plan, item, target, checkpoints, session,
+                            "checkpoint boundary validation failed; transfer restarted");
+                }
+                try {
+                    return new ResumeSession(session,
+                            ResumableSha256.restore(checkpoint.checksumStateBase64()), false, null,
+                            headFingerprint);
+                } catch (IOException invalidState) {
+                    return restartSession(plan, item, target, checkpoints, session,
+                            "checkpoint checksum state was invalid; transfer restarted");
+                }
+            }
+            if (recoveryMode == CheckpointRecoveryMode.STRICT) {
+                int headLength = (int) Math.min(64 * 1024L, checkpoint.confirmedOffset());
+                return new ResumeSession(session, ResumableSha256.create(), true, null,
+                        readBytes(source, item.sourcePath(), 0L, headLength));
+            }
+            return restartSession(plan, item, target, checkpoints, session,
+                    "legacy checkpoint has no resumable checksum state; transfer restarted");
         } else if (session.confirmedOffset() > 0) {
-            target.abort(session);
-            session = target.prepareWrite(item.temporaryPath(), item.itemId());
-            if (session.confirmedOffset() != 0) {
-                throw new IOException("stale temporary target could not be reset");
+            return restartSession(plan, item, target, checkpoints, session,
+                    "stale temporary target had no checkpoint; transfer restarted");
+        }
+        return new ResumeSession(session, null, false, null, null);
+    }
+
+    private ResumeSession restartSession(TransferPlan plan, TransferPlanItem item,
+                                         TransferFileSystem target,
+                                         TransferCheckpointStore checkpoints,
+                                         TransferWriteSession session,
+                                         String reason) throws IOException {
+        target.abort(session);
+        checkpoints.delete(plan.runId(), item.itemId());
+        TransferWriteSession restarted = target.prepareWrite(item.temporaryPath(), item.itemId());
+        if (restarted.confirmedOffset() != 0L) {
+            throw new IOException("stale temporary target could not be reset");
+        }
+        return new ResumeSession(restarted, null, false, reason, null);
+    }
+
+    private byte[] validatedHeadFingerprint(TransferFileSystem source, String sourcePath,
+                                            TransferCheckpoint checkpoint) throws IOException {
+        byte[] head = readBytes(source, sourcePath, checkpoint.headOffset(), checkpoint.headLength());
+        if (!checkpoint.headSha256().equalsIgnoreCase(sha256(head))) {
+            return null;
+        }
+        boolean sameRange = checkpoint.headOffset() == checkpoint.boundaryOffset()
+                && checkpoint.headLength() == checkpoint.boundaryLength();
+        byte[] boundary = sameRange ? head : readBytes(source, sourcePath,
+                checkpoint.boundaryOffset(), checkpoint.boundaryLength());
+        return checkpoint.boundarySha256().equalsIgnoreCase(sha256(boundary)) ? head : null;
+    }
+
+    private byte[] readBytes(TransferFileSystem source, String sourcePath,
+                             long offset, int length) throws IOException {
+        byte[] value = new byte[length];
+        int position = 0;
+        try (InputStream input = source.openRead(sourcePath, offset, length)) {
+            while (position < length) {
+                int read = input.read(value, position, length - position);
+                if (read < 0) {
+                    throw new IOException("unexpected EOF while validating checkpoint fingerprint");
+                }
+                if (read > 0) {
+                    position += read;
+                }
             }
         }
-        if (session.confirmedOffset() > item.sourceSnapshot().size()) {
-            throw new IOException("temporary target is larger than the source snapshot");
-        }
-        return new ResumeSession(session);
+        return value;
+    }
+
+    private String sha256(byte[] value) {
+        MessageDigest digest = newDigest("SHA-256");
+        digest.update(value);
+        return java.util.HexFormat.of().formatHex(digest.digest());
     }
 
     private void commit(TransferPlanItem item, TransferPolicy policy, TransferFileSystem target,
@@ -426,33 +622,57 @@ public class TransferEngine {
                                TransferItemStateMachine state, TransferControl control,
                                TransferEventListener events, int attempt, long offset)
             throws InterruptedException, TransferCanceledException {
+        return pauseOrCancel(plan, item, state, control, events, attempt, offset,
+                "transfer paused at block boundary", "transfer resumed");
+    }
+
+    private long pauseOrCancel(TransferPlan plan, TransferPlanItem item,
+                               TransferItemStateMachine state, TransferControl control,
+                               TransferEventListener events, int attempt, long offset,
+                               String pauseMessage, String resumeMessage)
+            throws InterruptedException, TransferCanceledException {
         if (control.isCanceled()) {
             throw new TransferCanceledException();
         }
         if (control.isPauseRequested()) {
             transition(plan, item, state, TransferItemStatus.PAUSED, offset, attempt, events,
-                    "transfer paused at block boundary", null);
+                    pauseMessage, null);
             control.awaitIfPaused();
             transition(plan, item, state, TransferItemStatus.TRANSFERRING, offset, attempt, events,
-                    "transfer resumed", null);
+                    resumeMessage, null);
         }
         return offset;
     }
 
     private void enterTransferring(TransferPlan plan, TransferPlanItem item,
                                    TransferItemStateMachine state, TransferControl control,
-                                   TransferEventListener events, int attempt, long offset)
+                                   TransferEventListener events, int attempt, long offset,
+                                   boolean rebuildingChecksum, String restartReason)
             throws InterruptedException, TransferCanceledException {
+        Map<String, Object> details = offset > 0
+                ? Map.of("resumedBytes", offset, "resumePhase",
+                        rebuildingChecksum ? "REBUILDING_CHECKSUM" : "RESUMING_TRANSFER",
+                        "activityBytes", offset)
+                : restartReason == null ? Map.of() : Map.of(
+                        "resumePhase", "RESTARTED_FROM_ZERO",
+                        "restartReason", restartReason);
         if (control.isPauseRequested()) {
             transition(plan, item, state, TransferItemStatus.PAUSED, offset, attempt, events,
-                    "transfer paused before start", null);
+                    offset > 0 ? "transfer remains paused at retained checkpoint"
+                            : "transfer paused before start",
+                    null, details);
             control.awaitIfPaused();
         }
         if (control.isCanceled()) {
             throw new TransferCanceledException();
         }
         transition(plan, item, state, TransferItemStatus.TRANSFERRING, offset, attempt, events,
-                "file transfer started", null);
+                restartReason != null ? restartReason
+                        : offset <= 0 ? "file transfer started"
+                        : rebuildingChecksum
+                                ? "checkpoint restored; rebuilding checksum before transfer resumes"
+                                : "checkpoint restored; transfer resumes from confirmed offset",
+                null, details);
     }
 
     private void ensureSourceSnapshot(SourceSnapshot snapshot, TransferFileEntry current) throws IOException {
@@ -490,9 +710,16 @@ public class TransferEngine {
     private void transition(TransferPlan plan, TransferPlanItem item, TransferItemStateMachine state,
                             TransferItemStatus next, long transferred, int attempt,
                             TransferEventListener events, String message, String errorCode) {
+        transition(plan, item, state, next, transferred, attempt, events, message, errorCode, Map.of());
+    }
+
+    private void transition(TransferPlan plan, TransferPlanItem item, TransferItemStateMachine state,
+                            TransferItemStatus next, long transferred, int attempt,
+                            TransferEventListener events, String message, String errorCode,
+                            Map<String, Object> details) {
         state.transitionTo(next);
         events.onEvent(event(TransferEventType.ITEM_STATUS_CHANGED, plan.runId(), item.itemId(), next,
-                transferred, item.sourceSnapshot().size(), attempt, message, errorCode, Map.of()));
+                transferred, item.sourceSnapshot().size(), attempt, message, errorCode, details));
     }
 
     private TransferResult result(TransferPlan plan, List<TransferItemResult> items,
@@ -540,6 +767,17 @@ public class TransferEngine {
                 && !(error instanceof IllegalArgumentException);
     }
 
+    private boolean isCanceled(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof TransferCanceledException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
     private String errorCode(Exception error) {
         String message = safeMessage(error).toLowerCase();
         if (message.contains("source file changed")) {
@@ -574,6 +812,165 @@ public class TransferEngine {
                 total, attempt, message, errorCode, details);
     }
 
-    private record ResumeSession(TransferWriteSession session) {
+    private record ResumeSession(TransferWriteSession session,
+                                 ResumableSha256 checksum,
+                                 boolean rebuildingChecksum,
+                                 String restartReason,
+                                 byte[] headFingerprint) {
+    }
+
+    private static final class RestartFromZeroException extends IOException {
+        private RestartFromZeroException(String message) {
+            super(message);
+        }
+    }
+
+    @FunctionalInterface
+    private interface LiveProgressObserver {
+        void observed(long observedBytes) throws IOException;
+    }
+
+    private static final class LiveProgressInputStream extends InputStream {
+        private final InputStream delegate;
+        private final long confirmedOffset;
+        private final long intervalNanos;
+        private final LiveProgressObserver observer;
+        private long bytesRead;
+        private long lastObservedAt;
+
+        private LiveProgressInputStream(InputStream delegate, long confirmedOffset,
+                                        long intervalMillis, LiveProgressObserver observer) {
+            this.delegate = delegate;
+            this.confirmedOffset = confirmedOffset;
+            this.intervalNanos = TimeUnit.MILLISECONDS.toNanos(Math.max(1L, intervalMillis));
+            this.observer = observer;
+            this.lastObservedAt = System.nanoTime();
+        }
+
+        @Override
+        public int read() throws IOException {
+            int value = delegate.read();
+            if (value >= 0) {
+                recordRead(1L);
+            }
+            return value;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            int read = delegate.read(buffer, offset, length);
+            if (read > 0) {
+                recordRead(read);
+            }
+            return read;
+        }
+
+        @Override
+        public long skip(long count) throws IOException {
+            long skipped = delegate.skip(count);
+            if (skipped > 0L) {
+                recordRead(skipped);
+            }
+            return skipped;
+        }
+
+        @Override
+        public int available() throws IOException {
+            return delegate.available();
+        }
+
+        @Override
+        public void close() throws IOException {
+            delegate.close();
+        }
+
+        private void recordRead(long count) throws IOException {
+            bytesRead += count;
+            long now = System.nanoTime();
+            if (now - lastObservedAt < intervalNanos) {
+                return;
+            }
+            lastObservedAt = now;
+            observer.observed(confirmedOffset + bytesRead);
+        }
+    }
+
+    private static final class CheckpointDigestInputStream extends InputStream {
+        private static final int FINGERPRINT_BYTES = 64 * 1024;
+
+        private final InputStream delegate;
+        private final ResumableSha256 digest;
+        private final byte[] tail = new byte[FINGERPRINT_BYTES];
+        private final byte[] head = new byte[FINGERPRINT_BYTES];
+        private int headLength;
+        private int tailLength;
+        private int tailPosition;
+
+        private CheckpointDigestInputStream(InputStream delegate, ResumableSha256 digest) {
+            this.delegate = delegate;
+            this.digest = digest;
+        }
+
+        @Override
+        public int read() throws IOException {
+            int value = delegate.read();
+            if (value >= 0) {
+                byte[] single = {(byte) value};
+                record(single, 0, 1);
+            }
+            return value;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            int read = delegate.read(buffer, offset, length);
+            if (read > 0) {
+                record(buffer, offset, read);
+            }
+            return read;
+        }
+
+        @Override
+        public void close() throws IOException {
+            delegate.close();
+        }
+
+        private void record(byte[] buffer, int offset, int length) {
+            digest.update(buffer, offset, length);
+            int headCopyLength = Math.min(length, head.length - headLength);
+            if (headCopyLength > 0) {
+                System.arraycopy(buffer, offset, head, headLength, headCopyLength);
+                headLength += headCopyLength;
+            }
+            for (int index = 0; index < length; index++) {
+                tail[tailPosition] = buffer[offset + index];
+                tailPosition = (tailPosition + 1) % tail.length;
+                tailLength = Math.min(tail.length, tailLength + 1);
+            }
+        }
+
+        private int tailLength() {
+            return tailLength;
+        }
+
+        private byte[] headBytes() {
+            return java.util.Arrays.copyOf(head, headLength);
+        }
+
+        private String tailSha256() {
+            MessageDigest boundaryDigest;
+            try {
+                boundaryDigest = MessageDigest.getInstance("SHA-256");
+            } catch (NoSuchAlgorithmException exception) {
+                throw new IllegalStateException("SHA-256 is not available", exception);
+            }
+            int start = tailLength == tail.length ? tailPosition : 0;
+            int first = Math.min(tailLength, tail.length - start);
+            boundaryDigest.update(tail, start, first);
+            if (first < tailLength) {
+                boundaryDigest.update(tail, 0, tailLength - first);
+            }
+            return java.util.HexFormat.of().formatHex(boundaryDigest.digest());
+        }
     }
 }

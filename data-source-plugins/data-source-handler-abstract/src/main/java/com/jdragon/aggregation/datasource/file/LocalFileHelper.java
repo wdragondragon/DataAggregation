@@ -33,6 +33,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -193,6 +194,29 @@ public class LocalFileHelper extends AbstractPlugin implements TransferFileSyste
             Files.createFile(target);
         }
         return new TransferWriteSession(sessionId, toExternalPath(target), offset, Map.of());
+    }
+
+    @Override
+    public Optional<TransferWriteSession> recoverWriteSession(
+            TransferWriteSession session, long confirmedOffset) throws IOException {
+        if (confirmedOffset < 0) {
+            throw new IllegalArgumentException("confirmedOffset must be non-negative");
+        }
+        Path target = resolve(session.temporaryPath());
+        if (!Files.exists(target)) {
+            return Optional.empty();
+        }
+        try (FileChannel channel = FileChannel.open(target, StandardOpenOption.WRITE)) {
+            if (channel.size() < confirmedOffset) {
+                return Optional.empty();
+            }
+            if (channel.size() > confirmedOffset) {
+                channel.truncate(confirmedOffset);
+                channel.force(false);
+            }
+        }
+        return Optional.of(new TransferWriteSession(session.sessionId(),
+                session.temporaryPath(), confirmedOffset, session.metadata()));
     }
 
     @Override

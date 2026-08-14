@@ -57,6 +57,9 @@ public class FileTransferCliTest {
         store.initialize("run-1", jobFile);
         TransferCheckpoint checkpoint = new TransferCheckpoint("run-1", "item-1", "source", "target",
                 new SourceSnapshot("/source/a.txt", 12, 1234, "etag"), "/target/a.part", 5,
+                TransferCheckpoint.CURRENT_SCHEMA_VERSION, "SHA-256", "BC-SHA256-ENCODED-V1",
+                "encoded-state", 5,
+                null, 0, 5, "head", 0, 5, "boundary",
                 Instant.parse("2026-08-07T00:00:00Z"));
         store.save(checkpoint);
 
