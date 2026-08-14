@@ -18,6 +18,7 @@ import com.jdragon.aggregation.transfer.model.TransferPolicy;
 import com.jdragon.aggregation.transfer.model.TransferResult;
 import com.jdragon.aggregation.transfer.model.TransferRunStatus;
 import com.jdragon.aggregation.transfer.model.TransferRuntimeOptions;
+import com.jdragon.aggregation.transfer.model.VerificationMode;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -29,7 +30,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -42,6 +45,7 @@ import java.util.function.UnaryOperator;
 public class TransferEngine {
 
     private final UnaryOperator<Runnable> taskDecorator;
+    private final TransferVerifier verifier = new TransferVerifier();
 
     public TransferEngine() {
         this(UnaryOperator.identity());
@@ -232,29 +236,65 @@ public class TransferEngine {
             ensureSourceSnapshot(item.sourceSnapshot(), currentSource);
 
             try (TransferFileSystem target = targetFactory.open()) {
+            TransferVerificationPlan verificationPlan = verifier.plan(plan, item, policy);
+            verifier.ensureSupported(source, target, verificationPlan);
             boolean targetExisted = target.transferExists(item.targetPath());
+            TransferFileEntry originalTarget = targetExisted ? target.stat(item.targetPath()) : null;
+            TransferVerificationPlan originalTargetPlan = originalTarget == null ? null
+                    : verifier.planForExistingTarget(plan, item, policy, originalTarget.size());
             String sourceChecksum = null;
             String originalTargetChecksum = null;
-            if (targetExisted) {
-                sourceChecksum = source.checksum(item.sourcePath(), policy.checksumAlgorithm());
-                originalTargetChecksum = target.checksum(item.targetPath(), policy.checksumAlgorithm());
-                if (sourceChecksum.equals(originalTargetChecksum)) {
-                    checkpoints.delete(plan.runId(), item.itemId());
-                    transition(plan, item, state, TransferItemStatus.SKIPPED, 0, attempt, events,
-                            "target already has the same SHA-256", null);
-                    return successResult(item, TransferItemStatus.SKIPPED, 0, 0, attempt,
-                            sourceChecksum, originalTargetChecksum, startedAt);
-                }
-                if (policy.conflictPolicy() == ConflictPolicy.FAIL) {
-                    transition(plan, item, state, TransferItemStatus.CONFLICT, 0, attempt, events,
-                            "target exists with different content", "TARGET_CONFLICT");
-                    return failureResult(item, TransferItemStatus.CONFLICT, attempt,
-                            "TARGET_CONFLICT", "target exists with different content", startedAt);
-                }
+            long verificationActivityBytes = 0L;
+
+            if (verificationPlan.effectiveMode() == VerificationMode.PARTIAL) {
+                sourceChecksum = verifier.checksum(source, item.sourcePath(), verificationPlan,
+                        policy.checksumAlgorithm(), ignored -> { });
+                verificationActivityBytes = verificationPlan.verificationBytes();
+            } else if (verificationPlan.effectiveMode() == VerificationMode.STRONG
+                    && originalTarget != null
+                    && originalTarget.size() == item.sourceSnapshot().size()) {
+                sourceChecksum = verifier.checksum(source, item.sourcePath(), verificationPlan,
+                        policy.checksumAlgorithm(), ignored -> { });
+                verificationActivityBytes = verificationPlan.verificationBytes();
             }
 
+            if (originalTarget != null && verificationPlan.effectiveMode() != VerificationMode.NONE) {
+                originalTargetChecksum = verifier.checksum(target, item.targetPath(), originalTargetPlan,
+                        policy.checksumAlgorithm(), ignored -> { });
+                if (originalTarget.size() == item.sourceSnapshot().size()) {
+                    if (sourceChecksum == null) {
+                        sourceChecksum = verifier.checksum(source, item.sourcePath(), verificationPlan,
+                                policy.checksumAlgorithm(), ignored -> { });
+                        verificationActivityBytes = verificationPlan.verificationBytes();
+                    }
+                    if (sourceChecksum.equals(originalTargetChecksum)) {
+                        checkpoints.delete(plan.runId(), item.itemId());
+                        transition(plan, item, state, TransferItemStatus.SKIPPED, 0, attempt, events,
+                                verificationPlan.effectiveMode() == VerificationMode.PARTIAL
+                                        ? "target already has the same sampled fingerprint"
+                                        : "target already has the same SHA-256",
+                                null, verificationDetails(verificationPlan, 0L,
+                                        verificationPlan.verificationBytes(), 0L, true));
+                        return successResult(item, TransferItemStatus.SKIPPED, 0, 0, attempt,
+                                sourceChecksum, originalTargetChecksum, startedAt);
+                    }
+                }
+            }
+            if (targetExisted && policy.conflictPolicy() == ConflictPolicy.FAIL) {
+                transition(plan, item, state, TransferItemStatus.CONFLICT, 0, attempt, events,
+                        verificationPlan.effectiveMode() == VerificationMode.NONE
+                                ? "target exists; content comparison is disabled"
+                                : "target exists with different content",
+                        "TARGET_CONFLICT", verificationModeDetails(verificationPlan));
+                return failureResult(item, TransferItemStatus.CONFLICT, attempt,
+                        "TARGET_CONFLICT", "target exists with different content", startedAt);
+            }
+
+            boolean strongChecksumKnown = verificationPlan.effectiveMode() == VerificationMode.STRONG
+                    && sourceChecksum != null;
             ResumeSession resume = prepareSession(plan, item, source, target, checkpoints,
-                    runtime.checkpointRecoveryMode(), sourceChecksum != null);
+                    runtime.checkpointRecoveryMode(), strongChecksumKnown,
+                    verificationPlan.effectiveMode());
             long offset = resume.session().confirmedOffset();
             long resumedBytes = offset;
             // Validate the persisted checkpoint before publishing the initial
@@ -262,13 +302,14 @@ public class TransferEngine {
             enterTransferring(plan, item, state, control, events, attempt, offset,
                     resume.rebuildingChecksum(), resume.restartReason());
             long attemptStartedNanos = System.nanoTime();
-            ResumableSha256 streamingDigest = sourceChecksum == null
+            ResumableSha256 streamingDigest = verificationPlan.effectiveMode() == VerificationMode.STRONG
+                    && sourceChecksum == null
                     ? resume.checksum() == null ? ResumableSha256.create() : resume.checksum()
                     : null;
             byte[] headFingerprint = resume.headFingerprint();
             // Activity is monotonic across a resumed attempt even when the source checksum
             // was already calculated because the target existed and conflicted.
-            long activityBaseBytes = offset;
+            long activityBaseBytes = addActivityBytes(offset, verificationActivityBytes);
             if (streamingDigest != null && offset > 0 && resume.rebuildingChecksum()) {
                 long confirmedResumeOffset = offset;
                 final long prefixActivityBase = confirmedResumeOffset;
@@ -288,12 +329,10 @@ public class TransferEngine {
                 offset = pauseOrCancel(plan, item, state, control, events, attempt, offset);
                 long length = Math.min(runtime.chunkSizeBytes(), item.sourceSnapshot().size() - offset);
                 long written;
-                CheckpointDigestInputStream digestInput = null;
+                CheckpointFingerprintInputStream fingerprintInput;
                 try (InputStream input = source.openRead(item.sourcePath(), offset, length)) {
-                    digestInput = streamingDigest == null
-                            ? null
-                            : new CheckpointDigestInputStream(input, streamingDigest);
-                    InputStream transferInput = digestInput == null ? input : digestInput;
+                    fingerprintInput = new CheckpointFingerprintInputStream(input, streamingDigest);
+                    InputStream transferInput = fingerprintInput;
                     long confirmedOffset = offset;
                     final long chunkActivityBase = activityBaseBytes;
                     transferInput = new LiveProgressInputStream(transferInput, confirmedOffset,
@@ -314,8 +353,8 @@ public class TransferEngine {
                 }
                 offset += written;
                 activityBaseBytes += written;
-                if (headFingerprint == null && digestInput != null) {
-                    headFingerprint = digestInput.headBytes();
+                if (headFingerprint == null) {
+                    headFingerprint = fingerprintInput.headBytes();
                 }
                 TransferCheckpoint checkpoint = new TransferCheckpoint(plan.runId(), item.itemId(),
                         item.sourceIdentity(), item.targetIdentity(), item.sourceSnapshot(),
@@ -328,9 +367,9 @@ public class TransferEngine {
                         0L,
                         headFingerprint == null ? 0 : headFingerprint.length,
                         headFingerprint == null ? null : sha256(headFingerprint),
-                        digestInput == null ? 0L : offset - digestInput.tailLength(),
-                        digestInput == null ? 0 : digestInput.tailLength(),
-                        digestInput == null ? null : digestInput.tailSha256(),
+                        offset - fingerprintInput.tailLength(),
+                        fingerprintInput.tailLength(),
+                        fingerprintInput.tailSha256(),
                         Instant.now());
                 checkpoints.save(checkpoint);
                 events.onEvent(event(TransferEventType.CHECKPOINT_SAVED, plan.runId(), item.itemId(),
@@ -350,48 +389,52 @@ public class TransferEngine {
             }
 
             transition(plan, item, state, TransferItemStatus.VERIFYING, offset, attempt, events,
-                    "verifying source snapshot and target checksum", null,
-                    Map.of("activityBytes", activityBaseBytes,
-                            "verificationBytes", 0L,
-                            "verificationTotalBytes", item.sourceSnapshot().size(),
-                            "verificationPhase", "TARGET_CHECKSUM",
-                            "resumedBytes", resumedBytes));
+                    verificationPlan.effectiveMode() == VerificationMode.NONE
+                            ? "verifying source snapshot and temporary target size"
+                            : verificationPlan.effectiveMode() == VerificationMode.PARTIAL
+                                    ? "verifying target sample"
+                                    : "verifying source snapshot and target checksum",
+                    null, verificationDetails(verificationPlan, activityBaseBytes,
+                            0L, resumedBytes, verificationPlan.effectiveMode() == VerificationMode.NONE));
             ensureSourceSnapshot(item.sourceSnapshot(), source.stat(item.sourcePath()));
             TransferFileEntry temporary = target.stat(item.temporaryPath());
             if (temporary.size() != item.sourceSnapshot().size()) {
                 throw new IOException("temporary target size mismatch: expected "
                         + item.sourceSnapshot().size() + " but was " + temporary.size());
             }
-            long confirmedTransferBytes = offset;
-            long verificationActivityBase = activityBaseBytes;
-            VerificationProgress verificationProgress = new VerificationProgress(
-                    runtime.checkpointIntervalMillis(), temporary.size(), verifiedBytes ->
-                    events.onEvent(event(TransferEventType.ITEM_PROGRESS, plan.runId(), item.itemId(),
-                            TransferItemStatus.VERIFYING, confirmedTransferBytes,
-                            item.sourceSnapshot().size(), attempt,
-                            "target checksum verification in progress", null,
-                            Map.of("live", true,
-                                    "confirmedBytes", confirmedTransferBytes,
-                                    "observedBytes", confirmedTransferBytes,
-                                    "activityBytes", addActivityBytes(verificationActivityBase, verifiedBytes),
-                                    "verificationBytes", verifiedBytes,
-                                    "verificationTotalBytes", temporary.size(),
-                                    "verificationPhase", "TARGET_CHECKSUM",
-                                    "verificationComplete", verifiedBytes >= temporary.size(),
-                                    "resumedBytes", resumedBytes))));
-            String targetChecksum = target.checksum(item.temporaryPath(), policy.checksumAlgorithm(),
-                    verificationProgress::observed);
-            verificationProgress.complete();
-            if (!sourceChecksum.equals(targetChecksum)) {
-                target.abort(resume.session());
-                checkpoints.delete(plan.runId(), item.itemId());
-                throw new RestartFromZeroException(
-                        "SHA-256 verification failed; retained checkpoint was discarded");
+            String targetChecksum = null;
+            if (verificationPlan.effectiveMode() != VerificationMode.NONE) {
+                long confirmedTransferBytes = offset;
+                long verificationActivityBase = activityBaseBytes;
+                VerificationProgress verificationProgress = new VerificationProgress(
+                        runtime.checkpointIntervalMillis(), verificationPlan.verificationBytes(), verifiedBytes ->
+                        events.onEvent(event(TransferEventType.ITEM_PROGRESS, plan.runId(), item.itemId(),
+                                TransferItemStatus.VERIFYING, confirmedTransferBytes,
+                                item.sourceSnapshot().size(), attempt,
+                                verificationPlan.effectiveMode() == VerificationMode.PARTIAL
+                                        ? "target sample verification in progress"
+                                        : "target checksum verification in progress",
+                                null, liveVerificationDetails(verificationPlan,
+                                        confirmedTransferBytes,
+                                        addActivityBytes(verificationActivityBase, verifiedBytes),
+                                        verifiedBytes, resumedBytes))));
+                targetChecksum = verifier.checksum(target, item.temporaryPath(), verificationPlan,
+                        policy.checksumAlgorithm(), verificationProgress::observed);
+                verificationProgress.complete();
+                if (!sourceChecksum.equals(targetChecksum)) {
+                    target.abort(resume.session());
+                    checkpoints.delete(plan.runId(), item.itemId());
+                    throw new RestartFromZeroException(
+                            verificationPlan.effectiveMode() == VerificationMode.PARTIAL
+                                    ? "partial SHA-256 verification failed; retained checkpoint was discarded"
+                                    : "SHA-256 verification failed; retained checkpoint was discarded");
+                }
             }
 
             transition(plan, item, state, TransferItemStatus.COMMITTING, offset, attempt, events,
                     "committing verified temporary target", null);
-            commit(item, policy, target, resume.session(), targetExisted, originalTargetChecksum);
+            commit(item, policy, target, resume.session(), originalTarget,
+                    originalTargetPlan, originalTargetChecksum);
             checkpoints.delete(plan.runId(), item.itemId());
 
             if (policy.sourceSuccessAction() == SourceSuccessAction.KEEP) {
@@ -478,7 +521,8 @@ public class TransferEngine {
                                          TransferFileSystem source, TransferFileSystem target,
                                          TransferCheckpointStore checkpoints,
                                          CheckpointRecoveryMode recoveryMode,
-                                         boolean checksumAlreadyKnown) throws IOException {
+                                         boolean checksumAlreadyKnown,
+                                         VerificationMode effectiveMode) throws IOException {
         Optional<TransferCheckpoint> existingCheckpoint = checkpoints.load(plan.runId(), item.itemId());
         TransferWriteSession session = target.prepareWrite(item.temporaryPath(), item.itemId());
         if (existingCheckpoint.isPresent()) {
@@ -505,16 +549,27 @@ public class TransferEngine {
                 }
                 session = recovered.get();
             }
-            if (session.confirmedOffset() == 0L || checksumAlreadyKnown) {
+            if (session.confirmedOffset() == 0L) {
                 return new ResumeSession(session, null, false, null, null);
             }
-            if (checkpoint.hasResumableChecksumState()) {
-                byte[] headFingerprint = checkpoint.hasBoundaryFingerprint()
-                        ? validatedHeadFingerprint(source, item.sourcePath(), checkpoint)
-                        : null;
+            byte[] headFingerprint = checkpoint.hasBoundaryFingerprint()
+                    ? validatedHeadFingerprint(source, item.sourcePath(), checkpoint)
+                    : null;
+            if (checkpoint.hasBoundaryFingerprint() && headFingerprint == null) {
+                return restartSession(plan, item, target, checkpoints, session,
+                        "checkpoint boundary validation failed; transfer restarted");
+            }
+            if (effectiveMode != VerificationMode.STRONG || checksumAlreadyKnown) {
                 if (headFingerprint == null) {
                     return restartSession(plan, item, target, checkpoints, session,
-                            "checkpoint boundary validation failed; transfer restarted");
+                            "checkpoint has no boundary fingerprint; transfer restarted");
+                }
+                return new ResumeSession(session, null, false, null, headFingerprint);
+            }
+            if (checkpoint.hasResumableChecksumState()) {
+                if (headFingerprint == null) {
+                    return restartSession(plan, item, target, checkpoints, session,
+                            "checkpoint boundary fingerprint is missing; transfer restarted");
                 }
                 try {
                     return new ResumeSession(session,
@@ -591,16 +646,28 @@ public class TransferEngine {
     }
 
     private void commit(TransferPlanItem item, TransferPolicy policy, TransferFileSystem target,
-                        TransferWriteSession session, boolean targetExisted,
+                        TransferWriteSession session, TransferFileEntry originalTarget,
+                        TransferVerificationPlan originalTargetPlan,
                         String originalTargetChecksum) throws IOException {
+        boolean targetExisted = originalTarget != null;
         boolean existsNow = target.transferExists(item.targetPath());
         if (targetExisted && !existsNow) {
             throw new IOException("target changed during transfer: original target disappeared");
         }
+        if (!targetExisted && existsNow) {
+            throw new IOException("target changed during transfer: target appeared after transfer started");
+        }
         if (targetExisted) {
-            String currentChecksum = target.checksum(item.targetPath(), policy.checksumAlgorithm());
-            if (!currentChecksum.equals(originalTargetChecksum)) {
+            TransferFileEntry currentTarget = target.stat(item.targetPath());
+            if (!sameTargetSnapshot(originalTarget, currentTarget)) {
                 throw new IOException("target changed during transfer");
+            }
+            if (originalTargetPlan.effectiveMode() != VerificationMode.NONE) {
+                String currentChecksum = verifier.checksum(target, item.targetPath(), originalTargetPlan,
+                        policy.checksumAlgorithm(), ignored -> { });
+                if (!Objects.equals(currentChecksum, originalTargetChecksum)) {
+                    throw new IOException("target changed during transfer");
+                }
             }
         }
         if (policy.conflictPolicy() == ConflictPolicy.BACKUP_THEN_OVERWRITE && existsNow) {
@@ -705,6 +772,14 @@ public class TransferEngine {
         }
     }
 
+    private boolean sameTargetSnapshot(TransferFileEntry expected, TransferFileEntry current) {
+        return current != null
+                && !current.directory()
+                && expected.size() == current.size()
+                && expected.modifiedTimeMillis() == current.modifiedTimeMillis()
+                && Objects.equals(expected.etag(), current.etag());
+    }
+
     private void throttle(TransferRuntimeOptions runtime, long writtenBytes, long startedNanos)
             throws InterruptedException {
         if (runtime.maxBytesPerSecond() <= 0 || writtenBytes <= 0) {
@@ -788,6 +863,7 @@ public class TransferEngine {
 
     private boolean retryable(Exception error) {
         return !(error instanceof FileAlreadyExistsException)
+                && !(error instanceof PartialVerificationUnsupportedException)
                 && !(error instanceof IllegalArgumentException);
     }
 
@@ -803,6 +879,10 @@ public class TransferEngine {
     }
 
     private String errorCode(Exception error) {
+        if (error instanceof PartialVerificationUnsupportedException
+                || safeMessage(error).contains("FILE_TRANSFER_PARTIAL_VERIFY_UNSUPPORTED")) {
+            return "FILE_TRANSFER_PARTIAL_VERIFY_UNSUPPORTED";
+        }
         String message = safeMessage(error).toLowerCase();
         if (message.contains("source file changed")) {
             return "SOURCE_CHANGED";
@@ -838,6 +918,41 @@ public class TransferEngine {
 
     private long addActivityBytes(long base, long delta) {
         return delta > Long.MAX_VALUE - base ? Long.MAX_VALUE : base + delta;
+    }
+
+    private Map<String, Object> verificationModeDetails(TransferVerificationPlan plan) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("verificationModeConfigured", plan.configuredMode().name());
+        details.put("verificationModeEffective", plan.effectiveMode().name());
+        return details;
+    }
+
+    private Map<String, Object> verificationDetails(TransferVerificationPlan plan,
+                                                    long activityBytes,
+                                                    long verificationBytes,
+                                                    long resumedBytes,
+                                                    boolean complete) {
+        Map<String, Object> details = new LinkedHashMap<>(verificationModeDetails(plan));
+        details.put("activityBytes", activityBytes);
+        details.put("verificationBytes", verificationBytes);
+        details.put("verificationTotalBytes", plan.verificationBytes());
+        details.put("verificationPhase", plan.phase());
+        details.put("verificationComplete", complete);
+        details.put("resumedBytes", resumedBytes);
+        return details;
+    }
+
+    private Map<String, Object> liveVerificationDetails(TransferVerificationPlan plan,
+                                                        long confirmedBytes,
+                                                        long activityBytes,
+                                                        long verificationBytes,
+                                                        long resumedBytes) {
+        Map<String, Object> details = new LinkedHashMap<>(verificationDetails(plan, activityBytes,
+                verificationBytes, resumedBytes, verificationBytes >= plan.verificationBytes()));
+        details.put("live", true);
+        details.put("confirmedBytes", confirmedBytes);
+        details.put("observedBytes", confirmedBytes);
+        return details;
     }
 
     private record ResumeSession(TransferWriteSession session,
@@ -962,7 +1077,7 @@ public class TransferEngine {
         }
     }
 
-    private static final class CheckpointDigestInputStream extends InputStream {
+    private static final class CheckpointFingerprintInputStream extends InputStream {
         private static final int FINGERPRINT_BYTES = 64 * 1024;
 
         private final InputStream delegate;
@@ -973,7 +1088,7 @@ public class TransferEngine {
         private int tailLength;
         private int tailPosition;
 
-        private CheckpointDigestInputStream(InputStream delegate, ResumableSha256 digest) {
+        private CheckpointFingerprintInputStream(InputStream delegate, ResumableSha256 digest) {
             this.delegate = delegate;
             this.digest = digest;
         }
@@ -1003,7 +1118,9 @@ public class TransferEngine {
         }
 
         private void record(byte[] buffer, int offset, int length) {
-            digest.update(buffer, offset, length);
+            if (digest != null) {
+                digest.update(buffer, offset, length);
+            }
             int headCopyLength = Math.min(length, head.length - headLength);
             if (headCopyLength > 0) {
                 System.arraycopy(buffer, offset, head, headLength, headCopyLength);

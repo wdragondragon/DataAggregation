@@ -10,6 +10,7 @@ import com.jdragon.aggregation.transfer.model.TransferPolicy;
 import com.jdragon.aggregation.transfer.model.TransferRuntimeOptions;
 import com.jdragon.aggregation.transfer.model.TransferSelection;
 import com.jdragon.aggregation.transfer.model.TransferSpec;
+import com.jdragon.aggregation.transfer.model.VerificationMode;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -45,6 +46,12 @@ public class TransferConfigurationMapper {
                 enumValue(ConflictPolicy.class,
                         configuration.getString("policy.conflictPolicy", ConflictPolicy.FAIL.name())),
                 configuration.getString("policy.checksumAlgorithm", "SHA-256"),
+                enumValue(VerificationMode.class,
+                        configuration.getString("policy.verificationMode", VerificationMode.STRONG.name())),
+                configuration.getInt("policy.verificationFrameCount",
+                        TransferPolicy.DEFAULT_VERIFICATION_FRAME_COUNT),
+                configuration.getLong("policy.verificationFrameSizeBytes",
+                        TransferPolicy.DEFAULT_VERIFICATION_FRAME_SIZE_BYTES),
                 enumValue(SourceSuccessAction.class,
                         configuration.getString("policy.sourceSuccessAction", SourceSuccessAction.KEEP.name())),
                 configuration.getString("policy.sourceBackupRootPath"));

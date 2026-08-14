@@ -38,7 +38,8 @@ public class DynamicTemplateResolver {
                 mapping.preserveRelativePath(),
                 resolve(mapping.targetPathTemplate(), runId, plannedAt, zoneId, parameters));
         TransferPolicy resolvedPolicy = new TransferPolicy(policy.conflictPolicy(), policy.checksumAlgorithm(),
-                policy.sourceSuccessAction(),
+                policy.verificationMode(), policy.verificationFrameCount(),
+                policy.verificationFrameSizeBytes(), policy.sourceSuccessAction(),
                 resolve(policy.sourceBackupRootPath(), runId, plannedAt, zoneId, parameters));
         return new TransferSpec(spec.schemaVersion(), spec.source(), spec.target(), resolvedSelection,
                 resolvedMapping, resolvedPolicy, spec.runtime(), spec.timeZone(), spec.parameters());
