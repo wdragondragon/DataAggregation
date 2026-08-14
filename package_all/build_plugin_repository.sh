@@ -17,6 +17,8 @@ declare -a COORDINATE_TYPES=()
 declare -a COORDINATE_NAMES=()
 declare -a COORDINATE_DIRECTORIES=()
 declare -a TEMPORARY_PATHS=()
+BUILT_COUNT=0
+SKIPPED_COUNT=0
 
 usage() {
     cat <<'EOF'
@@ -28,7 +30,7 @@ Usage:
 Options:
   --aggregation-home PATH     Aggregation runtime directory (default: package_all/aggregation)
   --output-root PATH          Repository output directory (default: package_all/plugin-repository)
-  --type TYPE                 Plugin type: source, reader, writer, transformer, or report
+  --type TYPE                 Plugin type: source, reader, writer, transformer, report, or file-transfer
   --name NAME                 Plugin name; use together with --type
   --all                       Build every plugin below aggregation/plugin
   --channel CHANNEL           Repository channel (default: production)
@@ -38,6 +40,7 @@ Options:
   -h, --help                  Show this help
 
 With neither --all nor --type/--name, all plugins are built.
+Existing immutable releases are skipped without changing current.json.
 Requires bash, jq, zip, and sha256sum or shasum.
 EOF
 }
@@ -141,7 +144,7 @@ assert_safe_segment "$RELEASE" "Release"
 ((MAX_ARTIFACT_BYTES > 0)) || fail "MaxArtifactBytes must be positive"
 
 case "$PLUGIN_TYPE" in
-    ""|source|reader|writer|transformer|report) ;;
+    ""|source|reader|writer|transformer|report|file-transfer) ;;
     *) fail "unsupported plugin type: $PLUGIN_TYPE" ;;
 esac
 
@@ -191,7 +194,7 @@ validate_coordinate() {
 
 if [[ "$BUILD_ALL" == true ]]; then
     shopt -s nullglob
-    for type in source reader writer transformer report; do
+    for type in source reader writer transformer report file-transfer; do
         type_root="$PLUGIN_ROOT/$type"
         [[ -d "$type_root" ]] || continue
         for plugin_directory in "$type_root"/*; do
@@ -223,7 +226,13 @@ for ((index = 0; index < ${#COORDINATE_TYPES[@]}; index++)); do
     plugin_base="$OUTPUT_ROOT/$CHANNEL/$type/$name"
     release_parent="$plugin_base/releases"
     release_directory="$release_parent/$RELEASE"
-    [[ ! -e "$release_directory" ]] || fail "Immutable plugin release already exists: $release_directory"
+    if [[ -e "$release_directory" ]]; then
+        [[ -d "$release_directory" && -f "$release_directory/plugin.zip" ]] \
+            || fail "Existing immutable plugin release is incomplete: $release_directory"
+        printf 'SKIP: %s/%s release %s already exists; current.json was not changed\n' "$type" "$name" "$RELEASE"
+        SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+        continue
+    fi
 
     mkdir -p -- "$release_parent"
     temporary_release="$release_parent/.${RELEASE}.tmp.$$.$index"
@@ -258,7 +267,8 @@ for ((index = 0; index < ${#COORDINATE_TYPES[@]}; index++)); do
         > "$temporary_pointer"
     mv -f -- "$temporary_pointer" "$current_path"
 
+    BUILT_COUNT=$((BUILT_COUNT + 1))
     printf 'Built %s/%s release %s (%s bytes, %s)\n' "$type" "$name" "$RELEASE" "$size" "$sha256"
 done
 
-printf 'Plugin repository is ready at %s\n' "$OUTPUT_ROOT"
+printf 'Plugin repository is ready at %s (%s built, %s skipped)\n' "$OUTPUT_ROOT" "$BUILT_COUNT" "$SKIPPED_COUNT"
