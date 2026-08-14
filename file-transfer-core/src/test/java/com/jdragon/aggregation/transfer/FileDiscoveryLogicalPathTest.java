@@ -48,6 +48,51 @@ public class FileDiscoveryLogicalPathTest {
     }
 
     @Test
+    public void topLevelObjectFileUsesItsNameAsRelativePath() throws Exception {
+        TestTransferFileSystem source = new TestTransferFileSystem() {
+            @Override
+            public TransferFileEntry stat(String path) {
+                return new TransferFileEntry("gx-data-1.0.0.jar", "gx-data-1.0.0.jar",
+                        false, 1L, 0L, null);
+            }
+        };
+        TransferSelection selection = new TransferSelection("/gx-data-1.0.0.jar", List.of(), false,
+                List.of(), null, List.of(), null, null, null, null, 10);
+        List<DiscoveredFile> files = new ArrayList<>();
+
+        new FileDiscovery().discover(source, selection, files::add);
+
+        assertEquals(List.of("gx-data-1.0.0.jar"),
+                files.stream().map(DiscoveredFile::relativePath).toList());
+    }
+
+    @Test
+    public void objectStorageRootAcceptsRelativeObjectKeys() throws Exception {
+        TestTransferFileSystem source = new TestTransferFileSystem() {
+            @Override
+            public TransferFileEntry stat(String path) {
+                return new TransferFileEntry("", "", true, 0L, 0L, null);
+            }
+
+            @Override
+            public TransferFilePage listPage(String directory, String cursor, int pageSize) {
+                assertEquals("", directory);
+                return new TransferFilePage(List.of(
+                        new TransferFileEntry("gx-data-1.0.0.jar", "gx-data-1.0.0.jar",
+                                false, 1L, 0L, null)), null, false);
+            }
+        };
+        TransferSelection selection = new TransferSelection("/", List.of(), true,
+                List.of(), null, List.of(), null, null, null, null, 10);
+        List<DiscoveredFile> files = new ArrayList<>();
+
+        new FileDiscovery().discover(source, selection, files::add);
+
+        assertEquals(List.of("gx-data-1.0.0.jar"),
+                files.stream().map(DiscoveredFile::relativePath).toList());
+    }
+
+    @Test
     public void caseInsensitiveSourceAcceptsPathsWhoseCaseDiffersFromConfiguredRoot() throws Exception {
         TestTransferFileSystem source = new TestTransferFileSystem() {
             @Override

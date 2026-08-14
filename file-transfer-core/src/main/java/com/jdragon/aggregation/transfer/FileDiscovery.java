@@ -21,9 +21,7 @@ public class FileDiscovery {
                         Consumer<DiscoveredFile> consumer) throws IOException {
         boolean sourceCaseSensitive = source.capabilities().pathCaseSensitive();
         TransferFileEntry configuredRoot = source.stat(selection.rootPath());
-        String relativeRoot = configuredRoot.directory()
-                ? configuredRoot.path()
-                : TransferPaths.parent(configuredRoot.path());
+        String relativeRoot = configuredRoot.path();
         List<String> selectedPaths = selection.paths().isEmpty()
                 ? List.of(selection.rootPath())
                 : selection.paths();

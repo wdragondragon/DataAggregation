@@ -27,6 +27,17 @@ public class TransferPathCaseSensitivityTest {
     }
 
     @Test
+    public void relativeObjectRootAcceptsKeysButRejectsEscapes() {
+        assertEquals("file.txt", TransferPaths.relativeTo(".", "file.txt"));
+        assertEquals("nested/file.txt", TransferPaths.relativeTo("", "nested/file.txt"));
+        assertEquals("file.txt", TransferPaths.relativeTo(".", "./file.txt"));
+        assertThrows(IllegalArgumentException.class,
+                () -> TransferPaths.relativeTo(".", "../file.txt"));
+        assertThrows(IllegalArgumentException.class,
+                () -> TransferPaths.relativeTo("", "/file.txt"));
+    }
+
+    @Test
     public void plannerAllowsTargetsThatDifferOnlyByCase() throws Exception {
         FileDiscovery discovery = new FileDiscovery() {
             @Override

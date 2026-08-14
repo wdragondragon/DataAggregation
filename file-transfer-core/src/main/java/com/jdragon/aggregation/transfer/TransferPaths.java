@@ -71,11 +71,30 @@ public final class TransferPaths {
         if (equals(normalizedRoot, normalizedPath, caseSensitive)) {
             return fileName(normalizedPath);
         }
+        if (normalizedRoot.isEmpty() || ".".equals(normalizedRoot)) {
+            String relativePath = normalizedPath;
+            while (relativePath.startsWith("./")) {
+                relativePath = relativePath.substring(2);
+            }
+            if (relativePath.isEmpty() || isAbsolute(normalizedPath) || containsParentTraversal(relativePath)) {
+                throw new IllegalArgumentException("path is outside selection root: " + path);
+            }
+            return relativePath;
+        }
         String prefix = normalizedRoot.endsWith("/") ? normalizedRoot : normalizedRoot + "/";
         if (!startsWith(normalizedPath, prefix, caseSensitive)) {
             throw new IllegalArgumentException("path is outside selection root: " + path);
         }
         return normalizedPath.substring(prefix.length());
+    }
+
+    private static boolean containsParentTraversal(String path) {
+        for (String segment : path.split("/")) {
+            if ("..".equals(segment)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static boolean equals(String left, String right, boolean caseSensitive) {
