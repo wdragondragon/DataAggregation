@@ -15,6 +15,7 @@ import java.io.OutputStream;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.LongConsumer;
 
 public class MinioSourcePlugin extends AbstractPlugin implements TransferFileSystem {
 
@@ -142,6 +143,11 @@ public class MinioSourcePlugin extends AbstractPlugin implements TransferFileSys
     @Override
     public String checksum(String path, String algorithm) throws IOException {
         return delegate().checksum(normalizeObjectPath(path), algorithm);
+    }
+
+    @Override
+    public String checksum(String path, String algorithm, LongConsumer progress) throws IOException {
+        return delegate().checksum(normalizeObjectPath(path), algorithm, progress);
     }
 
     @Override

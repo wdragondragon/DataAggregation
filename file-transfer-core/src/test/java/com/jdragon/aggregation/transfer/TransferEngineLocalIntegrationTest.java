@@ -448,6 +448,35 @@ public class TransferEngineLocalIntegrationTest {
     }
 
     @Test
+    public void publishesTargetChecksumProgressWithoutAdvancingConfirmedBytes() throws Exception {
+        Path source = temporaryFolder.newFolder("verification-progress-source").toPath();
+        Path target = temporaryFolder.newFolder("verification-progress-target").toPath();
+        byte[] content = new byte[128 * 1024];
+        Files.write(source.resolve("verify.bin"), content);
+        PreparedTransfer prepared = prepare(spec(source, target, List.of("verify.bin"), List.of(),
+                TransferPolicy.defaults(), runtime(1)), "run-verification-progress");
+        List<TransferEvent> events = new java.util.concurrent.CopyOnWriteArrayList<TransferEvent>();
+
+        TransferResult result = new TransferEngine().execute(prepared,
+                () -> connected(source), () -> connected(target), new InMemoryTransferCheckpointStore(),
+                events::add, new TransferControl());
+
+        assertEquals(TransferRunStatus.SUCCESS, result.status());
+        TransferEvent verification = events.stream()
+                .filter(event -> event.type()
+                        == com.jdragon.aggregation.transfer.model.TransferEventType.ITEM_PROGRESS)
+                .filter(event -> event.itemStatus() == TransferItemStatus.VERIFYING)
+                .filter(event -> Boolean.TRUE.equals(event.details().get("verificationComplete")))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(content.length, verification.transferredBytes());
+        assertEquals((long) content.length, verification.details().get("verificationBytes"));
+        assertEquals((long) content.length, verification.details().get("verificationTotalBytes"));
+        assertEquals("TARGET_CHECKSUM", verification.details().get("verificationPhase"));
+        assertEquals((long) content.length * 2L, verification.details().get("activityBytes"));
+    }
+
+    @Test
     public void publishesChecksumRebuildActivityWithoutAdvancingConfirmedProgress() throws Exception {
         Path source = temporaryFolder.newFolder("resume-activity-source").toPath();
         Path target = temporaryFolder.newFolder("resume-activity-target").toPath();

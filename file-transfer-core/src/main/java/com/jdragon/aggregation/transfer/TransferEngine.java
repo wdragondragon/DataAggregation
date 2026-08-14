@@ -350,14 +350,38 @@ public class TransferEngine {
             }
 
             transition(plan, item, state, TransferItemStatus.VERIFYING, offset, attempt, events,
-                    "verifying source snapshot and target checksum", null);
+                    "verifying source snapshot and target checksum", null,
+                    Map.of("activityBytes", activityBaseBytes,
+                            "verificationBytes", 0L,
+                            "verificationTotalBytes", item.sourceSnapshot().size(),
+                            "verificationPhase", "TARGET_CHECKSUM",
+                            "resumedBytes", resumedBytes));
             ensureSourceSnapshot(item.sourceSnapshot(), source.stat(item.sourcePath()));
             TransferFileEntry temporary = target.stat(item.temporaryPath());
             if (temporary.size() != item.sourceSnapshot().size()) {
                 throw new IOException("temporary target size mismatch: expected "
                         + item.sourceSnapshot().size() + " but was " + temporary.size());
             }
-            String targetChecksum = target.checksum(item.temporaryPath(), policy.checksumAlgorithm());
+            long confirmedTransferBytes = offset;
+            long verificationActivityBase = activityBaseBytes;
+            VerificationProgress verificationProgress = new VerificationProgress(
+                    runtime.checkpointIntervalMillis(), temporary.size(), verifiedBytes ->
+                    events.onEvent(event(TransferEventType.ITEM_PROGRESS, plan.runId(), item.itemId(),
+                            TransferItemStatus.VERIFYING, confirmedTransferBytes,
+                            item.sourceSnapshot().size(), attempt,
+                            "target checksum verification in progress", null,
+                            Map.of("live", true,
+                                    "confirmedBytes", confirmedTransferBytes,
+                                    "observedBytes", confirmedTransferBytes,
+                                    "activityBytes", addActivityBytes(verificationActivityBase, verifiedBytes),
+                                    "verificationBytes", verifiedBytes,
+                                    "verificationTotalBytes", temporary.size(),
+                                    "verificationPhase", "TARGET_CHECKSUM",
+                                    "verificationComplete", verifiedBytes >= temporary.size(),
+                                    "resumedBytes", resumedBytes))));
+            String targetChecksum = target.checksum(item.temporaryPath(), policy.checksumAlgorithm(),
+                    verificationProgress::observed);
+            verificationProgress.complete();
             if (!sourceChecksum.equals(targetChecksum)) {
                 target.abort(resume.session());
                 checkpoints.delete(plan.runId(), item.itemId());
@@ -812,6 +836,10 @@ public class TransferEngine {
                 total, attempt, message, errorCode, details);
     }
 
+    private long addActivityBytes(long base, long delta) {
+        return delta > Long.MAX_VALUE - base ? Long.MAX_VALUE : base + delta;
+    }
+
     private record ResumeSession(TransferWriteSession session,
                                  ResumableSha256 checksum,
                                  boolean rebuildingChecksum,
@@ -828,6 +856,45 @@ public class TransferEngine {
     @FunctionalInterface
     private interface LiveProgressObserver {
         void observed(long observedBytes) throws IOException;
+    }
+
+    private static final class VerificationProgress {
+        private final long intervalNanos;
+        private final long totalBytes;
+        private final java.util.function.LongConsumer observer;
+        private long lastObservedBytes;
+        private long lastPublishedBytes = -1L;
+        private long lastPublishedAt;
+
+        private VerificationProgress(long intervalMillis, long totalBytes,
+                                     java.util.function.LongConsumer observer) {
+            this.intervalNanos = TimeUnit.MILLISECONDS.toNanos(Math.max(1L, intervalMillis));
+            this.totalBytes = Math.max(0L, totalBytes);
+            this.observer = observer;
+            this.lastPublishedAt = System.nanoTime();
+        }
+
+        private void observed(long verifiedBytes) {
+            lastObservedBytes = Math.max(lastObservedBytes, Math.min(totalBytes, verifiedBytes));
+            long now = System.nanoTime();
+            if (lastObservedBytes < totalBytes && now - lastPublishedAt < intervalNanos) {
+                return;
+            }
+            publish(now);
+        }
+
+        private void complete() {
+            lastObservedBytes = totalBytes;
+            if (lastPublishedBytes != totalBytes) {
+                publish(System.nanoTime());
+            }
+        }
+
+        private void publish(long now) {
+            observer.accept(lastObservedBytes);
+            lastPublishedBytes = lastObservedBytes;
+            lastPublishedAt = now;
+        }
     }
 
     private static final class LiveProgressInputStream extends InputStream {

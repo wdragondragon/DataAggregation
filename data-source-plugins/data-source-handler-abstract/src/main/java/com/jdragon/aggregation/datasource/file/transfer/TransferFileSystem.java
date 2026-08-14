@@ -8,6 +8,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Optional;
+import java.util.function.LongConsumer;
 
 public interface TransferFileSystem extends FileHelper {
 
@@ -50,6 +51,10 @@ public interface TransferFileSystem extends FileHelper {
     StorageCapabilities capabilities();
 
     default String checksum(String path, String algorithm) throws IOException {
+        return checksum(path, algorithm, ignored -> { });
+    }
+
+    default String checksum(String path, String algorithm, LongConsumer progress) throws IOException {
         String normalizedAlgorithm = algorithm == null || algorithm.isBlank() ? "SHA-256" : algorithm;
         final MessageDigest digest;
         try {
@@ -61,9 +66,11 @@ public interface TransferFileSystem extends FileHelper {
         if (entry.directory()) {
             throw new IOException("cannot checksum a directory: " + path);
         }
+        LongConsumer observer = progress == null ? ignored -> { } : progress;
         try (InputStream input = openRead(path, 0, entry.size())) {
             byte[] buffer = new byte[64 * 1024];
             long remaining = entry.size();
+            long processed = 0L;
             while (remaining > 0) {
                 int read = input.read(buffer, 0, (int) Math.min(buffer.length, remaining));
                 if (read < 0) {
@@ -74,6 +81,8 @@ public interface TransferFileSystem extends FileHelper {
                 }
                 digest.update(buffer, 0, read);
                 remaining -= read;
+                processed += read;
+                observer.accept(processed);
             }
         }
         return HexFormat.of().formatHex(digest.digest());
