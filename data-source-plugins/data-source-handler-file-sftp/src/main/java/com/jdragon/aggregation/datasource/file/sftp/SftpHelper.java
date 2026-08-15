@@ -228,8 +228,10 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
             SftpATTRS sftpATTRS = this.channelSftp.lstat(directoryPath);
             isDirExist = sftpATTRS.isDir();
         } catch (SftpException e) {
-            if (e.getMessage().equalsIgnoreCase("no such file")) {
+            if (e.id == ChannelSftp.SSH_FX_NO_SUCH_FILE) {
                 log.warn("您的配置项path:[{}]不存在，将尝试进行目录创建, errorMessage:{}", directoryPath, e.getMessage());
+            } else if (isPermissionDenied(e)) {
+                log.warn("检查SFTP目录权限被拒绝 path={} message=Permission denied", directoryPath);
             } else {
                 log.error(e.getMessage(), e);
             }
@@ -249,6 +251,11 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
                 String message = String
                         .format("创建目录:%s时发生I/O异常,请确认与ftp服务器的连接正常,拥有目录创建权限, errorMessage:%s",
                                 directoryPath, e.getMessage());
+                if (isPermissionDenied(e)) {
+                    log.warn("创建SFTP目录权限被拒绝 path={} message=Permission denied", directoryPath);
+                    throw AggregationException.asException(
+                            SftpHelperErrorCode.COMMAND_FTP_IO_EXCEPTION, message);
+                }
                 log.error(message, e);
                 throw AggregationException
                         .asException(
@@ -273,6 +280,18 @@ public class SftpHelper extends AbstractPlugin implements TransferFileSystem {
             this.channelSftp.mkdir(directoryPath);
         }
         return true;
+    }
+
+    static boolean isPermissionDenied(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof SftpException sftpException
+                    && sftpException.id == ChannelSftp.SSH_FX_PERMISSION_DENIED) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     @Override

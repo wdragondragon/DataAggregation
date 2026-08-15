@@ -1,6 +1,7 @@
 package com.jdragon.aggregation.datasource.file.sftp;
 
 import com.jdragon.aggregation.commons.util.Configuration;
+import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.SftpATTRS;
 import com.jcraft.jsch.SftpException;
@@ -13,7 +14,9 @@ import java.util.Properties;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class SftpHelperTest {
 
@@ -82,13 +85,38 @@ public class SftpHelperTest {
         assertFalse(SftpHelper.isAlgorithmNegotiationFailure(new Exception("Auth fail")));
     }
 
+    @Test
+    public void identifiesSftpPermissionDeniedByProtocolStatus() {
+        assertTrue(SftpHelper.isPermissionDenied(
+                new SftpException(ChannelSftp.SSH_FX_PERMISSION_DENIED, "Permission denied")));
+        assertFalse(SftpHelper.isPermissionDenied(
+                new SftpException(ChannelSftp.SSH_FX_FAILURE, "Permission denied")));
+    }
+
+    @Test
+    public void mkdirPermissionDeniedDoesNotEmbedProtocolStackInBusinessMessage() throws Exception {
+        SftpHelper helper = new SftpHelper();
+        setBaseDirectory(helper, "/upload");
+        setChannel(helper, new PermissionDeniedChannelSftp());
+
+        try {
+            helper.mkdir("/upload/denied");
+            fail("Expected mkdir to be rejected");
+        } catch (AggregationException exception) {
+            assertTrue(exception.getMessage().contains("Permission denied"));
+            assertFalse(exception.getMessage().contains("\tat "));
+            assertFalse(exception.getMessage().contains("SftpHelper.java"));
+            assertNull(exception.getCause());
+        }
+    }
+
     private static void setBaseDirectory(SftpHelper helper, String baseDirectory) throws Exception {
         Field field = SftpHelper.class.getDeclaredField("baseDirectory");
         field.setAccessible(true);
         field.set(helper, baseDirectory);
     }
 
-    private static void setChannel(SftpHelper helper, RecordingChannelSftp channel) throws Exception {
+    private static void setChannel(SftpHelper helper, ChannelSftp channel) throws Exception {
         Field field = SftpHelper.class.getDeclaredField("channelSftp");
         field.setAccessible(true);
         field.set(helper, channel);
@@ -110,6 +138,23 @@ public class SftpHelperTest {
         @Override
         public void mkdir(String path) {
             createdPaths.add(path);
+        }
+    }
+
+    private static final class PermissionDeniedChannelSftp extends ChannelSftp {
+        @Override
+        public String pwd() {
+            return "/upload";
+        }
+
+        @Override
+        public SftpATTRS lstat(String path) throws SftpException {
+            throw new SftpException(SSH_FX_NO_SUCH_FILE, "no such file");
+        }
+
+        @Override
+        public void mkdir(String path) throws SftpException {
+            throw new SftpException(SSH_FX_PERMISSION_DENIED, "Permission denied");
         }
     }
 }
