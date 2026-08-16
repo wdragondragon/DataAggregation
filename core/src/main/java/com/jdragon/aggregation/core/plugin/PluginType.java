@@ -7,7 +7,6 @@ public enum PluginType implements IPluginType {
     TRANSFORMER("transformer"),
     WRITER("writer"),
     REPORT("report"),
-    FILE_TRANSFER("file-transfer"),
     ;
 
     private final String name;

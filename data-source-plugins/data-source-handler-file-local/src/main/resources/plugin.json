@@ -1,6 +1,0 @@
-{
-  "name": "local",
-  "class": "com.jdragon.aggregation.datasource.file.local.LocalSourcePlugin",
-  "description": "restricted local file source",
-  "developer": "jdragon"
-}

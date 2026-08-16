@@ -15,9 +15,6 @@
         <module>data-mock</module>
         <module>job-plugins</module>
         <module>data-source-plugins</module>
-        <module>file-transfer-core</module>
-        <module>file-transfer-plugin</module>
-        <module>file-transfer-cli</module>
     </modules>
 
     <properties>
