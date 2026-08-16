@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.jdragon.aggregation</groupId>
+        <artifactId>DataAggregation</artifactId>
+        <version>1.0_jdk17-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>file-transfer-plugin</artifactId>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.jdragon.aggregation</groupId>
+            <artifactId>file-transfer-core</artifactId>
+            <version>1.0_jdk17-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>com.jdragon.aggregation</groupId>
+            <artifactId>commons</artifactId>
+            <version>1.0_jdk17-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>com.jdragon.aggregation</groupId>
+            <artifactId>plugins-loader-center</artifactId>
+            <version>1.0_jdk17-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>com.jdragon.aggregation</groupId>
+            <artifactId>data-source-handler-abstract</artifactId>
+            <version>1.0_jdk17-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.2</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <configuration>
+                    <descriptors>
+                        <descriptor>src/main/assembly/package.xml</descriptor>
+                    </descriptors>
+                    <finalName>aggregation</finalName>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>plugin-directory</id>
+                        <phase>package</phase>
+                        <goals><goal>single</goal></goals>
+                    </execution>
+                    <execution>
+                        <id>plugin-zip</id>
+                        <phase>package</phase>
+                        <goals><goal>single</goal></goals>
+                        <configuration>
+                            <descriptors>
+                                <descriptor>src/main/assembly/package-zip.xml</descriptor>
+                            </descriptors>
+                            <finalName>filetransfer</finalName>
+                            <appendAssemblyId>false</appendAssemblyId>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
