@@ -621,6 +621,7 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
                 info.setIsPrimaryKey(primaryKeys.contains(info.getColumnName()) ? "YES" : "NO");
                 columnInfoList.add(info);
             }
+            rs.close();
             return columnInfoList;
         } catch (Exception e) {
             log.error("查询数据库下的表的字段失败：{}", e.getMessage(), e);
