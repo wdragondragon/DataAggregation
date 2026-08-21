@@ -31,6 +31,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class CommonFileTableWriterTest {
 
@@ -114,8 +115,8 @@ public class CommonFileTableWriterTest {
                 entry("fileType", "efile"),
                 entry("efile", efileOptions()),
                 entry("columns", columns(
-                        column("id", 0, "LONG"),
-                        column("name", 1, "STRING"),
+                        columnWithRemarks("id", 0, "LONG", "Primary key"),
+                        columnWithRemarks("name", 1, "STRING", "User name"),
                         tagColumn("areaCode", 2, "STRING")))),
                 records(record("1", "Alice", "GD"), record("2", "Bob", "GD")));
 
@@ -124,9 +125,146 @@ public class CommonFileTableWriterTest {
         String content = normalizeNewLine(fileHelper.text(path));
         assertTrue(content.contains("<! Entity='demo' dataTime='20260507_00:00:00' type='test' !>"));
         assertTrue(content.contains("<T01::Demo planDate='20260507' areaCode='GD' >"));
+        assertEquals(1, countOccurrences(content, "planDate="));
         assertTrue(content.contains("@ id name\n"));
+        assertTrue(content.contains("// 'Primary key' 'User name'\n"));
         assertFalse(content.contains("@ id name areaCode"));
         assertTrue(content.contains("# 1 Alice\n# 2 Bob\n"));
+    }
+
+    @Test
+    public void shouldUseTagPlanDateWhenModelPlanDateIsMissing() {
+        Map<String, Object> efile = efileOptions();
+        efile.remove("planDate");
+        InMemoryFileHelper fileHelper = new InMemoryFileHelper();
+
+        write(fileHelper, config(
+                entry("rootPath", "/out"),
+                entry("fileName", "tag-plan-date.efile"),
+                entry("fileType", "efile"),
+                entry("efile", efile),
+                entry("columns", columns(
+                        column("id", 0, "LONG"),
+                        tagColumn("planDate", 1, "STRING")))),
+                records(record("1", "20260820"), record("2", "20260820")));
+
+        String content = normalizeNewLine(fileHelper.text("/out/tag-plan-date.efile"));
+        assertTrue(content.contains("<T01::Demo planDate='20260820' >"));
+        assertEquals(1, countOccurrences(content, "planDate="));
+        assertFalse(content.contains("@ id planDate"));
+    }
+
+    @Test
+    public void shouldWritePlanDateOnceWhenModelAndTagValuesMatch() {
+        InMemoryFileHelper fileHelper = new InMemoryFileHelper();
+
+        write(fileHelper, config(
+                entry("rootPath", "/out"),
+                entry("fileName", "matching-plan-date.efile"),
+                entry("fileType", "efile"),
+                entry("efile", efileOptions()),
+                entry("columns", columns(
+                        column("id", 0, "LONG"),
+                        tagColumn("planDate", 1, "STRING")))),
+                records(record("1", " 20260507 ")));
+
+        String content = normalizeNewLine(fileHelper.text("/out/matching-plan-date.efile"));
+        assertTrue(content.contains("<T01::Demo planDate='20260507' >"));
+        assertEquals(1, countOccurrences(content, "planDate="));
+    }
+
+    @Test
+    public void shouldRejectConflictingModelAndTagPlanDate() {
+        try {
+            write(new InMemoryFileHelper(), config(
+                    entry("rootPath", "/out"),
+                    entry("fileName", "conflicting-plan-date.efile"),
+                    entry("fileType", "efile"),
+                    entry("efile", efileOptions()),
+                    entry("columns", columns(
+                            column("id", 0, "LONG"),
+                            tagColumn("planDate", 1, "STRING")))),
+                    records(record("1", "20260819")));
+            fail("Expected conflicting planDate values to fail");
+        } catch (IllegalArgumentException e) {
+            assertEquals("EFile planDate conflicts between model metadata and TAG field: model=20260507, tag=20260819",
+                    e.getMessage());
+        }
+    }
+
+    @Test
+    public void shouldOmitPlanDateWhenModelAndTagValuesAreBlank() {
+        Map<String, Object> efile = efileOptions();
+        efile.put("planDate", "   ");
+        InMemoryFileHelper fileHelper = new InMemoryFileHelper();
+
+        write(fileHelper, config(
+                entry("rootPath", "/out"),
+                entry("fileName", "blank-plan-date.efile"),
+                entry("fileType", "efile"),
+                entry("efile", efile),
+                entry("columns", columns(
+                        column("id", 0, "LONG"),
+                        tagColumn("planDate", 1, "STRING")))),
+                records(record("1", "")));
+
+        String content = normalizeNewLine(fileHelper.text("/out/blank-plan-date.efile"));
+        assertTrue(content.contains("<T01::Demo >"));
+        assertFalse(content.contains("planDate="));
+    }
+
+    @Test
+    public void shouldRejectInconsistentPlanDateTagValues() {
+        Map<String, Object> efile = efileOptions();
+        efile.remove("planDate");
+        try {
+            write(new InMemoryFileHelper(), config(
+                    entry("rootPath", "/out"),
+                    entry("fileName", "inconsistent-plan-date.efile"),
+                    entry("fileType", "efile"),
+                    entry("efile", efile),
+                    entry("columns", columns(
+                            column("id", 0, "LONG"),
+                            tagColumn("planDate", 1, "STRING")))),
+                    records(record("1", "20260820"), record("2", "20260821")));
+            fail("Expected inconsistent planDate TAG values to fail");
+        } catch (IllegalArgumentException e) {
+            assertEquals("EFile tag column has inconsistent values: planDate", e.getMessage());
+        }
+    }
+
+    @Test
+    public void shouldFallBackAfterDynamicModelPlanDateResolvesToBlank() {
+        Map<String, Object> efile = efileOptions();
+        efile.put("planDate", "$unknown()");
+        InMemoryFileHelper withTag = new InMemoryFileHelper();
+
+        write(withTag, config(
+                entry("rootPath", "/out"),
+                entry("fileName", "dynamic-tag-plan-date.efile"),
+                entry("fileType", "efile"),
+                entry("efile", efile),
+                entry("columns", columns(
+                        column("id", 0, "LONG"),
+                        tagColumn("planDate", 1, "STRING")))),
+                records(record("1", "20260820")));
+
+        String withTagContent = normalizeNewLine(withTag.text("/out/dynamic-tag-plan-date.efile"));
+        assertTrue(withTagContent.contains("<T01::Demo planDate='20260820' >"));
+        assertEquals(1, countOccurrences(withTagContent, "planDate="));
+
+        InMemoryFileHelper withoutTag = new InMemoryFileHelper();
+        write(withoutTag, config(
+                entry("rootPath", "/out"),
+                entry("fileName", "dynamic-blank-plan-date.efile"),
+                entry("fileType", "efile"),
+                entry("efile", efile),
+                entry("columns", columns(column("id", 0, "LONG")))),
+                records(record("1")));
+
+        String withoutTagContent = normalizeNewLine(withoutTag.text("/out/dynamic-blank-plan-date.efile"));
+        assertTrue(withoutTagContent.contains("<T01::Demo >"));
+        assertFalse(withoutTagContent.contains("planDate="));
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -246,6 +384,12 @@ public class CommonFileTableWriterTest {
         return column;
     }
 
+    private Map<String, Object> columnWithRemarks(String name, int index, String type, String remarks) {
+        Map<String, Object> column = column(name, index, type);
+        column.put("remarks", remarks);
+        return column;
+    }
+
     private Map<String, Object> tagColumn(String name, int index, String type) {
         Map<String, Object> column = column(name, index, type);
         column.put("sourceKind", "TAG");
@@ -265,6 +409,16 @@ public class CommonFileTableWriterTest {
 
     private String normalizeNewLine(String value) {
         return value.replace("\r\n", "\n");
+    }
+
+    private int countOccurrences(String value, String token) {
+        int count = 0;
+        int fromIndex = 0;
+        while ((fromIndex = value.indexOf(token, fromIndex)) >= 0) {
+            count++;
+            fromIndex += token.length();
+        }
+        return count;
     }
 
     private static final class ListRecordReceiver implements RecordReceiver {

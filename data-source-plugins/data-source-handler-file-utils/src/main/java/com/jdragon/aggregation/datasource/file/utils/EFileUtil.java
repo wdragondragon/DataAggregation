@@ -35,8 +35,10 @@ public class EFileUtil {
             while (true) {
                 String line = reader.readLine();
                 if (line != null) {
-                    line = line.replaceAll("\t", " ");
-                    line = line.trim();
+                    line = line.replace('\t', ' ').stripLeading();
+                    if (!line.startsWith("#")) {
+                        line = line.trim();
+                    }
                     lineHandler(line, eFile, configuredDataTags);
                 } else {
                     break;
@@ -156,8 +158,8 @@ public class EFileUtil {
                         datas = (item + lineSplit[i + 1]).split("::");
                         i++;
                     }
-                    eFileTableInfoMap.put("tableName", datas[0]);
-                    eFileTableInfoMap.put("tableCode", datas[1]);
+                    eFileTableInfoMap.put("tableCode", datas[0]);
+                    eFileTableInfoMap.put("tableName", datas[1]);
                 } else {
                     StringBuilder data = new StringBuilder((item + lineSplit[i + 1]));
                     i++;
@@ -283,12 +285,15 @@ public class EFileUtil {
         Map<String, String> fileTags = eFile.getEFileInfo().getTags();
         Map<String, String> entityTags = eFileDetail.getTags();
 
-        String str = line.substring(1).trim();
+        String str = line.substring(1);
+        if (str.startsWith(" ")) {
+            str = str.substring(1);
+        }
         List<String> dataList = new ArrayList<>();
 
         String[] dataArr = splitData(str);
         for (String data : dataArr) {
-            dataList.add(data.trim());
+            dataList.add(data);
         }
 
         for (String tag : dataTag) {
@@ -354,60 +359,29 @@ public class EFileUtil {
 
     public String[] splitData(String line) {
         List<String> datas = new ArrayList<>();
-        // 把多个空格合并为一个
-        while (line.contains("  ")) {
-            line = line.replaceAll(" {2}", " ");
-        }
-
-        String sign = "\"";
-        if (line.contains("'") && !line.contains("\"")) {
-            line = line.replaceAll("'", "\"");
-        }
-        if (line.contains("“")) {
-            line = line.replaceAll("'", "\"");
-        }
-        if (line.contains("‘")) {
-            line = line.replaceAll("'", "\"");
-        }
-
-        List<Integer> list = new ArrayList<Integer>();
-        if (line.contains(sign)) {
-            int i = 0;
-            for (char c : line.toCharArray()) {
-
-                if ("\"".equals(String.valueOf(c))) {
-                    list.add(i);
+        StringBuilder value = new StringBuilder();
+        char quote = 0;
+        for (int i = 0; i < line.length(); i++) {
+            char current = line.charAt(i);
+            if (quote != 0) {
+                if (current == quote) {
+                    quote = 0;
+                } else {
+                    value.append(current);
                 }
-                i++;
+                continue;
             }
-
-            if (!list.isEmpty() && list.size() % 2 == 0) {
-                for (int j = 0; j < list.size(); j++) {
-                    if (j % 2 == 0) {
-                        Integer start = list.get(j);
-                        if (j == 0 && start > 0) {
-                            String tmp = line.substring(0, start);
-                            datas.add(tmp);
-                        }
-                        start++;
-                        Integer end = list.get(j + 1);
-                        String tmp = line.substring(start, end);
-                        datas.add(tmp);
-                    }
-                    if (j == list.size() - 1) {
-                        Integer end = list.get(j);
-                        String tmp = line.substring(end + 1);
-                        String[] strs = tmp.trim().split(" ");
-                        datas.addAll(Arrays.asList(strs));
-                    }
-                }
+            if (current == '\'' || current == '"') {
+                quote = current;
+            } else if (current == ' ') {
+                datas.add(value.toString());
+                value.setLength(0);
+            } else {
+                value.append(current);
             }
-            line = line.replaceAll(sign, "");
-        } else {
-            return line.trim().split(" ");
         }
-        String[] strs = new String[datas.size()];
-        return datas.toArray(strs);
+        datas.add(value.toString());
+        return datas.toArray(new String[0]);
     }
 
 
@@ -465,7 +439,15 @@ public class EFileUtil {
     }
 
     public static String genTagHeader(String tableCode, String tableName, String planDate) {
-        return "<" + tableCode + "::" + tableName + " planDate='" + planDate + "' >";
+        StringBuilder header = new StringBuilder("<")
+                .append(tableCode)
+                .append("::")
+                .append(tableName);
+        String normalizedPlanDate = planDate == null ? null : planDate.trim();
+        if (normalizedPlanDate != null && !normalizedPlanDate.isEmpty()) {
+            header.append(" planDate='").append(normalizedPlanDate).append("'");
+        }
+        return header.append(" >").toString();
     }
 
     public static String genTagEnder(EFileTag eFileTag) {

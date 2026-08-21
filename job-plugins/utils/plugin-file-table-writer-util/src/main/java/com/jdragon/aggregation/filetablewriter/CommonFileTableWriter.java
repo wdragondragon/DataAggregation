@@ -278,10 +278,14 @@ public class CommonFileTableWriter extends Writer.Job {
         List<FileColumnEntry> dataColumns = dataColumns(true);
         Map<String, String> tagValues = resolveEFileTagValues(rows);
         EFileOptions options = efileOptions(tagValues);
+        tagValues.remove("planDate");
         try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(outputStream, charset))) {
             writer.write("<! Entity='" + options.entity + "' dataTime='" + options.dataTime + "' type='" + options.type + "' !>");
             writer.newLine();
-            writer.write("<" + options.tableCode + "::" + options.tableName + " planDate='" + options.planDate + "'");
+            writer.write("<" + options.tableCode + "::" + options.tableName);
+            if (StringUtils.isNotBlank(options.planDate)) {
+                writer.write(" planDate='" + escapeEFileTagValue(options.planDate) + "'");
+            }
             for (Map.Entry<String, String> entry : tagValues.entrySet()) {
                 writer.write(" " + entry.getKey() + "='" + escapeEFileTagValue(entry.getValue()) + "'");
             }
@@ -294,7 +298,8 @@ public class CommonFileTableWriter extends Writer.Job {
             writer.newLine();
             writer.write("//");
             for (FileColumnEntry column : dataColumns) {
-                writer.write(" " + column.name);
+                String description = StringUtils.isBlank(column.remarks) ? column.name : column.remarks;
+                writer.write(" " + formatEFileDataValue(description));
             }
             writer.newLine();
             for (Map<String, Object> row : rows) {
@@ -348,8 +353,13 @@ public class CommonFileTableWriter extends Writer.Job {
                 "$getCurrentTime(yyyyMMdd_HH:mm:ss,0)"));
         options.tableName = resolveDynamicText(firstNonBlank(efile.getString("tableName"), tagValues.get("tableName"), "Data"));
         options.tableCode = resolveDynamicText(firstNonBlank(efile.getString("tableCode"), tagValues.get("tableCode"), "T01"));
-        options.planDate = resolveDynamicText(firstNonBlank(efile.getString("planDate"), tagValues.get("planDate"),
-                "$getCurrentTime(yyyyMMdd,0)"));
+        String modelPlanDate = StringUtils.trimToNull(resolveDynamicText(efile.getString("planDate")));
+        String tagPlanDate = StringUtils.trimToNull(tagValues.get("planDate"));
+        if (modelPlanDate != null && tagPlanDate != null && !modelPlanDate.equals(tagPlanDate)) {
+            throw new IllegalArgumentException("EFile planDate conflicts between model metadata and TAG field: model="
+                    + modelPlanDate + ", tag=" + tagPlanDate);
+        }
+        options.planDate = firstNonBlank(modelPlanDate, tagPlanDate);
         return options;
     }
 
@@ -461,7 +471,8 @@ public class CommonFileTableWriter extends Writer.Job {
             int index = configuredIndex == null ? i : configuredIndex;
             String type = normalizeColumnType(stringValue(item.get("type")));
             boolean tagColumn = SOURCE_KIND_TAG.equalsIgnoreCase(StringUtils.trimToEmpty(stringValue(item.get("sourceKind"))));
-            result.add(new FileColumnEntry(name, index, type, tagColumn));
+            String remarks = stringValue(item.get("remarks"));
+            result.add(new FileColumnEntry(name, index, type, tagColumn, remarks));
         }
         return result;
     }
@@ -618,12 +629,14 @@ public class CommonFileTableWriter extends Writer.Job {
         private final int index;
         private final String type;
         private final boolean tagColumn;
+        private final String remarks;
 
-        private FileColumnEntry(String name, int index, String type, boolean tagColumn) {
+        private FileColumnEntry(String name, int index, String type, boolean tagColumn, String remarks) {
             this.name = name;
             this.index = index;
             this.type = type;
             this.tagColumn = tagColumn;
+            this.remarks = remarks;
         }
     }
 
