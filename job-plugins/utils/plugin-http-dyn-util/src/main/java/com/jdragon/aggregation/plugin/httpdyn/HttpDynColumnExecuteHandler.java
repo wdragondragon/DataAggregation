@@ -205,6 +205,14 @@ public class HttpDynColumnExecuteHandler {
             if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
                 return unescapeQuotedParameter(normalized.substring(1, normalized.length() - 1), first);
             }
+            char escapedQuote = normalized.length() >= 2 ? normalized.charAt(1) : 0;
+            if (normalized.length() >= 4
+                    && normalized.charAt(0) == '\\'
+                    && normalized.charAt(normalized.length() - 2) == '\\'
+                    && normalized.charAt(normalized.length() - 1) == escapedQuote
+                    && (escapedQuote == '"' || escapedQuote == '\'')) {
+                return unescapeQuotedParameter(normalized.substring(2, normalized.length() - 2), escapedQuote);
+            }
         }
         return unescapeParameterDelimiter(normalized);
     }

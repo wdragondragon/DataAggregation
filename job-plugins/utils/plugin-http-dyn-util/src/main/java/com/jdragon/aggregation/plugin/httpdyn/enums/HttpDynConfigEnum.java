@@ -16,6 +16,7 @@ public enum HttpDynConfigEnum {
     SHA1("<dyn_Sha1>", "com.jdragon.aggregation.plugin.httpdyn.impl.Sha1", ""),
     SHA256("<dyn_Sha256>", "com.jdragon.aggregation.plugin.httpdyn.impl.Sha256", ""),
     SHA512("<dyn_Sha512>", "com.jdragon.aggregation.plugin.httpdyn.impl.Sha512", ""),
+    GET_CURRENT_TIME("<dyn_getCurrentTime>", "com.jdragon.aggregation.plugin.httpdyn.impl.GetCurrentTime", "按格式获取当前时间并应用偏移"),
     BM_GET_NOW_TIMESTAMP("<dyn_timestamp>", "com.jdragon.aggregation.plugin.httpdyn.impl.GetNowTimeStamp", "获取当前时间时间戳"),
     BM_DYN_FROM_HTTP_TOKEN("<dyn_from_http_token>","com.jdragon.aggregation.plugin.httpdyn.impl.FromHttpToken","动态获取token"),
     BM_DYN_TIMESTAMP("<dyn_ten_timestamp>","com.jdragon.aggregation.plugin.httpdyn.impl.GetNowTenTimeStamp",""),

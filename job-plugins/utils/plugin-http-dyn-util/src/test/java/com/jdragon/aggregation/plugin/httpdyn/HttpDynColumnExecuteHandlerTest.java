@@ -78,4 +78,35 @@ public class HttpDynColumnExecuteHandlerTest {
 
         assertEquals(jsonBody, parameters[3]);
     }
+
+    @Test
+    public void formattedCurrentTimeShouldReplaceHeaderQueryAndBodyValues() {
+        Map<String, String> content = new LinkedHashMap<>();
+        content.put("header", "{\"X-Date\":\"{dyn_getCurrentTime(yyyyMMdd)}\"}");
+        content.put("params", "{\"since\":\"{dyn_getCurrentTime(yyyyMMdd,-1d)}\"}");
+        content.put("body", "{\"timestamp\":\"{dyn_getCurrentTime(yyyy-MM-dd HH:mm:ss,0)}\"}");
+
+        HttpDynColumnExecuteHandler.replaceDynVal(content);
+
+        assertFalse(content.get("header").contains("dyn_getCurrentTime"));
+        assertFalse(content.get("params").contains("dyn_getCurrentTime"));
+        assertFalse(content.get("body").contains("dyn_getCurrentTime"));
+        assertEquals(8, JSONObject.parseObject(content.get("header")).getString("X-Date").length());
+        assertEquals(8, JSONObject.parseObject(content.get("params")).getString("since").length());
+        assertEquals(19, JSONObject.parseObject(content.get("body")).getString("timestamp").length());
+    }
+
+    @Test
+    public void formattedCurrentTimeShouldAcceptQuotedParameters() {
+        Map<String, String> content = new LinkedHashMap<>();
+        content.put("header", "{\"X-Date\":\"{dyn_getCurrentTime(\\\"yyyyMMdd HHmmss\\\",\\\"-1d+1h\\\")}\"}");
+        content.put("params", "{}");
+        content.put("body", "{}");
+
+        HttpDynColumnExecuteHandler.replaceDynVal(content);
+
+        String value = JSONObject.parseObject(content.get("header")).getString("X-Date");
+        assertFalse(value.contains("dyn_getCurrentTime"));
+        assertEquals(15, value.length());
+    }
 }
