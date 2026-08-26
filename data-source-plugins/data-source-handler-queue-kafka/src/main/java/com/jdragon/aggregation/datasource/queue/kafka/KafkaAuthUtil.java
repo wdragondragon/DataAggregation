@@ -13,11 +13,11 @@ import java.util.Properties;
  */
 public class KafkaAuthUtil {
     public static void login(Properties properties, Configuration configuration) {
-        Integer kerberos = configuration.getInt(KafkaAuthKey.KERBEROS);
+        boolean kerberos = isKerberosEnabled(configuration);
         String principal = configuration.getString(KafkaAuthKey.PRINCIPAL);
         String username = configuration.getString(KafkaAuthKey.USERNAME);
         String password = configuration.getString(KafkaAuthKey.PASSWORD);
-        if (kerberos != null && kerberos == 1) {
+        if (kerberos) {
             String kerberosKeytabFilePath = configuration.getString(KafkaAuthKey.KERBEROS_KEYTAB_FILEPATH);
             String krb5Conf = configuration.getString(KafkaAuthKey.KRB5_CONF);
             String kerberosDomain = configuration.getString(KafkaAuthKey.KERBEROS_DOMAIN);
@@ -29,6 +29,26 @@ public class KafkaAuthUtil {
         } else if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
             login(properties, username, password);
         }
+    }
+
+    /**
+     * Studio datasource metadata stores the kerberos flag as a JSON boolean,
+     * while older job templates used 0/1. Configuration#getInt cannot parse a
+     * boolean and caused all non-Kerberos jobs to fail during initialization.
+     */
+    private static boolean isKerberosEnabled(Configuration configuration) {
+        Object value = configuration.get(KafkaAuthKey.KERBEROS);
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).intValue() == 1;
+        }
+        if (value == null) {
+            return false;
+        }
+        String text = String.valueOf(value).trim();
+        return "1".equals(text) || Boolean.parseBoolean(text);
     }
 
     public static void login(Properties properties, String username, String password) {
