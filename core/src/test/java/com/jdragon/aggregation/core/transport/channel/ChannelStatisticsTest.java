@@ -2,6 +2,7 @@ package com.jdragon.aggregation.core.transport.channel;
 
 import com.jdragon.aggregation.commons.element.Record;
 import com.jdragon.aggregation.commons.element.StringColumn;
+import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.core.statistics.communication.Communication;
 import com.jdragon.aggregation.core.statistics.communication.CommunicationTool;
 import com.jdragon.aggregation.core.transport.channel.memory.MemoryChannel;
@@ -10,11 +11,13 @@ import com.jdragon.aggregation.core.transport.record.TerminateRecord;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class ChannelStatisticsTest {
 
@@ -57,6 +60,36 @@ public class ChannelStatisticsTest {
         assertEquals(2L, communication.getLongCounter(CommunicationTool.READ_SUCCEED_RECORDS).longValue());
         assertEquals(2L, communication.getLongCounter(CommunicationTool.WRITE_RECEIVED_RECORDS).longValue());
         assertEquals(2L, CommunicationTool.getWriteSucceedRecords(communication));
+    }
+
+    @Test
+    public void interruptedPushAllShouldNotUnlockAnUnacquiredLock() {
+        MemoryChannel channel = new MemoryChannel(16, 16);
+        Thread.currentThread().interrupt();
+
+        try {
+            channel.pushAll(Collections.singletonList(record("customer-001")));
+            fail("expected interrupted pushAll to fail");
+        } catch (AggregationException expected) {
+            assertTrue(expected.getCause() instanceof InterruptedException);
+        } finally {
+            assertTrue(Thread.interrupted());
+        }
+    }
+
+    @Test
+    public void interruptedPullAllShouldNotUnlockAnUnacquiredLock() {
+        MemoryChannel channel = new MemoryChannel(16, 16);
+        Thread.currentThread().interrupt();
+
+        try {
+            channel.pullAll(new ArrayList<Record>());
+            fail("expected interrupted pullAll to fail");
+        } catch (AggregationException expected) {
+            assertTrue(expected.getCause() instanceof InterruptedException);
+        } finally {
+            assertTrue(Thread.interrupted());
+        }
     }
 
     private Record record(String value) {

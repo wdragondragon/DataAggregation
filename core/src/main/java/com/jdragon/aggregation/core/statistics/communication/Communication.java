@@ -181,7 +181,7 @@ public class Communication {
     }
 
     /**
-     * 合并state，优先级： (Failed | Killed) > Running > Success
+     * 合并state，优先级：Failed > Killed > Running > Success。
      * 这里不会出现 Killing 状态，killing 状态只在 Job 自身状态上才有.
      */
     public synchronized State mergeStateFrom(final Communication otherComm) {
@@ -190,9 +190,10 @@ public class Communication {
             return retState;
         }
 
-        if (this.state == State.FAILED || otherComm.getState() == State.FAILED
-                || this.state == State.KILLED || otherComm.getState() == State.KILLED) {
+        if (this.state == State.FAILED || otherComm.getState() == State.FAILED) {
             retState = State.FAILED;
+        } else if (this.state == State.KILLED || otherComm.getState() == State.KILLED) {
+            retState = State.KILLED;
         } else if (this.state.isRunning() || otherComm.state.isRunning()) {
             retState = State.RUNNING;
         }

@@ -72,9 +72,11 @@ public class MemoryChannel extends Channel {
 
     @Override
     protected void doPushAll(Collection<Record> rs) {
+        boolean locked = false;
         try {
             long startTime = System.nanoTime();
             lock.lockInterruptibly();
+            locked = true;
             int bytes = getRecordBytes(rs);
             while (memoryBytes.get() + bytes > this.byteCapacity || rs.size() > this.queue.remainingCapacity()) {
                 notInsufficient.await(200L, TimeUnit.MILLISECONDS);
@@ -84,10 +86,13 @@ public class MemoryChannel extends Channel {
             memoryBytes.addAndGet(bytes);
             notEmpty.signalAll();
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw AggregationException.asException(
                     FrameworkErrorCode.RUNTIME_ERROR, e);
         } finally {
-            lock.unlock();
+            if (locked) {
+                lock.unlock();
+            }
         }
     }
 
@@ -109,9 +114,11 @@ public class MemoryChannel extends Channel {
     protected void doPullAll(Collection<Record> rs) {
         assert rs != null;
         rs.clear();
+        boolean locked = false;
         try {
             long startTime = System.nanoTime();
             lock.lockInterruptibly();
+            locked = true;
             while (this.queue.drainTo(rs, bufferSize) <= 0) {
                 notEmpty.await(200L, TimeUnit.MILLISECONDS);
             }
@@ -120,10 +127,13 @@ public class MemoryChannel extends Channel {
             memoryBytes.addAndGet(-bytes);
             notInsufficient.signalAll();
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw AggregationException.asException(
                     FrameworkErrorCode.RUNTIME_ERROR, e);
         } finally {
-            lock.unlock();
+            if (locked) {
+                lock.unlock();
+            }
         }
     }
 

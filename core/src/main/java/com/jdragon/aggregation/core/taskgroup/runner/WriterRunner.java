@@ -1,6 +1,7 @@
 package com.jdragon.aggregation.core.taskgroup.runner;
 
 import com.jdragon.aggregation.commons.exception.AggregationException;
+import com.jdragon.aggregation.core.enums.State;
 import com.jdragon.aggregation.core.plugin.AbstractJobPlugin;
 import com.jdragon.aggregation.core.plugin.RecordReceiver;
 import com.jdragon.aggregation.core.plugin.spi.Writer;
@@ -55,7 +56,12 @@ public class WriterRunner extends AbstractRunner {
 
             super.markSuccess();
         } catch (Throwable e) {
-            LOG.error("Writer Runner Received Exceptions:", e);
+            if (getRunnerCommunication() != null
+                    && getRunnerCommunication().getState() == State.KILLED) {
+                LOG.debug("Writer runner stopped because the job was cancelled");
+            } else {
+                LOG.error("Writer Runner Received Exceptions:", e);
+            }
             super.markFail(e);
         } finally {
             super.destroy();

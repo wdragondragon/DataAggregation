@@ -35,6 +35,7 @@ import org.apache.commons.lang3.StringUtils;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Getter
 @Slf4j
@@ -62,6 +63,14 @@ public class JobContainer {
 
     private Thread reporterThread;
 
+    private AbstractRunner readerRunner;
+
+    private AbstractRunner writerRunner;
+
+    private volatile Communication jobCommunication;
+
+    private final AtomicBoolean cancellationRequested = new AtomicBoolean(false);
+
     private PluginRuntimeSession pluginRuntimeSession;
 
     private final Map<String, Object> runContext = new HashMap<>();
@@ -82,6 +91,9 @@ public class JobContainer {
     }
 
     public void start() {
+        if (cancellationRequested.get()) {
+            throw new IllegalStateException("JobContainer was cancelled before start");
+        }
         pluginRuntimeSession = PluginRuntimeSession.open();
         try {
             Long jobId = (Long) this.runContext.getOrDefault("jobId", 1L);
@@ -93,6 +105,7 @@ public class JobContainer {
             log.info("start job from configuration: \n{}", filterSensitiveConfiguration(configuration.clone()).beautify());
             // 初始化全局channel 和 communication
             Communication jobCommunication = new Communication();
+            this.jobCommunication = jobCommunication;
             jobCommunication.setTimestamp(startTime);
             Channel channel = new MemoryChannel();
             channel.setCommunication(jobCommunication);
@@ -111,6 +124,13 @@ public class JobContainer {
                 this.holdDoStat(jobCommunication, configuration);
             } catch (RuntimeException e) {
                 log.error("", e);
+                if (cancellationRequested.get()) {
+                    if (jobCommunication.getThrowable() == null) {
+                        jobCommunication.setThrowable(new InterruptedException("JobContainer cancelled"));
+                    }
+                    jobCommunication.setState(State.KILLED);
+                    return;
+                }
                 if (jobCommunication.getThrowable() == null) {
                     jobCommunication.setThrowable(e);
                 }
@@ -153,6 +173,26 @@ public class JobContainer {
                 pluginRuntimeSession = null;
             }
         }
+    }
+
+    public void cancel() {
+        if (!cancellationRequested.compareAndSet(false, true)) {
+            return;
+        }
+        Communication communication = jobCommunication;
+        if (communication != null) {
+            synchronized (communication) {
+                if (!communication.isFinished()) {
+                    communication.setThrowable(new InterruptedException("JobContainer cancelled"));
+                    communication.setState(State.KILLED);
+                }
+            }
+        }
+        destroyRunner(readerRunner);
+        destroyRunner(writerRunner);
+        interrupt(readerThread);
+        interrupt(writerThread);
+        interrupt(reporterThread);
     }
 
     private void startJob(Configuration configuration, Channel channel,
@@ -284,10 +324,12 @@ public class JobContainer {
         if (pluginType == PluginType.READER) {
             ReaderRunner readerRunner = new ReaderRunner(jobPlugin);
             readerRunner.setRecordSender(new BufferedRecordTransformerExchanger(channel, jobCommunication, pluginCollector, transformerExecutions));
+            this.readerRunner = readerRunner;
             runner = readerRunner;
         } else {
             WriterRunner writerRunner = new WriterRunner(jobPlugin);
             writerRunner.setRecordReceiver(new BufferedRecordExchanger(channel));
+            this.writerRunner = writerRunner;
             runner = writerRunner;
         }
         runner.setJobId(jobId);
@@ -323,6 +365,12 @@ public class JobContainer {
                 Thread.sleep(sleepIntervalInMillSec);
             }
         } catch (Throwable e) {
+            if (cancellationRequested.get()) {
+                if (!jobCommunication.isFinished()) {
+                    jobCommunication.setState(State.KILLED);
+                }
+                return;
+            }
             if (jobCommunication.getThrowable() == null) {
                 jobCommunication.setThrowable(e);
             }
@@ -330,6 +378,23 @@ public class JobContainer {
             log.info(CommunicationTool.Stringify.getSnapshot(jobCommunication));
             throw AggregationException.asException(
                     FrameworkErrorCode.RUNTIME_ERROR, e);
+        }
+    }
+
+    private void destroyRunner(AbstractRunner runner) {
+        if (runner == null) {
+            return;
+        }
+        try {
+            runner.destroy();
+        } catch (Throwable failure) {
+            log.debug("Job plugin destroy failed during cancellation", failure);
+        }
+    }
+
+    private void interrupt(Thread thread) {
+        if (thread != null && thread.isAlive()) {
+            thread.interrupt();
         }
     }
 

@@ -2,6 +2,7 @@ package com.jdragon.aggregation.core.plugin.spi.reporter;
 
 import com.alibaba.fastjson.JSONObject;
 import com.jdragon.aggregation.commons.util.Configuration;
+import com.jdragon.aggregation.core.enums.State;
 import com.jdragon.aggregation.core.enums.Key;
 import com.jdragon.aggregation.core.plugin.PluginType;
 import com.jdragon.aggregation.core.statistics.communication.Communication;
@@ -133,7 +134,12 @@ public class JobPointReporter implements Runnable {
                 }
             }
         } catch (InterruptedException e) {
-            log.error("任务上报线程消费失败：{}", e.getMessage(), e);
+            Thread.currentThread().interrupt();
+            if (trackCommunication != null && trackCommunication.getState() == State.KILLED) {
+                log.debug("任务取消，上报线程结束");
+            } else {
+                log.error("任务上报线程消费失败：{}", e.getMessage(), e);
+            }
         }
     }
 }

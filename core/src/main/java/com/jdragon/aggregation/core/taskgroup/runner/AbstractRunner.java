@@ -7,10 +7,14 @@ import com.jdragon.aggregation.core.statistics.communication.Communication;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 
 @Slf4j
 @Data
 public class AbstractRunner implements Runnable {
+    private final AtomicBoolean destroyed = new AtomicBoolean(false);
+
     private AbstractJobPlugin plugin;
 
     private Configuration jobConf;
@@ -29,7 +33,7 @@ public class AbstractRunner implements Runnable {
     }
 
     public void destroy() {
-        if (this.plugin != null) {
+        if (this.plugin != null && destroyed.compareAndSet(false, true)) {
             this.plugin.destroy();
         }
     }
@@ -64,6 +68,10 @@ public class AbstractRunner implements Runnable {
             return;
         }
         synchronized (this.runnerCommunication) {
+            if (this.runnerCommunication.getState() == State.KILLED) {
+                log.info("runner skip mark fail because current status is KILLED");
+                return;
+            }
             mark(State.FAILED);
             this.runnerCommunication.setTimestamp(System.currentTimeMillis());
             this.runnerCommunication.setThrowable(throwable);
