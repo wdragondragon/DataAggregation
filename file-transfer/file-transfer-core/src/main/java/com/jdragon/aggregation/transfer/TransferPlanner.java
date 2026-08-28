@@ -19,6 +19,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 public class TransferPlanner {
 
@@ -45,6 +46,7 @@ public class TransferPlanner {
         TransferEventListener events = listener == null ? TransferEventListener.NOOP : listener;
         Instant effectivePlannedAt = plannedAt == null ? Instant.now() : plannedAt;
         TransferSpec resolved = templateResolver.resolve(spec, runId, effectivePlannedAt);
+        validateResolvedSpec(resolved);
         events.onEvent(event(TransferEventType.PLAN_STARTED, runId, null, 0, 0,
                 "file discovery started", Map.of()));
 
@@ -69,6 +71,24 @@ public class TransferPlanner {
                 items.stream().mapToLong(item -> item.sourceSnapshot().size()).sum(),
                 "file discovery completed", Map.of("fileCount", items.size())));
         return new PreparedTransfer(resolved, new TransferPlan(runId, effectivePlannedAt, items));
+    }
+
+    private void validateResolvedSpec(TransferSpec spec) {
+        if (spec.selection().rootPath() == null || spec.selection().rootPath().isBlank()) {
+            throw new IllegalArgumentException("Resolved selection.rootPath is empty");
+        }
+        if (spec.mapping().targetRootPath() == null || spec.mapping().targetRootPath().isBlank()) {
+            throw new IllegalArgumentException("Resolved mapping.targetRootPath is empty");
+        }
+        String regex = spec.selection().includeRegex();
+        if (regex != null && !regex.isBlank()) {
+            try {
+                Pattern.compile(regex);
+            } catch (RuntimeException exception) {
+                throw new IllegalArgumentException("Invalid resolved regular expression in selection.includeRegex: "
+                        + regex + "; " + exception.getMessage(), exception);
+            }
+        }
     }
 
     private TransferPlanItem toPlanItem(TransferSpec spec, String runId, DiscoveredFile file) {

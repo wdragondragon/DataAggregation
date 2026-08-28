@@ -38,7 +38,6 @@
             <groupId>com.jdragon.aggregation</groupId>
             <artifactId>commons</artifactId>
             <version>1.0_jdk17-SNAPSHOT</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.jdragon.aggregation</groupId>

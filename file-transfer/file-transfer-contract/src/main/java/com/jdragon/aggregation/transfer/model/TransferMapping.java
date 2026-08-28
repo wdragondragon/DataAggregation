@@ -5,8 +5,8 @@ public record TransferMapping(String targetRootPath,
                               String targetPathTemplate) {
 
     public TransferMapping {
-        if (targetRootPath == null || targetRootPath.isBlank()) {
-            throw new IllegalArgumentException("mapping targetRootPath is required");
-        }
+        // Validation of resolved expressions belongs to TransferPlanner, where
+        // the error can identify mapping.targetRootPath precisely. Preserve null
+        // and blank values here for that validation step.
     }
 }

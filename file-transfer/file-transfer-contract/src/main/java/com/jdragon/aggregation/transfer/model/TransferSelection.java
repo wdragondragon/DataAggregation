@@ -15,7 +15,10 @@ public record TransferSelection(String rootPath,
                                 int maxFiles) {
 
     public TransferSelection {
-        rootPath = rootPath == null || rootPath.isBlank() ? "." : rootPath;
+        // Keep an explicitly resolved blank path visible to the planner so it can
+        // report a field-specific error. A missing path still defaults to the
+        // historical current-directory behavior for legacy callers.
+        rootPath = rootPath == null ? "." : rootPath;
         paths = paths == null ? List.of() : List.copyOf(paths);
         includeGlobs = includeGlobs == null ? List.of() : List.copyOf(includeGlobs);
         excludeGlobs = excludeGlobs == null ? List.of() : List.copyOf(excludeGlobs);
