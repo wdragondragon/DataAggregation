@@ -57,6 +57,7 @@ final class KafkaStreamingSession implements StreamingSession, QueueCheckpointRe
     private final KafkaRecordParser parser;
     private final ConsumerFactory consumerFactory;
     private final boolean resetOffsetOnFirstAssignment;
+    private final long sourcePollTimeoutMillis;
     private final BlockingQueue<StreamingBatch> readyBatches = new ArrayBlockingQueue<StreamingBatch>(1);
     private final BlockingQueue<ControlCommand> commands = new LinkedBlockingQueue<ControlCommand>();
     private final Object commandLifecycleMonitor = new Object();
@@ -91,29 +92,48 @@ final class KafkaStreamingSession implements StreamingSession, QueueCheckpointRe
     private volatile CheckpointWindow inFlight;
 
     KafkaStreamingSession(Properties properties, String topic, KafkaRecordParser parser) {
-        this(properties, topic, parser, false);
+        this(properties, topic, parser, false, StreamingPollRequest.DEFAULT_TIMEOUT_MILLIS);
     }
 
     KafkaStreamingSession(Properties properties,
                           String topic,
                           KafkaRecordParser parser,
                           boolean resetOffsetOnFirstAssignment) {
+        this(properties, topic, parser, resetOffsetOnFirstAssignment,
+                StreamingPollRequest.DEFAULT_TIMEOUT_MILLIS);
+    }
+
+    KafkaStreamingSession(Properties properties,
+                          String topic,
+                          KafkaRecordParser parser,
+                          boolean resetOffsetOnFirstAssignment,
+                          long sourcePollTimeoutMillis) {
         this(topic, parser, () -> new KafkaConsumer<String, String>(properties),
-                resetOffsetOnFirstAssignment);
+                resetOffsetOnFirstAssignment, sourcePollTimeoutMillis);
     }
 
     KafkaStreamingSession(String topic, KafkaRecordParser parser, ConsumerFactory consumerFactory) {
-        this(topic, parser, consumerFactory, false);
+        this(topic, parser, consumerFactory, false, StreamingPollRequest.DEFAULT_TIMEOUT_MILLIS);
     }
 
     KafkaStreamingSession(String topic,
                           KafkaRecordParser parser,
                           ConsumerFactory consumerFactory,
                           boolean resetOffsetOnFirstAssignment) {
+        this(topic, parser, consumerFactory, resetOffsetOnFirstAssignment,
+                StreamingPollRequest.DEFAULT_TIMEOUT_MILLIS);
+    }
+
+    KafkaStreamingSession(String topic,
+                          KafkaRecordParser parser,
+                          ConsumerFactory consumerFactory,
+                          boolean resetOffsetOnFirstAssignment,
+                          long sourcePollTimeoutMillis) {
         this.topic = topic;
         this.parser = parser;
         this.consumerFactory = consumerFactory;
         this.resetOffsetOnFirstAssignment = resetOffsetOnFirstAssignment;
+        this.sourcePollTimeoutMillis = normalizeSourcePollTimeout(sourcePollTimeoutMillis);
         this.sourceThread = new Thread(this::runSourceLoop,
                 "DataAggregation-Kafka-Streaming-" + sanitize(topic));
         this.sourceThread.setDaemon(true);
@@ -553,7 +573,11 @@ final class KafkaStreamingSession implements StreamingSession, QueueCheckpointRe
     }
 
     private Duration sourcePollDuration() {
-        return Duration.ofMillis(Math.min(1_000L, Math.max(1L, pollRequest.get().getTimeoutMillis())));
+        return Duration.ofMillis(sourcePollTimeoutMillis);
+    }
+
+    static long normalizeSourcePollTimeout(long timeoutMillis) {
+        return Math.min(60_000L, Math.max(1L, timeoutMillis));
     }
 
     private void failPendingCommands(Throwable failure) {

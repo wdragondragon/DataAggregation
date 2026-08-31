@@ -53,11 +53,8 @@ public class KafkaReader extends Reader.Job implements StreamingSource {
         AtomicInteger emptyPollCount = new AtomicInteger();
         long startTime = System.currentTimeMillis();
         try {
-            kafkaQueue.receiveRecords(records -> {
+            kafkaQueue.receiveRecords(options.getPollTimeoutMs(), records -> {
                 if (Thread.currentThread().isInterrupted()) {
-                    return false;
-                }
-                if (options.getRetryPoll() > 0 && emptyPollCount.get() > options.getRetryPoll()) {
                     return false;
                 }
                 for (ConsumerRecord<String, String> consumerRecord : records) {
@@ -81,6 +78,9 @@ public class KafkaReader extends Reader.Job implements StreamingSource {
                     int polls = emptyPollCount.incrementAndGet();
                     LOG.debug("Kafka reader empty poll count: {}", polls);
                     recordSender.flush();
+                    if (options.getRetryPoll() > 0 && polls > options.getRetryPoll()) {
+                        return false;
+                    }
                 } else {
                     emptyPollCount.set(0);
                 }
@@ -105,7 +105,7 @@ public class KafkaReader extends Reader.Job implements StreamingSource {
         KafkaReaderOptions streamingOptions = KafkaReaderOptions.from(context.getReaderConfiguration());
         return new KafkaStreamingSession(streamingOptions.consumerProperties(),
                 streamingOptions.getTopic(), streamingOptions.recordParser(),
-                streamingOptions.isResetOffset());
+                streamingOptions.isResetOffset(), streamingOptions.getPollTimeoutMs());
     }
 
     @Override

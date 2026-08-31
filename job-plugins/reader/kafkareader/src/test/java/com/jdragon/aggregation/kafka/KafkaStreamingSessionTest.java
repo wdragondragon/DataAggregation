@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.Assert.assertEquals;
@@ -209,6 +210,20 @@ public class KafkaStreamingSessionTest {
     }
 
     @Test
+    public void datasourceSecurityPropertiesArePassedToKafkaConsumer() {
+        Configuration configuration = readerConfiguration();
+        configuration.set("security.protocol", "SSL");
+        configuration.set("ssl.truststore.location", "truststore.jks");
+        configuration.set("otherProperties.security.protocol", "PLAINTEXT");
+        configuration.set("otherProperties.ssl.truststore.location", "wrong.jks");
+
+        Properties properties = KafkaReaderOptions.from(configuration).consumerProperties();
+
+        assertEquals("SSL", properties.getProperty("security.protocol"));
+        assertEquals("truststore.jks", properties.getProperty("ssl.truststore.location"));
+    }
+
+    @Test
     public void splitParserPreservesTrailingEmptyColumn() throws Exception {
         assertEquals("", splitParser().parse("alpha,").getColumn(1).asString());
     }
@@ -235,6 +250,23 @@ public class KafkaStreamingSessionTest {
         } catch (IllegalArgumentException expected) {
             assertTrue(expected.getMessage().contains("groupId"));
         }
+    }
+
+    @Test
+    public void sourcePollTimeoutUsesReaderValueUpToKafkaClientLimit() {
+        assertEquals(5_000L, KafkaStreamingSession.normalizeSourcePollTimeout(5_000L));
+        assertEquals(60_000L, KafkaStreamingSession.normalizeSourcePollTimeout(120_000L));
+        assertEquals(1L, KafkaStreamingSession.normalizeSourcePollTimeout(0L));
+    }
+
+    @Test
+    public void streamingSessionPollsKafkaWithReaderTimeout() throws Exception {
+        TrackingMockConsumer consumer = new TrackingMockConsumer();
+        session = new KafkaStreamingSession(TOPIC, jsonParser(), () -> consumer, false, 5_000L);
+
+        session.pollBatch(new StreamingPollRequest(20L, 10, 1_024L));
+
+        await(() -> consumer.lastPollTimeoutMillis.get() == 5_000L, 2_000L);
     }
 
     private TrackingMockConsumer consumerWithRecords(List<ConsumerRecord<String, String>> records) {
@@ -298,6 +330,7 @@ public class KafkaStreamingSessionTest {
 
         private final AtomicInteger pollCount = new AtomicInteger();
         private final AtomicInteger commitFailuresRemaining = new AtomicInteger();
+        private final AtomicLong lastPollTimeoutMillis = new AtomicLong();
 
         private TrackingMockConsumer() {
             super(OffsetResetStrategy.EARLIEST);
@@ -306,6 +339,7 @@ public class KafkaStreamingSessionTest {
         @Override
         public synchronized ConsumerRecords<String, String> poll(Duration timeout) {
             pollCount.incrementAndGet();
+            lastPollTimeoutMillis.set(timeout.toMillis());
             return super.poll(timeout);
         }
 

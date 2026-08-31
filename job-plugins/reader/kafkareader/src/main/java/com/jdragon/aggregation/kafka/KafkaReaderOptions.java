@@ -22,6 +22,7 @@ final class KafkaReaderOptions {
     private final boolean resetOffset;
     private final long keepReadTime;
     private final long retryPoll;
+    private final long pollTimeoutMs;
     private final List<ColumnEntry> columns;
     private final String parsingRules;
     private final String fieldDelimiter;
@@ -37,6 +38,7 @@ final class KafkaReaderOptions {
         this.resetOffset = configuration.getBool(Key.RESET_OFFSET, false);
         this.keepReadTime = configuration.getLong(Key.KEEP_READ_TIME, 60 * 60 * 1000L);
         this.retryPoll = configuration.getLong(Key.RETRY_POLL, 0L);
+        this.pollTimeoutMs = Math.max(1L, configuration.getLong(Key.POLL_TIMEOUT_MS, 1000L));
         this.columns = Collections.unmodifiableList(ColumnEntry.getListColumnEntry(configuration, Key.COLUMN));
         this.parsingRules = defaultString(configuration.getString(Key.PARSING_RULES), "json");
         this.fieldDelimiter = configuration.getString(Key.SPLIT);
@@ -56,8 +58,9 @@ final class KafkaReaderOptions {
 
     Properties consumerProperties() {
         Properties properties = new Properties();
-        KafkaAuthUtil.login(properties, configuration);
         properties.putAll(otherProperties);
+        KafkaAuthUtil.copyKafkaClientProperties(properties, configuration);
+        KafkaAuthUtil.login(properties, configuration);
         properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         properties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
@@ -91,6 +94,10 @@ final class KafkaReaderOptions {
 
     long getRetryPoll() {
         return retryPoll;
+    }
+
+    long getPollTimeoutMs() {
+        return pollTimeoutMs;
     }
 
     KafkaRecordParser recordParser() {
