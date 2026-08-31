@@ -12,6 +12,61 @@ import java.util.Properties;
  * @description
  */
 public class KafkaAuthUtil {
+    private static final String[] CLIENT_PROPERTY_PREFIXES = {
+            "security.", "sasl.", "ssl.", "client.", "connections.",
+            "request.", "retry.", "reconnect.", "metadata.", "fetch.",
+            "receive.", "send.", "max.", "enable.", "auto.", "isolation.",
+            "partition.", "allow.", "interceptor.", "metrics.", "metric.", "kerberos."
+    };
+
+    /**
+     * Copies Kafka client connection properties from datasource metadata.
+     * Topic, group, offset and poll options are task-level settings and are
+     * deliberately added by the reader/writer instead.
+     */
+    public static void copyKafkaClientProperties(Properties properties, Configuration configuration) {
+        if (properties == null || configuration == null) {
+            return;
+        }
+        for (String key : configuration.getKeys()) {
+            if (key == null || key.trim().isEmpty()) {
+                continue;
+            }
+            String normalizedKey = key.trim();
+            if (!isClientProperty(normalizedKey)) {
+                continue;
+            }
+            Object value = literalOrPath(configuration, normalizedKey);
+            if (value != null) {
+                properties.put(normalizedKey, value);
+            }
+        }
+    }
+
+    private static boolean isClientProperty(String key) {
+        if ("bootstrap.servers".equals(key)) {
+            return true;
+        }
+        for (String prefix : CLIENT_PROPERTY_PREFIXES) {
+            if (key.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Object literalOrPath(Configuration configuration, String key) {
+        Object literalValue = configuration.getMapValue("", key);
+        if (literalValue != null) {
+            return literalValue;
+        }
+        try {
+            return configuration.get(key);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
     public static void login(Properties properties, Configuration configuration) {
         boolean kerberos = isKerberosEnabled(configuration);
         String principal = configuration.getString(KafkaAuthKey.PRINCIPAL);
@@ -52,19 +107,46 @@ public class KafkaAuthUtil {
     }
 
     public static void login(Properties properties, String username, String password) {
-        properties.put("security.protocol", "SASL_PLAINTEXT");
-        properties.put("sasl.mechanism", "PLAIN");
-        properties.put("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"" + username + "\" password=\"" + password + "\";");
+        // Explicit Kafka security properties come from the datasource and are
+        // authoritative (for example SASL_SSL + SCRAM). Generate defaults
+        // only for fields that were not configured by the caller.
+        properties.putIfAbsent("security.protocol", "SASL_PLAINTEXT");
+        properties.putIfAbsent("sasl.mechanism", "PLAIN");
+        String mechanism = String.valueOf(properties.get("sasl.mechanism")).trim();
+        String normalizedMechanism = mechanism.toUpperCase(java.util.Locale.ROOT);
+        String loginModule = normalizedMechanism.startsWith("SCRAM-")
+                ? "org.apache.kafka.common.security.scram.ScramLoginModule"
+                : ("PLAIN".equals(normalizedMechanism)
+                ? "org.apache.kafka.common.security.plain.PlainLoginModule" : null);
+        if (loginModule != null) {
+            properties.putIfAbsent("sasl.jaas.config", loginModule + " required username=\""
+                    + escapeJaasValue(username) + "\" password=\"" + escapeJaasValue(password) + "\";");
+        }
+    }
+
+    private static String escapeJaasValue(String value) {
+        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     public static void login(Properties properties, String principal, String krb5ConfigPath, String keytabPath, String kerberosDomain) throws IOException {
+        if (StringUtils.isBlank(principal)) {
+            throw new IllegalArgumentException("Kafka Kerberos principal must not be blank");
+        }
+        if (StringUtils.isBlank(krb5ConfigPath)) {
+            throw new IllegalArgumentException("Kafka Kerberos krb5Conf must not be blank");
+        }
+        if (StringUtils.isBlank(keytabPath)) {
+            throw new IllegalArgumentException("Kafka Kerberos keytab path must not be blank");
+        }
         setKrb5Config(krb5ConfigPath);
 //        setZookeeperServerPrincipal(zookeeperPrincipal);
-        properties.put("security.protocol", "SASL_PLAINTEXT");
-        properties.put("sasl.kerberos.service.name", "kafka");
-        properties.put("sasl.mechanism", "GSSAPI");
-        properties.put("kerberos.domain.name", kerberosDomain);
-        properties.put("sasl.jaas.config", getModuleContext(principal, keytabPath));
+        properties.putIfAbsent("security.protocol", "SASL_PLAINTEXT");
+        properties.putIfAbsent("sasl.kerberos.service.name", "kafka");
+        properties.putIfAbsent("sasl.mechanism", "GSSAPI");
+        if (StringUtils.isNotBlank(kerberosDomain)) {
+            properties.putIfAbsent("kerberos.domain.name", kerberosDomain);
+        }
+        properties.putIfAbsent("sasl.jaas.config", getModuleContext(principal, keytabPath));
     }
 
 
