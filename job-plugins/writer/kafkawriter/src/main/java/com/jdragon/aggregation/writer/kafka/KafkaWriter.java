@@ -64,8 +64,6 @@ public class KafkaWriter extends Writer.Job {
         this.columnArr = columnList.stream().map(ColumnEntry::getName).collect(Collectors.toList());
 
         Properties properties = getProperties();
-        KafkaAuthUtil.login(properties, conf);
-        properties.putAll(otherProperties);
 
         // 初始化kafka queue plugin
         Configuration kafkaConfig = Configuration.newDefault();
@@ -95,11 +93,18 @@ public class KafkaWriter extends Writer.Job {
 
     private Properties getProperties() {
         Properties properties = new Properties();
+        properties.putAll(otherProperties);
+        properties.putIfAbsent("linger.ms", 1);
+        // Datasource metadata contributes connection/security properties, but
+        // the task's dedicated writer options remain authoritative. Copy the
+        // generic properties before applying those dedicated values so a
+        // legacy dotted bootstrap.servers entry cannot redirect the writer.
+        KafkaAuthUtil.copyKafkaClientProperties(properties, conf);
+        KafkaAuthUtil.login(properties, conf);
         properties.put("bootstrap.servers", bootstrapServers);
         properties.put("acks", acks);//这意味着leader需要等待所有备份都成功写入日志，这种策略会保证只要有一个备份存活就不会丢失数据。这是最强的保证。
         properties.put("retries", retries);
         properties.put("batch.size", batchSize);
-        properties.put("linger.ms", 1);
         properties.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         properties.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         return properties;
