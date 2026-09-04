@@ -138,7 +138,6 @@ public class KafkaAuthUtil {
         if (StringUtils.isBlank(keytabPath)) {
             throw new IllegalArgumentException("Kafka Kerberos keytab path must not be blank");
         }
-        setKrb5Config(krb5ConfigPath);
 //        setZookeeperServerPrincipal(zookeeperPrincipal);
         properties.putIfAbsent("security.protocol", "SASL_PLAINTEXT");
         properties.putIfAbsent("sasl.kerberos.service.name", "kafka");
@@ -186,6 +185,7 @@ public class KafkaAuthUtil {
             builder.append("principal=\"").append(userPrincipal).append("\"").append(LINE_SEPARATOR);
             builder.append("useTicketCache=false").append(LINE_SEPARATOR);
             builder.append("storeKey=true").append(LINE_SEPARATOR);
+            builder.append("refreshKrb5Config=true").append(LINE_SEPARATOR);
             //            builder.append("};").append(LINE_SEPARATOR);
         }
         builder.append("debug=true;").append(LINE_SEPARATOR);
