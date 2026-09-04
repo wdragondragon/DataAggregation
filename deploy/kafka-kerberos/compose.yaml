@@ -1,0 +1,154 @@
+name: dataaggregation-kafka-kerberos
+
+services:
+  kerberos-init:
+    build:
+      context: ./kdc
+    environment:
+      KRB5_REALM: ${KRB5_REALM:-STUDIO.TEST}
+      KDC_MASTER_PASSWORD: ${KDC_MASTER_PASSWORD:-studio-kdc-master-change-me}
+      KAFKA_BROKER_PRINCIPAL: ${KAFKA_BROKER_PRINCIPAL:-kafka/kafka.kerberos.test@STUDIO.TEST}
+      KAFKA_EXTERNAL_BROKER_PRINCIPAL: ${KAFKA_EXTERNAL_BROKER_PRINCIPAL:-kafka/localhost@STUDIO.TEST}
+      KAFKA_CLIENT_PRINCIPAL: ${KAFKA_CLIENT_PRINCIPAL:-studio-client@STUDIO.TEST}
+    command: ["init"]
+    volumes:
+      - kerberos-data:/var/lib/krb5kdc
+      - ./generated:/shared
+    networks:
+      - kafka-kerberos
+    restart: "no"
+
+  kerberos-kdc:
+    build:
+      context: ./kdc
+    hostname: kerberos-kdc.kerberos.test
+    environment:
+      KRB5_REALM: ${KRB5_REALM:-STUDIO.TEST}
+    command: ["run"]
+    depends_on:
+      kerberos-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${KDC_HOST_PORT:-10088}:88/tcp"
+      - "127.0.0.1:${KDC_HOST_PORT:-10088}:88/udp"
+    volumes:
+      - kerberos-data:/var/lib/krb5kdc
+    networks:
+      kafka-kerberos:
+        aliases:
+          - kerberos-kdc.kerberos.test
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 88"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 3s
+    restart: unless-stopped
+
+  kafka-storage-init:
+    image: apache/kafka:3.9.1
+    user: "0:0"
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - >-
+        mkdir -p /tmp/kraft-combined-logs
+        && chown -R 1000:1000 /tmp/kraft-combined-logs
+    volumes:
+      - kafka-data:/tmp/kraft-combined-logs
+    network_mode: none
+    restart: "no"
+
+  kafka-kerberos:
+    image: apache/kafka:3.9.1
+    hostname: kafka.kerberos.test
+    depends_on:
+      kerberos-init:
+        condition: service_completed_successfully
+      kerberos-kdc:
+        condition: service_healthy
+      kafka-storage-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${KAFKA_HOST_PORT:-19092}:19092"
+    environment:
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-4L6g3nShT-eMCtK--X86sw}
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: EXTERNAL://:19092,INTERNAL://:19094,CONTROLLER://:19093
+      KAFKA_ADVERTISED_LISTENERS: EXTERNAL://localhost:19092,INTERNAL://kafka.kerberos.test:19094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: EXTERNAL:SASL_PLAINTEXT,INTERNAL:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka.kerberos.test:19093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_SASL_ENABLED_MECHANISMS: GSSAPI
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: GSSAPI
+      KAFKA_SASL_KERBEROS_SERVICE_NAME: kafka
+      KAFKA_LISTENER_NAME_EXTERNAL_GSSAPI_SASL_JAAS_CONFIG: >-
+        com.sun.security.auth.module.Krb5LoginModule required
+        useKeyTab=true storeKey=true useTicketCache=false
+        keyTab="/etc/kerberos/keytabs/kafka.keytab"
+        principal="kafka/localhost@STUDIO.TEST";
+      KAFKA_LISTENER_NAME_INTERNAL_GSSAPI_SASL_JAAS_CONFIG: >-
+        com.sun.security.auth.module.Krb5LoginModule required
+        useKeyTab=true storeKey=true useTicketCache=false
+        keyTab="/etc/kerberos/keytabs/kafka.keytab"
+        principal="kafka/kafka.kerberos.test@STUDIO.TEST";
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 1
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      KAFKA_OPTS: >-
+        -Djava.security.auth.login.config=/etc/kafka/secrets/kafka-server-jaas.conf
+        -Djava.security.krb5.conf=/etc/kerberos/krb5.conf
+    volumes:
+      - kafka-data:/tmp/kraft-combined-logs
+      - ./generated:/etc/kerberos/keytabs:ro
+      - ./config/krb5-container.conf:/etc/kerberos/krb5.conf:ro
+      - ./config/kafka-server-jaas.conf:/etc/kafka/secrets/kafka-server-jaas.conf:ro
+      - ./config/kafka-client.properties:/etc/kafka/client.properties:ro
+    networks:
+      kafka-kerberos:
+        aliases:
+          - kafka.kerberos.test
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          /opt/kafka/bin/kafka-topics.sh
+          --bootstrap-server kafka.kerberos.test:19094
+          --command-config /etc/kafka/client.properties
+          --list >/dev/null 2>&1
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 15s
+    restart: unless-stopped
+
+  kerberos-client:
+    image: apache/kafka:3.9.1
+    profiles: ["tools"]
+    depends_on:
+      kafka-kerberos:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-lc"]
+    command: ["sleep infinity"]
+    environment:
+      KAFKA_OPTS: -Djava.security.krb5.conf=/etc/kerberos/krb5.conf
+    volumes:
+      - ./generated:/etc/kerberos/keytabs:ro
+      - ./config/krb5-container.conf:/etc/kerberos/krb5.conf:ro
+      - ./config/kafka-client.properties:/etc/kafka/client.properties:ro
+    networks:
+      - kafka-kerberos
+
+networks:
+  kafka-kerberos:
+    name: dataaggregation-kafka-kerberos-net
+
+volumes:
+  kerberos-data:
+    name: dataaggregation-kafka-kerberos-data
+  kafka-data:
+    name: dataaggregation-kafka-kerberos-kafka-data
