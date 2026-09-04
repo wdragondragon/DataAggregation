@@ -82,9 +82,9 @@ public class LoginUtil {
             throw new IOException("krb5ConfFile(" + krb5ConfFile.getAbsolutePath() + ") is not a file.");
         }
 
-        // 3.set and check krb5config
+        // Studio activates the process-wide merged krb5.conf before loading the plugin.
+        // The plugin only validates and consumes the materialized local file path.
         LOG.info("krbConfAbsolutePath:" + krb5ConfFile.getAbsolutePath());
-        setKrb5Config(krb5ConfFile.getAbsolutePath());
         setConfiguration(conf);
 
         // 4.login and check for hadoop

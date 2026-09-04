@@ -6,9 +6,13 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.security.UserGroupInformation;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.PrivilegedExceptionAction;
-import java.util.HashMap;
+import java.security.MessageDigest;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * @author JDragon
@@ -26,7 +30,7 @@ public class GetKerberosObject {
 
     private final Configuration configuration;
 
-    private final Map<String, UserGroupInformation> kerberosCache = new HashMap<>();
+    private final Map<String, UserGroupInformation> kerberosCache = new ConcurrentHashMap<>();
 
     private final String authenticationType;
 
@@ -49,6 +53,7 @@ public class GetKerberosObject {
     public void doAs(PrivilegedExceptionActionNoResult privilegedExceptionAction) throws Exception {
         if (authenticationType == null || StringUtils.isBlank(authenticationType)) {
             privilegedExceptionAction.run();
+            return;
         }
         doAs(() -> {
             privilegedExceptionAction.run();
@@ -58,21 +63,43 @@ public class GetKerberosObject {
 
     public UserGroupInformation initHadoopSecurity(String kerberosPrincipal, String kerberosKeytabFilePath, String krb5Conf, Configuration conf) throws IOException {
         if ("kerberos".equalsIgnoreCase(authenticationType)) {
-            String loginContextName = kerberosPrincipal + kerberosKeytabFilePath;
-            if (kerberosCache.containsKey(loginContextName)) {
-                return kerberosCache.get(loginContextName);
+            String loginContextName = kerberosPrincipal + "|"
+                    + fileFingerprint(kerberosKeytabFilePath) + "|" + fileFingerprint(krb5Conf);
+            UserGroupInformation cached = kerberosCache.get(loginContextName);
+            if (cached != null) {
+                return cached;
             }
-            LoginUtil.setJaasConf(loginContextName, kerberosPrincipal, kerberosKeytabFilePath);
-//            LoginUtil.setJaasConf(kerberosPrincipal + "-" + kerberosKeytabFilePath, kerberosPrincipal, kerberosKeytabFilePath);
-//            LoginUtil.setZookeeperServerPrincipal("zookeeper.server.principal", "zookeeper/hadoop");
-            UserGroupInformation login = LoginUtil.login(kerberosPrincipal, kerberosKeytabFilePath, krb5Conf, conf);
-            log.info("Kerberos login success, {}", login.toString());
-            kerberosCache.put(loginContextName, login);
-            return login;
+            synchronized (kerberosCache) {
+                cached = kerberosCache.get(loginContextName);
+                if (cached != null) return cached;
+                UserGroupInformation login = LoginUtil.login(
+                        kerberosPrincipal, kerberosKeytabFilePath, krb5Conf, conf);
+                log.info("Kerberos login success, {}", login.toString());
+                kerberosCache.put(loginContextName, login);
+                return login;
+            }
         }
         UserGroupInformation.setConfiguration(conf);
         UserGroupInformation.loginUserFromSubject(null);
         return UserGroupInformation.getLoginUser();
+    }
+
+    private String fileFingerprint(String filePath) throws IOException {
+        if (StringUtils.isBlank(filePath)) return "missing";
+        Path path = Path.of(filePath).toAbsolutePath().normalize();
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (InputStream input = Files.newInputStream(path)) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read);
+            }
+            StringBuilder result = new StringBuilder(64);
+            for (byte value : digest.digest()) result.append(String.format("%02x", value));
+            return result.toString();
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IOException("SHA-256 is unavailable", ex);
+        }
     }
 
     @FunctionalInterface

@@ -162,7 +162,6 @@ public class HdfsHelper extends AbstractPlugin implements FileHelper {
             this.kerberosKeytabFilePath = configuration.getString(Key.KERBEROS_KEYTAB_FILE_PATH);
             this.kerberosPrincipal = configuration.getString(Key.KERBEROS_PRINCIPAL);
             this.krb5Conf = configuration.getString(Key.JAVA_SECURITY_KRB5_CONF_KEY);
-            System.setProperty(JAVA_SECURITY_KRB5_CONF_KEY, this.krb5Conf);
         }
         this.kerberosObject = new GetKerberosObject(kerberosPrincipal, kerberosKeytabFilePath, krb5Conf, hadoopConf, authenticationType);
         LOG.info("hadoopConfig details:{}", JSON.toJSONString(this.hadoopConf));

@@ -16,6 +16,7 @@ import javax.security.auth.login.AppConfigurationEntry;
 import javax.security.auth.login.Configuration;
 import javax.security.auth.login.LoginContext;
 import javax.security.auth.login.LoginException;
+import java.io.File;
 import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 import java.sql.Connection;
@@ -146,7 +147,8 @@ public class Hive3SourcePlugin extends RdbmsSourcePlugin {
         String jdbcUrl = dataSource.getJdbcUrl();
         String driverClassName = dataSource.getDriverClassName();
 
-        System.setProperty("java.security.krb5.conf", krb5File);
+        requireLocalFile(keytabPath, "Hive3 Kerberos keytab");
+        requireLocalFile(krb5File, "Hive3 Kerberos krb5.conf");
         HashMap<String, Object> krb5Options = new HashMap<>();
         krb5Options.put("principal", principal);
         krb5Options.put("keyTab", keytabPath);
@@ -183,5 +185,15 @@ public class Hive3SourcePlugin extends RdbmsSourcePlugin {
             throw new RuntimeException(e);
         }
 
+    }
+
+    private static void requireLocalFile(String path, String label) {
+        if (StringUtils.isBlank(path)) {
+            throw new IllegalArgumentException(label + " path must not be blank");
+        }
+        File file = new File(path);
+        if (!file.isFile()) {
+            throw new IllegalArgumentException(label + " file does not exist: " + path);
+        }
     }
 }
