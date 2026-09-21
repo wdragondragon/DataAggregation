@@ -9,7 +9,6 @@ import com.jdragon.aggregation.datasource.*;
 import com.jdragon.aggregation.datasource.scan.TableScanReadable;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.calcite.adapter.jdbc.JdbcSchema;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.BufferedReader;
@@ -67,18 +66,35 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
         Connection connection;
         try {
             String jdbcUrl = joinJdbcUrl(dataSource);
-            log.info("start get {} connection, jdbcUrl={}", getType(), jdbcUrl);
+            log.info("start get {} connection", getType());
             if (dataSource.isUsePool()) {
-                connection = DatasourceCache.getConnection(jdbcUrl, getDriver(), dataSource.getUserName(), dataSource.getPassword(), getTestQuery());
+                connection = DatasourceCache.getConnection(jdbcUrl, getDriver(), dataSource.getUserName(),
+                        dataSource.getPassword(), getTestQuery(), dataSource.getExtraParams());
             } else {
-                connection = JdbcSchema.dataSource(jdbcUrl, getDriver(), dataSource.getUserName(), dataSource.getPassword()).getConnection();
+                DatasourceCache.invalidate(jdbcUrl, getDriver(), dataSource.getUserName(), dataSource.getPassword());
+                connection = getDirectConnection(jdbcUrl, dataSource);
             }
-            log.info("connection success: {}", connection);
+            log.info("connection success for {}", getType());
         } catch (Exception e) {
             log.error("get connection fail", e);
             throw new RuntimeException(e.getMessage(), e);
         }
         return connection;
+    }
+
+    /**
+     * Opens one physical JDBC connection without Calcite's DataSourcePool.
+     * This branch is intentionally used when a datasource disables pooling so
+     * that a constrained database can be tested without retaining another
+     * hidden pool outside {@link DatasourceCache}.
+     */
+    private Connection getDirectConnection(String jdbcUrl, BaseDataSourceDTO dataSource) throws SQLException {
+        try {
+            Class.forName(getDriver());
+        } catch (ClassNotFoundException exception) {
+            throw new SQLException("JDBC driver not found: " + getDriver(), exception);
+        }
+        return DriverManager.getConnection(jdbcUrl, dataSource.getUserName(), dataSource.getPassword());
     }
 
     @Override
@@ -671,7 +687,7 @@ public abstract class RdbmsSourcePlugin extends AbstractDataSourcePlugin impleme
         try (Connection connection = getConnection(dataSource)) {
             return connection != null && !connection.isClosed();
         } catch (Exception e) {
-            log.error("连接数据库失败：{}，参数：{}", e.getMessage(), JSONObject.toJSONString(dataSource), e);
+            log.error("连接数据库失败，数据源类型={}，错误={}", dataSource == null ? null : dataSource.getType(), e.getMessage(), e);
             throw new RuntimeException(e);
         }
     }

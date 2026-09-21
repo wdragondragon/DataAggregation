@@ -111,7 +111,7 @@
 | `connectionConfig.username` | string | 条件必填 | 无 | 用户名 | 与插件实际要求保持一致 |
 | `connectionConfig.userName` | string | 条件必填 | 无 | `username` 的兼容别名 | 新配置优先写 `userName` 或 `username` 二选一即可 |
 | `connectionConfig.password` | string | 条件必填 | 无 | 密码 | 建议走密文或外部注入 |
-| `connectionConfig.usePool` | boolean | 否 | `false` | 是否启用连接池 | 数据库源建议 `true` |
+| `connectionConfig.usePool` | boolean | 否 | `true` | 是否启用连接池；只有显式设置 `false` 才关闭 | 连接池参数属于当前数据源，不通过 Worker 全局线程池调整 |
 | `connectionConfig.jdbcUrl` | string | 否 | 无 | 自定义 JDBC URL | 有特殊连接需求时填写 |
 | `connectionConfig.driverClassName` | string | 否 | 无 | 驱动类名 | 自定义驱动时填写 |
 | `connectionConfig.extraParams` | object | 否 | 空 | 透传到 DTO 的 `extraParams` | JDBC 附加参数写这里 |

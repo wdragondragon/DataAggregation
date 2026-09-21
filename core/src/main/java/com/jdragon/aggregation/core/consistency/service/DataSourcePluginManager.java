@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.datasource.AbstractDataSourcePlugin;
 import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
+import com.jdragon.aggregation.datasource.DataSourcePoolConfig;
 import com.jdragon.aggregation.datasource.SourcePluginType;
 import com.jdragon.aggregation.pluginloader.LoadUtil;
 import com.jdragon.aggregation.pluginloader.runtime.ResolvedPlugin;
@@ -105,7 +106,9 @@ public class DataSourcePluginManager implements AutoCloseable {
             dto.setDatabase(connectionConfig.getString("database"));
             dto.setUserName(connectionConfig.getString("username", connectionConfig.getString("userName")));
             dto.setPassword(connectionConfig.getString("password"));
-            dto.setUsePool(connectionConfig.getBool("usePool", false));
+            // The pool switch is opt-out for compatibility with historical
+            // consistency jobs.  Only an explicit false disables pooling.
+            dto.setUsePool(connectionConfig.getBool("usePool", true));
             dto.setJdbcUrl(connectionConfig.getString("jdbcUrl"));
             dto.setDriverClassName(connectionConfig.getString("driverClassName"));
 
@@ -120,6 +123,10 @@ public class DataSourcePluginManager implements AutoCloseable {
             }
 
             mergeStringValues(extraParams, config.getExtConfig());
+            // First-class datasource pool fields override legacy nested or
+            // extension values and remain scoped to this datasource.
+            Map<String, Object> directValues = connectionConfig.getMap("");
+            DataSourcePoolConfig.copyDirectStringParameters(directValues, extraParams);
             dto.setExtraParams(extraParams);
 
             Object other = connectionConfig.get("other");

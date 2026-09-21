@@ -44,7 +44,12 @@ public class BaseDataSourceDTO {
      */
     private String other;
 
-    private boolean usePool;
+    /**
+     * Keep the historical pooled connection behavior when callers do not
+     * provide the optional switch.  An explicit false is still honored by
+     * the RDBMS plugins and selects direct JDBC connections.
+     */
+    private boolean usePool = true;
 
     /**
      * 额外参数

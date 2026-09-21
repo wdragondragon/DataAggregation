@@ -140,7 +140,7 @@
 | `database` | 视插件而定 | 无 | 库名。 | 只写当前业务库。 |
 | `username` / `userName` | 视插件而定 | 无 | 用户名。 | 两种写法都兼容，推荐统一 `userName`。 |
 | `password` | 视插件而定 | 无 | 密码。 | 建议走安全配置。 |
-| `usePool` | 否 | `false` | 是否启用连接池。 | 生产 DB 源一般 `true`。 |
+| `usePool` | 否 | `true` | 是否启用连接池；只有显式设置 `false` 才关闭。 | 连接池参数属于当前数据源，不通过 Worker 全局线程池调整。 |
 | `jdbcUrl` | 否 | 无 | 自定义 JDBC URL。 | 非标准连接场景再用。 |
 | `driverClassName` | 否 | 无 | 自定义驱动类。 | 非标准驱动场景再用。 |
 | `extraParams` | 否 | 空 | 额外连接参数。 | JDBC 特殊参数放这里。 |
