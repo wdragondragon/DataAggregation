@@ -1,0 +1,46 @@
+data-source-plugins/data-source-handler-http/src/main/java/com/jdragon/aggregation/datasource/http/HttpSourceKeys.java
+  s_cb52049a34caae::t_02f89f1b4953dc 17
+job-plugins/reader/httpreader/src/main/java/com/jdragon/aggregation/httpreader/Key.java
+  s_cb52049a34caae::t_02f89f1b4953dc 38
+job-plugins/utils/plugin-unstructured-storage-util/src/main/java/com/jdragon/aggregation/unstructuredstorage/UnstructuredStorageReaderUtil.java
+  s_cb52049a34caae::t_02f89f1b4953dc 6-9,124,154,165-198
+  s_cb52049a34caae::t_deefc9e90c732f 138,140-145
+  s_cb52049a34caae::t_6363ec52554f61 155-164
+  s_cb52049a34caae::t_d487984d72d9e3 139
+  s_cb52049a34caae::t_c39f4a5dffab13 199
+job-plugins/reader/httpreader/src/test/java/com/jdragon/aggregation/httpreader/HttpNestedRecordReaderTest.java
+  s_cb52049a34caae::t_f0b98ef57730c3 1-102
+job-plugins/utils/plugin-unstructured-storage-util/src/test/java/com/jdragon/aggregation/unstructuredstorage/UnstructuredStorageReaderUtilTest.java
+  s_cb52049a34caae::t_deefc9e90c732f 40-67
+data-source-plugins/data-source-handler-http/pom.xml
+  s_cb52049a34caae::t_0e2c1355c5a449 23-26
+  s_cb52049a34caae::t_d5e970bc928f7e 21-22
+data-source-plugins/data-source-handler-http/src/main/java/com/jdragon/aggregation/datasource/http/HttpSourceConfig.java
+  s_cb52049a34caae::t_6363ec52554f61 7,36-37,70,78,102,238-244
+  s_cb52049a34caae::t_0d3ada3629e8d8 245
+job-plugins/reader/httpreader/src/main/java/com/jdragon/aggregation/httpreader/HttpReader.java
+  s_cb52049a34caae::t_6363ec52554f61 9,152,154-163,182
+job-plugins/utils/plugin-unstructured-storage-util/src/main/java/com/jdragon/aggregation/unstructuredstorage/ColumnEntry.java
+  s_cb52049a34caae::t_02f89f1b4953dc 17-18
+data-source-plugins/data-source-handler-http/src/test/java/com/jdragon/aggregation/datasource/http/HttpNestedRecordScannerTest.java
+  s_cb52049a34caae::t_65c2315fa44b71 105-124
+  s_cb52049a34caae::t_f0b98ef57730c3 1-104,125-168
+data-source-plugins/data-source-handler-http/src/main/java/com/jdragon/aggregation/datasource/http/HttpSourceScanner.java
+  s_cb52049a34caae::t_6363ec52554f61 8,389-390,415,539-541,544-551
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8c04e3e53ff3e5eb4f3ec4b1a065d751512c7ebf",
+  "prompts": {},
+  "sessions": {
+    "s_cb52049a34caae": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18675-8748-7c10-b508-5ddb39c7477e",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "jdragon <jdraong9527@gmail.com>"
+    }
+  }
+}
