@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.TypeReference;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.util.FastJsonMemory;
+import com.jdragon.aggregation.commons.util.json.JsonExtractionResult;
 import com.jdragon.aggregation.commons.util.RetryUtil;
 import com.jdragon.aggregation.plugin.httpdyn.HttpDynColumnExecuteHandler;
 import com.jdragon.aggregation.plugin.httpdyn.exception.HttpRequestConfigurationException;
@@ -385,7 +386,8 @@ public class HttpSourceScanner {
                                     PageRepeatGuard pageRepeatGuard,
                                     int pageNum,
                                     String pageContent) {
-        JSONArray rows = detailRows(resultJson, config.getColumns());
+        JsonExtractionResult extracted = detailRows(resultJson, config, remainingRows);
+        JSONArray rows = extracted.rows();
         if (config.isPageRead() && pageRepeatGuard.observe(pageContent)) {
             throw AggregationException.asException(HttpSourceErrorCode.RESPONSE_PAGE_ERROR,
                     "HTTP 分页检测到重复的完整页或短页，已停止读取: page=" + pageNum
@@ -410,7 +412,7 @@ public class HttpSourceScanner {
                 emittedRows++;
             }
         }
-        return new ScanPageResult(rows.size(), emittedRows);
+        return new ScanPageResult(extracted.sourceRowCount(), emittedRows);
     }
 
     private Set<String> physicalColumnNames(HttpSourceConfig config) {
@@ -534,12 +536,19 @@ public class HttpSourceScanner {
         return deepCopyMap(source);
     }
 
-    private JSONArray detailRows(FastJsonMemory json, List<ColumnEntry> columns) {
-        if (columns == null || columns.isEmpty()) {
-            return new JSONArray();
+    private JsonExtractionResult detailRows(FastJsonMemory json, HttpSourceConfig config, int maxRows) {
+        if (config.getColumns() == null || config.getColumns().isEmpty()) {
+            return new JsonExtractionResult(new JSONArray(), 0);
         }
         try {
-            return UnstructuredStorageReaderUtil.detailJson(json, columns);
+            return UnstructuredStorageReaderUtil.extractJson(json, config.getColumns(), config.getExtractionPlan(), maxRows);
+        } catch (IllegalArgumentException ex) {
+            if (config.getExtractionPlan() != null) {
+                throw AggregationException.asException(HttpSourceErrorCode.RESULT_TO_JSON_ERROR,
+                        "HTTP response data extraction failed: " + ex.getMessage());
+            }
+            throw AggregationException.asException(HttpSourceErrorCode.RESULT_TO_JSON_ERROR,
+                    "HTTP response data extraction failed");
         } catch (Exception ex) {
             throw AggregationException.asException(HttpSourceErrorCode.RESULT_TO_JSON_ERROR,
                     "HTTP response data extraction failed");

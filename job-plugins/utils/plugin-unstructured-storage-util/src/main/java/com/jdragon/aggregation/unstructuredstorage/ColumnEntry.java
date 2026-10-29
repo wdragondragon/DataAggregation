@@ -14,5 +14,7 @@ public class ColumnEntry {
 
     private String name;
 
+    private String sourceName;
+
     private String parentNode;
 }

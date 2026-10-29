@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.jdragon.aggregation.commons.util.Configuration;
+import com.jdragon.aggregation.commons.util.json.JsonExtractionPlan;
 import com.jdragon.aggregation.unstructuredstorage.ColumnEntry;
 import com.jdragon.aggregation.unstructuredstorage.UnstructuredStorageReaderUtil;
 import org.apache.commons.lang3.StringUtils;
@@ -32,6 +33,8 @@ public class HttpSourceConfig {
     private String resultType = "json";
     private Map<String, Object> responseStatus;
     private String totalCodePath;
+    private String recordPath;
+    private JsonExtractionPlan extractionPlan;
     private boolean pageRead;
     private int pageSize = 500;
     private int maxRepeatedPages = 2;
@@ -64,6 +67,7 @@ public class HttpSourceConfig {
         config.requestBody = configuration.getString(HttpSourceKeys.REQUEST_BODY, "");
         config.responseStatus = configuration.getMap(HttpSourceKeys.RESPONSE_STATUS);
         config.totalCodePath = configuration.getUnnecessaryValue(HttpSourceKeys.TOTAL_CODE_PATH, null, null);
+        config.recordPath = StringUtils.trimToNull(configuration.getString(HttpSourceKeys.RECORD_PATH, null));
         config.pageRead = configuration.getBool(HttpSourceKeys.PAGE_READ, false);
         config.pageSize = configuration.getInt(HttpSourceKeys.PAGE_SIZE, 500);
         config.maxRepeatedPages = configuration.getInt(HttpSourceKeys.MAX_REPEATED_PAGES, 2);
@@ -71,6 +75,7 @@ public class HttpSourceConfig {
         config.retryIntervalMs = configuration.getLong(HttpSourceKeys.RETRY_INTERVAL_MS, 1000L);
         config.retryNonIdempotent = configuration.getBool(HttpSourceKeys.RETRY_NON_IDEMPOTENT, false);
         config.columns = UnstructuredStorageReaderUtil.getListColumnEntry(configuration, HttpSourceKeys.COLUMNS);
+        config.extractionPlan = UnstructuredStorageReaderUtil.compileJsonRecordPath(config.recordPath, config.columns);
         return config;
     }
 
@@ -94,6 +99,7 @@ public class HttpSourceConfig {
         map.put(HttpSourceKeys.RESULT_TYPE, resultType);
         map.put(HttpSourceKeys.RESPONSE_STATUS, responseStatus);
         map.put(HttpSourceKeys.TOTAL_CODE_PATH, totalCodePath);
+        map.put(HttpSourceKeys.RECORD_PATH, recordPath);
         map.put(HttpSourceKeys.PAGE_READ, pageRead);
         map.put(HttpSourceKeys.PAGE_SIZE, pageSize);
         map.put(HttpSourceKeys.MAX_REPEATED_PAGES, maxRepeatedPages);
@@ -227,6 +233,14 @@ public class HttpSourceConfig {
 
     public String getTotalCodePath() {
         return totalCodePath;
+    }
+
+    public String getRecordPath() {
+        return recordPath;
+    }
+
+    public JsonExtractionPlan getExtractionPlan() {
+        return extractionPlan;
     }
 
     public boolean isPageRead() {

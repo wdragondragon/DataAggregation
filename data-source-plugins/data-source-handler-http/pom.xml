@@ -20,6 +20,12 @@
     <dependencies>
         <dependency>
             <groupId>com.jdragon.aggregation</groupId>
+            <artifactId>commons</artifactId>
+            <version>1.0_jdk17-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.jdragon.aggregation</groupId>
             <artifactId>data-source-handler-abstract</artifactId>
             <version>1.0_jdk17-SNAPSHOT</version>
             <scope>provided</scope>

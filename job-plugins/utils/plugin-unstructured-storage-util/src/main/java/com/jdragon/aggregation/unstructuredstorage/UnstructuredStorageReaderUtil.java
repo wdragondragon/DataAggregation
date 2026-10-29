@@ -3,6 +3,10 @@ package com.jdragon.aggregation.unstructuredstorage;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.jdragon.aggregation.commons.util.json.JsonExtractionPlan;
+import com.jdragon.aggregation.commons.util.json.JsonExtractionResult;
+import com.jdragon.aggregation.commons.util.json.JsonFieldProjection;
+import com.jdragon.aggregation.commons.util.json.JsonRecordExtractor;
 import com.jdragon.aggregation.commons.element.Column;
 import com.jdragon.aggregation.commons.element.Record;
 import com.jdragon.aggregation.commons.util.Configuration;
@@ -117,7 +121,7 @@ public class UnstructuredStorageReaderUtil {
             for (ColumnEntry columnEntry : columnEntries) {
                 if (dataNode instanceof JSONObject) {
                     JSONObject dataObj = (JSONObject) dataNode;
-                    item.put(columnEntry.getName(), dataObj.get(columnEntry.getName()));
+                    item.put(columnEntry.getName(), dataObj.get(sourceName(columnEntry)));
                 }
             }
         }
@@ -131,14 +135,66 @@ public class UnstructuredStorageReaderUtil {
                 List<ColumnEntry> value = entry.getValue();
                 for (ColumnEntry columnEntry : value) {
                     boolean isRootKey = StringUtils.isBlank(key) || "$".equals(key);
-                    String subDataNode = isRootKey ? columnEntry.getName() : key + "." + columnEntry.getName();
-                    result.put(columnEntry.getName(), itemJson.get(subDataNode));
+                    if (StringUtils.isNotBlank(columnEntry.getSourceName())) {
+                        Object parent = isRootKey ? itemJson.get("") : itemJson.get(key);
+                        result.put(columnEntry.getName(), parent instanceof JSONObject
+                                ? ((JSONObject) parent).get(sourceName(columnEntry)) : null);
+                    } else {
+                        String subDataNode = isRootKey ? columnEntry.getName() : key + "." + columnEntry.getName();
+                        result.put(columnEntry.getName(), itemJson.get(subDataNode));
+                    }
                 }
             }
             result.putAll(item);
             results.add(result);
         }
         return results;
+    }
+
+    public static JsonExtractionPlan compileJsonRecordPath(String recordPath, List<ColumnEntry> columns) {
+        if (StringUtils.isBlank(recordPath)) {
+            if (columns != null) {
+                for (ColumnEntry column : columns) {
+                    if (column != null && StringUtils.contains(column.getParentNode(), "[*]")) {
+                        throw new IllegalArgumentException("HTTP recordPath is required for wildcard field " + column.getName());
+                    }
+                }
+            }
+            return null;
+        }
+        List<JsonFieldProjection> projections = new ArrayList<>();
+        if (columns != null) {
+            for (ColumnEntry column : columns) {
+                projections.add(new JsonFieldProjection(column.getName(), column.getSourceName(), column.getParentNode()));
+            }
+        }
+        return JsonRecordExtractor.compile(recordPath, projections);
+    }
+
+    public static JsonExtractionResult extractJson(FastJsonMemory json,
+                                                   List<ColumnEntry> columns,
+                                                   JsonExtractionPlan extractionPlan,
+                                                   int maxRows) {
+        if (extractionPlan != null) {
+            Object response = json.get("");
+            if (!(response instanceof JSON)) {
+                throw new IllegalArgumentException("HTTP response root is not a JSON value");
+            }
+            return extractionPlan.extract((JSON) response, maxRows);
+        }
+
+        JSONArray rows = detailJson(json, columns);
+        int sourceRowCount = rows.size();
+        if (maxRows > 0) {
+            while (rows.size() > maxRows) {
+                rows.remove(rows.size() - 1);
+            }
+        }
+        return new JsonExtractionResult(rows, sourceRowCount);
+    }
+
+    private static String sourceName(ColumnEntry columnEntry) {
+        return StringUtils.defaultIfBlank(columnEntry.getSourceName(), columnEntry.getName());
     }
 
     /**

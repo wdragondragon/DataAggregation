@@ -14,6 +14,7 @@ public final class HttpSourceKeys {
     public static final String RESULT_TYPE = "resultType";
     public static final String RESPONSE_STATUS = "responseStatus";
     public static final String TOTAL_CODE_PATH = "totalCodePath";
+    public static final String RECORD_PATH = "recordPath";
     public static final String PAGE_READ = "pageRead";
     public static final String PAGE_SIZE = "pageSize";
     public static final String MAX_REPEATED_PAGES = "maxRepeatedPages";

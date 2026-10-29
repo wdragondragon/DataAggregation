@@ -6,6 +6,7 @@ import com.jdragon.aggregation.commons.element.Record;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.commons.util.FastJsonMemory;
+import com.jdragon.aggregation.commons.util.json.JsonExtractionResult;
 import com.jdragon.aggregation.datasource.http.HttpSourceConfig;
 import com.jdragon.aggregation.datasource.http.HttpSourceScanner;
 import com.jdragon.aggregation.datasource.http.PageRepeatGuard;
@@ -148,8 +149,18 @@ public class HttpReader extends Reader.Job {
                                              int pageNum) {
         // 解析json为record
         JSONArray arrayResult;
+        JsonExtractionResult extracted;
         try {
-            arrayResult = UnstructuredStorageReaderUtil.detailJson(resultJson, this.columnEntries);
+            extracted = UnstructuredStorageReaderUtil.extractJson(resultJson, this.columnEntries,
+                    sourceConfig.getExtractionPlan(), 0);
+            arrayResult = extracted.rows();
+        } catch (IllegalArgumentException e) {
+            if (sourceConfig.getExtractionPlan() != null) {
+                throw AggregationException.asException(HttpReaderErrorCode.RESULT_RO_JSON_ERROR,
+                        "HTTP response data extraction failed: " + e.getMessage());
+            }
+            throw AggregationException.asException(HttpReaderErrorCode.RESULT_RO_JSON_ERROR,
+                    "HTTP response data extraction failed");
         } catch (Exception e) {
             log.warn("HTTP 响应数据提取失败，异常类型：{}", e.getClass().getSimpleName());
             throw AggregationException.asException(HttpReaderErrorCode.RESULT_RO_JSON_ERROR,
@@ -168,7 +179,7 @@ public class HttpReader extends Reader.Job {
 //                LOG.info("pageRead读取模式数据[{}]", jsonObject);
         }
         log.info("pageRead读取模式返回结果集size:[{}]", arrayResult.size());
-        return arrayResult.size();
+        return extracted.sourceRowCount();
     }
 
     private FastJsonMemory parseResponseJson(String resultStr) {

@@ -35,6 +35,7 @@ public final class Key {
     public final static String RETRY_NON_IDEMPOTENT = "retryNonIdempotent";
     //总量
     public final static String TOTAL_CODE_PATH = "totalCodePath";
+    public final static String RECORD_PATH = "recordPath";
     //返回状态map,里面包含code,path
     public final static String RESPONSE_STATUS = "responseStatus";
     // public final static String WHERE = "where";
