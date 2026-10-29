@@ -1,0 +1,35 @@
+commons/src/test/java/com/jdragon/aggregation/commons/util/json/JsonRecordExtractorTest.java
+  s_cb52049a34caae::t_b1f228207393f2 1-7,9,11-65,96-97,99-136,138-139,144-170,226-236
+  s_cb52049a34caae::t_c9280e9a26f93e 98
+  s_cb52049a34caae::t_f86d43987215b1 8,10,66-95,137,140-143,171-225
+commons/src/main/java/com/jdragon/aggregation/commons/util/json/JsonRecordExtractor.java
+  s_cb52049a34caae::t_c9280e9a26f93e 26,119-122,124-128,137-141,147,207-209,262-264
+  s_cb52049a34caae::t_b1f228207393f2 1-13,19-25,27-118,123,129-136,142-146,148-206,210-261,265-272
+  s_cb52049a34caae::t_f86d43987215b1 14-18
+commons/src/main/java/com/jdragon/aggregation/commons/util/json/JsonFieldProjection.java
+  s_cb52049a34caae::t_b1f228207393f2 1-26
+commons/src/main/java/com/jdragon/aggregation/commons/util/json/JsonExtractionPlan.java
+  s_cb52049a34caae::t_c9280e9a26f93e 36,61,123,127,194,200-201
+  s_cb52049a34caae::t_b1f228207393f2 1-14,16,18-28,34-35,37-60,62-122,124-126,128-193,195-199,202-215
+  s_cb52049a34caae::t_82ab3abcaa8184 15
+  s_cb52049a34caae::t_f86d43987215b1 17,29-33
+commons/src/main/java/com/jdragon/aggregation/commons/util/json/JsonExtractionResult.java
+  s_cb52049a34caae::t_793f44df45cdd0 9,19-26
+  s_cb52049a34caae::t_b1f228207393f2 1-8,10-18,27-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "84f8fbcdd012abf32ba6bab2e6f0cd4256006da1",
+  "prompts": {},
+  "sessions": {
+    "s_cb52049a34caae": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18675-8748-7c10-b508-5ddb39c7477e",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "jdragon <jdraong9527@gmail.com>"
+    }
+  }
+}
