@@ -1,0 +1,22 @@
+job-plugins/utils/plugin-http-dyn-util/src/main/java/com/jdragon/aggregation/plugin/httpdyn/util/HttpReadTimeoutSession.java
+  s_cb52049a34caae::t_ef3fc37f2b6cc5 34
+  s_cb52049a34caae::t_dec4ba72fc9f4a 1-33,35-61
+job-plugins/utils/plugin-http-dyn-util/src/test/java/com/jdragon/aggregation/plugin/httpdyn/util/HttpReadTimeoutSessionTest.java
+  s_cb52049a34caae::t_dec4ba72fc9f4a 1-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "615b097df7efa9ef5d949e08bea70ae1f25e440e",
+  "prompts": {},
+  "sessions": {
+    "s_cb52049a34caae": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18675-8748-7c10-b508-5ddb39c7477e",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "jdragon <jdraong9527@gmail.com>"
+    }
+  }
+}
