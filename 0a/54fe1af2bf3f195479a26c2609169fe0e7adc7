@@ -1,0 +1,40 @@
+job-plugins/reader/httpreader/src/main/java/com/jdragon/aggregation/httpreader/HttpReader.java
+  s_cb52049a34caae::t_abc09b0551b340 16,31,71,105,146
+data-source-plugins/data-source-handler-http/src/test/java/com/jdragon/aggregation/datasource/http/HttpSourceScannerTest.java
+  s_cb52049a34caae::t_4d8cc327104526 4,152-153,176
+  s_cb52049a34caae::t_d626fefa8719c3 206-237,244
+  s_cb52049a34caae::t_1cd7d56c82d3d0 14,25,133-142,144-145,179-203
+  s_cb52049a34caae::t_d7f10b0ebf517a 3,5-6,19,143,146-151,154-175,177-178
+  s_cb52049a34caae::t_f42b73c99931c3 13,59-132,204-205,238-243
+  s_cb52049a34caae::t_54599fadbbb3df 245
+data-source-plugins/data-source-handler-http/src/main/java/com/jdragon/aggregation/datasource/http/HttpSourceConfig.java
+  s_cb52049a34caae::t_c9819ed5e35a14 8,76-77
+  s_cb52049a34caae::t_6ee6d5e0cc357d 42,110,275-276
+  s_cb52049a34caae::t_6c1b2d2f6d0946 277-278
+README.md
+  s_cb52049a34caae::t_4e78d392404259 93-117
+job-plugins/reader/httpreader/src/test/java/com/jdragon/aggregation/httpreader/HttpReaderTimeoutSessionTest.java
+  s_cb52049a34caae::t_317bd5811ab56f 1-153
+data-source-plugins/data-source-handler-http/src/main/java/com/jdragon/aggregation/datasource/http/HttpSourceScanner.java
+  s_cb52049a34caae::t_d626fefa8719c3 41,177-178,194-196,220-226,228
+  s_cb52049a34caae::t_c9819ed5e35a14 158
+  s_cb52049a34caae::t_aaab0b83610c40 183-190
+  s_cb52049a34caae::t_1cd7d56c82d3d0 668
+  s_cb52049a34caae::t_6ee6d5e0cc357d 12,23-24,54,76,79,97,117-122,147,159-176,179-182,191-193,197-219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0a54fe1af2bf3f195479a26c2609169fe0e7adc7",
+  "prompts": {},
+  "sessions": {
+    "s_cb52049a34caae": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18675-8748-7c10-b508-5ddb39c7477e",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "jdragon <jdraong9527@gmail.com>"
+    }
+  }
+}
