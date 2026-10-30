@@ -1,0 +1,14 @@
+data-aggregation-studio
+  h_c1bc3e705dcd4c 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9f1fbf8eedf1eda52f5ca3a6ab33a0ea5cbc3578",
+  "prompts": {},
+  "humans": {
+    "h_c1bc3e705dcd4c": {
+      "author": "jdragon <jdraong9527@gmail.com>"
+    }
+  }
+}
