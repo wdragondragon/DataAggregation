@@ -13,6 +13,7 @@ import com.jdragon.aggregation.datasource.http.PageRepeatGuard;
 import com.jdragon.aggregation.core.plugin.RecordSender;
 import com.jdragon.aggregation.core.plugin.spi.Reader;
 import com.jdragon.aggregation.plugin.httpdyn.HttpDynColumnExecuteHandler;
+import com.jdragon.aggregation.plugin.httpdyn.util.HttpReadTimeoutSession;
 import com.jdragon.aggregation.unstructuredstorage.ColumnEntry;
 import com.jdragon.aggregation.unstructuredstorage.UnstructuredStorageReaderUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +28,7 @@ public class HttpReader extends Reader.Job {
     private Configuration readerSliceConfig = null;
     private HttpSourceConfig sourceConfig;
     private final HttpSourceScanner sourceScanner = new HttpSourceScanner();
+    protected HttpReadTimeoutSession readTimeoutSession;
 
     private List<ColumnEntry> columnEntries = null;
 
@@ -66,6 +68,7 @@ public class HttpReader extends Reader.Job {
     public void init() {
         this.readerSliceConfig = super.getPluginJobConf();
         this.sourceConfig = HttpSourceConfig.fromConfiguration(this.readerSliceConfig);
+        this.readTimeoutSession = new HttpReadTimeoutSession(sourceConfig.getReadTimeout());
 
         this.url = readerSliceConfig.getNecessaryValue(Key.URL, HttpReaderErrorCode.REQUIRED_VALUE);
         this.requestType = readerSliceConfig.getNecessaryValue(Key.MODE, HttpReaderErrorCode.REQUIRED_VALUE);
@@ -99,6 +102,7 @@ public class HttpReader extends Reader.Job {
     @Override
     public void startRead(RecordSender recordSender) {
         sourceScanner.validatePaginationConfig(sourceConfig);
+        readTimeoutSession = new HttpReadTimeoutSession(sourceConfig.getReadTimeout());
         HttpDynColumnExecuteHandler.replaceStaticVal(httpContent);
         offset = 0L;
         PageRepeatGuard pageRepeatGuard = new PageRepeatGuard(sourceConfig.getMaxRepeatedPages());
@@ -139,7 +143,7 @@ public class HttpReader extends Reader.Job {
         if (sourceConfig == null) {
             throw new IllegalStateException("HTTP reader is not initialized");
         }
-        return sourceScanner.connectToGetData(sourceConfig, httpContent, pageNum, offset);
+        return sourceScanner.connectToGetData(sourceConfig, httpContent, pageNum, offset, readTimeoutSession);
     }
 
     private Integer sendAnalysisDataToWriter(FastJsonMemory resultJson,

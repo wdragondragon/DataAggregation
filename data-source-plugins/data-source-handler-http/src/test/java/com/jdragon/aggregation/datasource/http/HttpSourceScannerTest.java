@@ -1,20 +1,28 @@
 package com.jdragon.aggregation.datasource.http;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.commons.pagination.Table;
 import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
+import com.jdragon.aggregation.plugin.httpdyn.util.HttpReadTimeoutSession;
+import com.jdragon.aggregation.plugin.httpdyn.util.HttpUtils;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.After;
 import org.junit.Test;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.net.SocketTimeoutException;
 import java.math.BigDecimal;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -46,6 +54,193 @@ public class HttpSourceScannerTest {
         if (executor != null) {
             executor.shutdownNow();
         }
+    }
+
+    @Test
+    public void readTimeoutShouldKeepExistingNamesAndNormalizeTheConfiguredValue() {
+        Map<String, Object> rawConfig = offlineConfig("/timeout-config", "GET");
+        assertEquals(10000, HttpSourceConfig.fromConfiguration(Configuration.from(rawConfig)).getReadTimeout());
+
+        rawConfig.put("socketTimeout", 25000);
+        HttpSourceConfig alias = HttpSourceConfig.fromConfiguration(Configuration.from(rawConfig));
+        assertEquals(25000, alias.getReadTimeout());
+        assertEquals(25000, alias.toMap().get("readTimeout"));
+        assertEquals(25000, HttpSourceConfig.fromConfiguration(Configuration.from(alias.toMap())).getReadTimeout());
+
+        rawConfig.put("readTimeout", 40000);
+        assertEquals(40000, HttpSourceConfig.fromConfiguration(Configuration.from(rawConfig)).getReadTimeout());
+        rawConfig.put("readTimeout", 0);
+        assertEquals(10000, HttpSourceConfig.fromConfiguration(Configuration.from(rawConfig)).getReadTimeout());
+        rawConfig.put("readTimeout", 90000);
+        assertEquals(60000, HttpSourceConfig.fromConfiguration(Configuration.from(rawConfig)).getReadTimeout());
+    }
+
+    @Test
+    public void readTimeoutShouldRetryPostIndependentlyOfFixedRetryCountAndKeepSuccessfulTimeout() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        startServer(exchange -> {
+            if (requests.incrementAndGet() == 1) {
+                Thread.sleep(150L);
+            }
+            writeJson(exchange, "{\"data\":{\"customer_id\":\"C100\",\"risk_score\":100}}");
+        });
+        Map<String, Object> rawConfig = jsonShapeConfig("/timeout-post", "data");
+        rawConfig.put(HttpSourceKeys.MODE, "POST");
+        rawConfig.put(HttpSourceKeys.RETRY_TIMES, 1);
+        HttpSourceConfig config = HttpSourceConfig.fromConfiguration(Configuration.from(rawConfig));
+        HttpReadTimeoutSession session = new HttpReadTimeoutSession(40);
+        HttpSourceScanner scanner = new HttpSourceScanner();
+
+        String first = scanner.connectToGetData(config, requestContent(), 1, 0L, session);
+        assertTrue(first.contains("C100"));
+        assertEquals(2, requests.get());
+        assertEquals(10040, session.getReadTimeoutMs());
+
+        String second = scanner.connectToGetData(config, requestContent(), 2, 2L, session);
+        assertTrue(second.contains("C100"));
+        assertEquals(3, requests.get());
+        assertEquals(10040, session.getReadTimeoutMs());
+    }
+
+    @Test
+    public void scanShouldReuseTimeoutAcrossPagesAndResetItForEachScan() {
+        List<Integer> seenTimeouts = new ArrayList<>();
+        HttpSourceScanner scanner = new HttpSourceScanner() {
+            @Override
+            public String connectToGetData(HttpSourceConfig config, Map<String, String> httpContent,
+                                            Integer pageNum, Long offset, HttpReadTimeoutSession session) {
+                seenTimeouts.add(session.getReadTimeoutMs());
+                if (pageNum == 1) {
+                    session.increaseAfterReadTimeout();
+                    return "{\"code\":\"200\",\"data\":{\"total\":3,\"items\":["
+                            + "{\"customer_id\":\"C101\",\"risk_score\":1},"
+                            + "{\"customer_id\":\"C102\",\"risk_score\":2}]}}";
+                }
+                return "{\"code\":\"200\",\"data\":{\"total\":3,\"items\":["
+                        + "{\"customer_id\":\"C103\",\"risk_score\":3}]}}";
+            }
+        };
+        HttpSourceConfig config = HttpSourceConfig.fromConfiguration(Configuration.from(offlineConfig("/pages", "GET")));
+        List<Map<String, Object>> firstRows = new ArrayList<>();
+        List<Map<String, Object>> secondRows = new ArrayList<>();
+
+        scanner.scan(config, firstRows::add);
+        scanner.scan(config, secondRows::add);
+
+        assertEquals(Arrays.asList(10000, 20000, 10000, 20000), seenTimeouts);
+        assertEquals(3, firstRows.size());
+        assertEquals(3, secondRows.size());
+    }
+
+    @Test
+    public void readTimeoutAtSixtySecondsShouldStopWithoutRestartingFixedRetries() {
+        HttpReadTimeoutSession session = new HttpReadTimeoutSession(10000);
+        List<Integer> attemptedTimeouts = new ArrayList<>();
+        HttpSourceScanner scanner = new HttpSourceScanner() {
+            @Override
+            String executeRequest(HttpSourceConfig config, HttpUtils httpUtils) {
+                attemptedTimeouts.add(session.getReadTimeoutMs());
+                throw new IllegalStateException("secret-response", new SocketTimeoutException("Read timed out secret-response"));
+            }
+        };
+        HttpSourceConfig config = HttpSourceConfig.fromConfiguration(Configuration.from(
+                offlineConfig("/timeout-limit?token=secret-token", "GET")));
+        Map<String, String> content = requestContent();
+        content.put(HttpSourceKeys.HEADER, "{\"Authorization\":\"Bearer secret-header\"}");
+        content.put(HttpSourceKeys.REQUEST_BODY, "secret-body");
+        Logger logger = (Logger) LoggerFactory.getLogger(HttpSourceScanner.class);
+        Level previousLevel = logger.getLevel();
+        logger.setLevel(Level.WARN);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            RuntimeException error = assertThrows(RuntimeException.class,
+                    () -> scanner.connectToGetData(config, content, 1, 0L, session));
+
+            assertEquals(Arrays.asList(10000, 20000, 30000, 40000, 50000, 60000), attemptedTimeouts);
+            assertEquals(60000, session.getReadTimeoutMs());
+            assertTrue(exceptionMessages(error).contains("Read timed out"));
+            assertEquals(6, appender.list.size());
+            String firstRetry = appender.list.get(0).getFormattedMessage();
+            assertTrue(firstRetry.contains("errorType=SocketTimeoutException"));
+            assertTrue(firstRetry.contains("currentTimeoutMs=10000"));
+            assertTrue(firstRetry.contains("nextTimeoutMs=20000"));
+            assertTrue(appender.list.get(5).getFormattedMessage().contains("readTimeoutMs=60000; stopping retries"));
+            for (ILoggingEvent event : appender.list) {
+                assertFalse(event.getFormattedMessage().contains("secret-"));
+                assertTrue(event.getThrowableProxy() == null);
+            }
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(previousLevel);
+            appender.stop();
+        }
+    }
+
+    @Test
+    public void interruptedReadFailureShouldStopBeforeIncreasingTimeoutOrRetrying() {
+        AtomicInteger requests = new AtomicInteger();
+        HttpReadTimeoutSession session = new HttpReadTimeoutSession(10000);
+        HttpSourceScanner scanner = new HttpSourceScanner() {
+            @Override
+            String executeRequest(HttpSourceConfig config, HttpUtils httpUtils) {
+                requests.incrementAndGet();
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("synthetic read failure", new SocketTimeoutException("Read timed out"));
+            }
+        };
+        HttpSourceConfig config = HttpSourceConfig.fromConfiguration(Configuration.from(offlineConfig("/interrupted", "GET")));
+
+        try {
+            assertThrows(RuntimeException.class,
+                    () -> scanner.connectToGetData(config, requestContent(), 1, 0L, session));
+            assertTrue(Thread.currentThread().isInterrupted());
+            assertEquals(1, requests.get());
+            assertEquals(10000, session.getReadTimeoutMs());
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    public void mixedFailuresShouldKeepFixedNonTimeoutBudgetWithoutResettingTimeout() throws Exception {
+        AtomicInteger httpRequests = new AtomicInteger();
+        startServer(exchange -> {
+            httpRequests.incrementAndGet();
+            write(exchange, 503, "temporary");
+        });
+        HttpReadTimeoutSession session = new HttpReadTimeoutSession(10000);
+        List<Integer> attemptedTimeouts = new ArrayList<>();
+        HttpSourceScanner scanner = new HttpSourceScanner() {
+            @Override
+            String executeRequest(HttpSourceConfig config, HttpUtils httpUtils) {
+                attemptedTimeouts.add(session.getReadTimeoutMs());
+                if (attemptedTimeouts.size() == 1 || attemptedTimeouts.size() == 3) {
+                    throw new IllegalStateException("synthetic read failure", new SocketTimeoutException("Read timed out"));
+                }
+                return super.executeRequest(config, httpUtils);
+            }
+        };
+        Map<String, Object> rawConfig = jsonShapeConfig("/mixed-failures", "data");
+        rawConfig.put(HttpSourceKeys.RETRY_TIMES, 3);
+        HttpSourceConfig config = HttpSourceConfig.fromConfiguration(Configuration.from(rawConfig));
+
+        RuntimeException error = assertThrows(RuntimeException.class,
+                () -> scanner.connectToGetData(config, requestContent(), 1, 0L, session));
+
+        assertEquals(Arrays.asList(10000, 20000, 20000, 30000, 30000), attemptedTimeouts);
+        assertEquals(3, httpRequests.get());
+        assertEquals(30000, session.getReadTimeoutMs());
+        assertTrue(exceptionMessages(error).contains("status 503"));
+    }
+
+    private Map<String, String> requestContent() {
+        Map<String, String> content = new LinkedHashMap<>();
+        content.put(HttpSourceKeys.HEADER, "{}");
+        content.put(HttpSourceKeys.PARAMS, "{}");
+        content.put(HttpSourceKeys.REQUEST_BODY, "{}");
+        return content;
     }
 
     @Test

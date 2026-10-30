@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.commons.util.json.JsonExtractionPlan;
+import com.jdragon.aggregation.plugin.httpdyn.util.HttpReadTimeoutSession;
 import com.jdragon.aggregation.unstructuredstorage.ColumnEntry;
 import com.jdragon.aggregation.unstructuredstorage.UnstructuredStorageReaderUtil;
 import org.apache.commons.lang3.StringUtils;
@@ -38,6 +39,7 @@ public class HttpSourceConfig {
     private boolean pageRead;
     private int pageSize = 500;
     private int maxRepeatedPages = 2;
+    private int readTimeout = 10000;
     private int retryTimes = 3;
     private long retryIntervalMs = 1000L;
     private boolean retryNonIdempotent;
@@ -71,6 +73,8 @@ public class HttpSourceConfig {
         config.pageRead = configuration.getBool(HttpSourceKeys.PAGE_READ, false);
         config.pageSize = configuration.getInt(HttpSourceKeys.PAGE_SIZE, 500);
         config.maxRepeatedPages = configuration.getInt(HttpSourceKeys.MAX_REPEATED_PAGES, 2);
+        config.readTimeout = new HttpReadTimeoutSession(configuration.getInt("readTimeout",
+                configuration.getInt("socketTimeout", 10000))).getReadTimeoutMs();
         config.retryTimes = configuration.getInt(HttpSourceKeys.RETRY_TIMES, 3);
         config.retryIntervalMs = configuration.getLong(HttpSourceKeys.RETRY_INTERVAL_MS, 1000L);
         config.retryNonIdempotent = configuration.getBool(HttpSourceKeys.RETRY_NON_IDEMPOTENT, false);
@@ -103,6 +107,7 @@ public class HttpSourceConfig {
         map.put(HttpSourceKeys.PAGE_READ, pageRead);
         map.put(HttpSourceKeys.PAGE_SIZE, pageSize);
         map.put(HttpSourceKeys.MAX_REPEATED_PAGES, maxRepeatedPages);
+        map.put("readTimeout", readTimeout);
         map.put(HttpSourceKeys.RETRY_TIMES, retryTimes);
         map.put(HttpSourceKeys.RETRY_INTERVAL_MS, retryIntervalMs);
         map.put(HttpSourceKeys.RETRY_NON_IDEMPOTENT, retryNonIdempotent);
@@ -265,6 +270,10 @@ public class HttpSourceConfig {
 
     public int getRetryTimes() {
         return retryTimes;
+    }
+
+    public int getReadTimeout() {
+        return readTimeout;
     }
 
     public long getRetryIntervalMs() {

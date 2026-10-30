@@ -90,6 +90,31 @@ HTTP 采集能力由现有 `httpreader` / `httpwriter` 承载，不单独拆分 
 - SOAP：适用于 SOAP 1.1 / SOAP 1.2 WebService 调用。
 - SOAP Writer 支持单对象和数组批量模板，数组模板使用 `{{#records}}...{{/records}}` repeat 块。
 
+### HTTP Reader 读取超时
+
+HTTP Reader 和 HTTP 数据源扫描默认使用 10 秒读取超时。发生读取超时后，每次增加 10 秒，
+按 `10 → 20 → 30 → 40 → 50 → 60` 秒重试；60 秒那次仍然超时则立即失败，不会重复 60 秒或发起 70 秒请求。
+该策略适用于所有采集读取方法，包括 POST/SOAP，因此远端可能收到重复读取请求。
+
+一次采集内的分页共享超时档位。例如第一页使用 30 秒设置成功，第二页就从 30 秒开始；
+如果第二页超时，则再尝试 40、50、60 秒。成功保留的是配置的超时值，与实际响应耗时无关。
+新任务、新扫描或同一 Reader 再次开始完整读取时，都会重新使用初始值，各执行之间不共享状态。
+
+现有 `reader.config.readTimeout` 和别名 `socketTimeout` 的入口不变，单位为毫秒，
+`readTimeout` 优先。显式正值作为初始值，大于 `60000` 时按 `60000` 使用；
+缺失、零或负值使用 `10000`。例如初始值 `25000` 的序列是 `25 → 35 → 45 → 55 → 60` 秒。
+模型和任务仍可通过原来的 `readerOptions` 传递这些参数，无需调整页面。
+
+只有读取 `SocketTimeoutException` 触发递增，连接超时和连接池等待超时不参与。
+读取超时的尝试次数由上述档位决定，不受 `retryTimes` 限制；其他错误保持原来的重试规则。
+Worker 的重试间隔为 1 秒，插件扫描沿用 `retryIntervalMs`。重试日志包含页码、尝试序号、
+异常类型、本次超时和下次超时；上限失败会记录停止原因，不记录请求头、请求体、响应或 URL 参数。
+
+读取超时限制的是等待响应数据的阻塞时间，并非整次 HTTP 请求的总耗时。
+通用 HTTP 工具、动态 Token 请求及 HTTP Writer 的默认超时不随此策略改变。
+Studio 正式采集使用 Worker 内的可取消 HTTP 适配器；更新本能力时，需同时更新 HTTP Source、
+HTTP Reader 插件及其 HTTP 工具依赖，并替换、重启 Worker 可执行包。无需更新 Studio Server、前端或数据库。
+
 ## Studio
 
 `data-aggregation-studio` 是放在本工作区下的独立管理端项目，提供 Web 控制台和在线 Worker 运行能力。它不是外层 DataAggregation Maven Reactor 的子模块，也不共享外层父 POM。

@@ -6,10 +6,10 @@ import com.alibaba.fastjson.TypeReference;
 import com.jdragon.aggregation.commons.exception.AggregationException;
 import com.jdragon.aggregation.commons.util.FastJsonMemory;
 import com.jdragon.aggregation.commons.util.json.JsonExtractionResult;
-import com.jdragon.aggregation.commons.util.RetryUtil;
 import com.jdragon.aggregation.plugin.httpdyn.HttpDynColumnExecuteHandler;
 import com.jdragon.aggregation.plugin.httpdyn.exception.HttpRequestConfigurationException;
 import com.jdragon.aggregation.plugin.httpdyn.util.HttpUtils;
+import com.jdragon.aggregation.plugin.httpdyn.util.HttpReadTimeoutSession;
 import com.jdragon.aggregation.unstructuredstorage.ColumnEntry;
 import com.jdragon.aggregation.unstructuredstorage.SoapToJSON;
 import com.jdragon.aggregation.unstructuredstorage.UnstructuredStorageReaderUtil;
@@ -20,6 +20,8 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.transform.OutputKeys;
@@ -36,6 +38,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Collection;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -48,6 +51,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class HttpSourceScanner {
+    private static final Logger LOG = LoggerFactory.getLogger(HttpSourceScanner.class);
     private static final Pattern CURLY_PATH_VARIABLE = Pattern.compile("\\{([^{}]+)}");
     private static final Pattern COLON_PATH_VARIABLE = Pattern.compile("(?:^|/):([A-Za-z_][A-Za-z0-9_]*)");
     private static final Pattern SOAP_ACTION_PARAMETER = Pattern.compile(
@@ -69,9 +73,10 @@ public class HttpSourceScanner {
         int pageNum = 1;
         long offset = 0L;
         int emittedRows = 0;
+        HttpReadTimeoutSession timeoutSession = new HttpReadTimeoutSession(config.getReadTimeout());
         PageRepeatGuard pageRepeatGuard = new PageRepeatGuard(config.getMaxRepeatedPages());
         Map<String, String> requestContent = new LinkedHashMap<>(httpContent);
-        String resultStr = connectToGetData(config, requestContent, pageNum, offset);
+        String resultStr = connectToGetData(config, requestContent, pageNum, offset, timeoutSession);
         if (StringUtils.isBlank(resultStr)) {
             if (StringUtils.isNotBlank(config.getTotalCodePath())) {
                 throw AggregationException.asException(HttpSourceErrorCode.RESPONSE_PAGE_ERROR,
@@ -89,7 +94,7 @@ public class HttpSourceScanner {
             pageNum++;
             offset += config.getPageSize();
             requestContent = new LinkedHashMap<>(httpContent);
-            resultStr = connectToGetData(config, requestContent, pageNum, offset);
+            resultStr = connectToGetData(config, requestContent, pageNum, offset, timeoutSession);
             if (StringUtils.isBlank(resultStr)) {
                 if (StringUtils.isNotBlank(config.getTotalCodePath())) {
                     throw AggregationException.asException(HttpSourceErrorCode.RESPONSE_PAGE_ERROR,
@@ -109,6 +114,12 @@ public class HttpSourceScanner {
     }
 
     public String connectToGetData(HttpSourceConfig config, Map<String, String> httpContent, Integer pageNum, Long offset) {
+        return connectToGetData(config, httpContent, pageNum, offset,
+                new HttpReadTimeoutSession(config.getReadTimeout()));
+    }
+
+    public String connectToGetData(HttpSourceConfig config, Map<String, String> httpContent,
+                                   Integer pageNum, Long offset, HttpReadTimeoutSession timeoutSession) {
         HttpDynColumnExecuteHandler.replacePage(httpContent, String.valueOf(pageNum));
         HttpDynColumnExecuteHandler.replacePageSize(httpContent, String.valueOf(config.getPageSize()));
         HttpDynColumnExecuteHandler.replaceOffset(httpContent, String.valueOf(offset == null ? 0L : offset));
@@ -133,11 +144,7 @@ public class HttpSourceScanner {
 
         int requestAttempts = requestAttempts(config);
         try {
-            String resultStr = requestAttempts == 1
-                    ? executeRequest(config, httpUtils)
-                    : RetryUtil.executeWithRetry(() -> executeRequest(config, httpUtils),
-                    requestAttempts, config.getRetryIntervalMs(), false,
-                    Collections.singletonList(RetryableHttpRequestException.class));
+            String resultStr = executeWithRetry(config, httpUtils, pageNum, requestAttempts, timeoutSession);
             resultStr = convertResponseIfNeeded(config, resultStr);
             validateResponseStatus(config, resultStr);
             return resultStr;
@@ -148,11 +155,77 @@ public class HttpSourceScanner {
             if (e instanceof IllegalArgumentException) {
                 throw (IllegalArgumentException) e;
             }
-            String message = requestAttempts > 1
-                    ? "HTTP request failed after " + requestAttempts + " attempts"
-                    : "HTTP request failed";
-            throw new RuntimeException(message, e);
+            throw new RuntimeException("HTTP request failed", e);
         }
+    }
+
+    private String executeWithRetry(HttpSourceConfig config, HttpUtils httpUtils, Integer pageNum,
+                                    int requestAttempts, HttpReadTimeoutSession timeoutSession) {
+        int attempt = 0;
+        int otherFailures = 0;
+        while (true) {
+            ensureNotInterrupted();
+            int currentTimeoutMs = timeoutSession.getReadTimeoutMs();
+            httpUtils.setSocketTimeout(currentTimeoutMs);
+            attempt++;
+            try {
+                return executeRequest(config, httpUtils);
+            } catch (RuntimeException failure) {
+                ensureNotInterrupted();
+                if (HttpReadTimeoutSession.isReadTimeout(failure)) {
+                    if (!timeoutSession.increaseAfterReadTimeout()) {
+                        LOG.error("HTTP reader read timeout limit reached: page={}, attempt={}, errorType={}, readTimeoutMs={}; stopping retries",
+                                pageNum, attempt, failureType(failure), currentTimeoutMs);
+                        throw failure;
+                    }
+                } else {
+                    otherFailures++;
+                    if (!(failure instanceof RetryableHttpRequestException)) {
+                        throw failure;
+                    }
+                    if (otherFailures >= requestAttempts) {
+                        if (requestAttempts > 1) {
+                            throw new RuntimeException(
+                                    "HTTP request failed after " + requestAttempts + " attempts", failure);
+                        }
+                        throw failure;
+                    }
+                }
+                LOG.warn("HTTP reader request retry: page={}, attempt={}, errorType={}, currentTimeoutMs={}, nextTimeoutMs={}",
+                        pageNum, attempt, failureType(failure), currentTimeoutMs,
+                        timeoutSession.getReadTimeoutMs());
+                waitForRetry(config.getRetryIntervalMs());
+            }
+        }
+    }
+
+    private void waitForRetry(long retryIntervalMs) {
+        ensureNotInterrupted();
+        if (retryIntervalMs <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(retryIntervalMs);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("HTTP request interrupted during retry delay", interrupted);
+        }
+        ensureNotInterrupted();
+    }
+
+    private void ensureNotInterrupted() {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new IllegalStateException("HTTP request interrupted");
+        }
+    }
+
+    private String failureType(Throwable failure) {
+        Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        Throwable lastCause = failure;
+        for (Throwable cause = failure; cause != null && visited.add(cause); cause = cause.getCause()) {
+            lastCause = cause;
+        }
+        return lastCause.getClass().getSimpleName();
     }
 
     public HttpSourceConfig applyPushdown(HttpSourceConfig config, List<HttpPushdownPredicate> predicates) {
@@ -592,7 +665,7 @@ public class HttpSourceScanner {
         return recordNum.equals(config.getPageSize());
     }
 
-    private String executeRequest(HttpSourceConfig config, HttpUtils httpUtils) {
+    String executeRequest(HttpSourceConfig config, HttpUtils httpUtils) {
         final Map<String, String> result;
         try {
             result = httpUtils.exec();
