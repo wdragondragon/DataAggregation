@@ -1,6 +1,6 @@
 {
   "name": "tbds-hive2reader",
-  "class": "com.jdragon.aggregation.tbds.hive2.Mysql5Reader",
-  "description": "mysql5",
+  "class": "com.jdragon.aggregation.tbds.hive2.Hive2Reader",
+  "description": "tbds-hive2",
   "developer": "jdragon"
 }
