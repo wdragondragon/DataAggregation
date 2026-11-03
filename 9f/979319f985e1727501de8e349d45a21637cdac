@@ -1,0 +1,45 @@
+job-plugins/writer/postgresqlwriter/src/main/assembly/package.xml
+  s_547bd9aa61d628::t_9dbead9155196f 22
+job-plugins/writer/postgresqlwriter/src/main/assembly/package-zip.xml
+  s_547bd9aa61d628::t_9dbead9155196f 22
+data-source-plugins/data-source-handler-rdbms/pom.xml
+  s_547bd9aa61d628::t_f0fc6fccf6acd4 35
+data-source-plugins/data-source-handler-tbds-hive3/pom.xml
+  s_547bd9aa61d628::t_48ebbd771d6688 77-82,94-99
+  s_547bd9aa61d628::t_f0fc6fccf6acd4 53-68
+  s_547bd9aa61d628::t_82e0bbfd217855 93
+  s_547bd9aa61d628::t_5598548b7efd59 69-72
+core/pom.xml
+  s_547bd9aa61d628::t_f0fc6fccf6acd4 66
+data-source-plugins/data-source-handler-odps/pom.xml
+  s_547bd9aa61d628::t_e4c4b9d5fd77e7 58-67
+  s_547bd9aa61d628::t_62f41c06d086a5 43-57
+job-plugins/reader/postgresqlreader/src/main/assembly/package.xml
+  s_547bd9aa61d628::t_9dbead9155196f 22
+job-plugins/reader/postgresqlreader/src/main/assembly/package-zip.xml
+  s_547bd9aa61d628::t_9dbead9155196f 22
+data-source-plugins/data-source-handler-tbds-hive2/pom.xml
+  s_547bd9aa61d628::t_64ad753f3e57e6 51-55,65-68,85-90
+job-plugins/reader/tbds-hive2reader/src/main/resources/plugin.json
+  s_547bd9aa61d628::t_c437e358b7b33a 3-4,6
+data-source-plugins/data-source-handler-queue-kafka/pom.xml
+  s_547bd9aa61d628::t_f0fc6fccf6acd4 36
+job-plugins/reporter/stdoutreport/src/main/resources/plugin.json
+  s_547bd9aa61d628::t_8c6a45c9b5ffbc 3,6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9f979319f985e1727501de8e349d45a21637cdac",
+  "prompts": {},
+  "sessions": {
+    "s_547bd9aa61d628": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19af0-98b6-7983-a11a-0debd2fdfec3",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "jdragon <jdraong9527@gmail.com>"
+    }
+  }
+}
