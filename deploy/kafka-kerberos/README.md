@@ -9,7 +9,7 @@ This directory starts an isolated Kerberos-authenticated Kafka test stack. It do
 | `kerberos-init` | Creates the realm, principals, and keytabs | One-shot container |
 | `kerberos-kdc` | MIT Kerberos KDC | `127.0.0.1:10088` TCP/UDP |
 | `kafka-storage-init` | Grants Kafka access to its isolated data volume | One-shot container |
-| `kafka-kerberos` | Kafka 3.9.1 KRaft with SASL/GSSAPI | Host: `localhost:19092`; container: `kafka.kerberos.test:19094` |
+| `kafka-kerberos` | Kafka 3.9.1 KRaft with SASL/GSSAPI | Host: `127.0.0.1:19092`; container: `kafka.kerberos.test:19094` |
 | `kerberos-client` | Kafka CLI smoke-test client | Tools profile only |
 
 Realm and principals:
@@ -17,7 +17,7 @@ Realm and principals:
 ```text
 STUDIO.TEST
 kafka/kafka.kerberos.test@STUDIO.TEST
-kafka/localhost@STUDIO.TEST
+kafka/cryptomator-vault@STUDIO.TEST
 studio-client@STUDIO.TEST
 ```
 
@@ -37,7 +37,7 @@ The existing `kafka-single` container and ports `9092-9093` are not touched.
 
 ## Endpoints and exported client files
 
-Kafka advertises `localhost:19092` to host clients, so Windows Studio/Worker
+Kafka advertises `127.0.0.1:19092` to host clients, so Windows Studio/Worker
 processes do not require a custom hosts entry. Compose clients use the isolated
 internal listener `kafka.kerberos.test:19094`.
 
@@ -53,7 +53,7 @@ Only `studio-client.keytab` is a client credential. `kafka.keytab` belongs to th
 Use these datasource values when testing the DataAggregation Kafka plugin from a Windows JVM:
 
 ```text
-bootstrap.servers=localhost:19092
+bootstrap.servers=127.0.0.1:19092
 kerberos=true
 principal=studio-client@STUDIO.TEST
 kerberosKeytabFilePath=<absolute deployment path>/generated/studio-client.keytab

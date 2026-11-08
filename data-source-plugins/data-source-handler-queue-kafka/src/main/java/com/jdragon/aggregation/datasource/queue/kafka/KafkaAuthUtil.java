@@ -169,21 +169,23 @@ public class KafkaAuthUtil {
     private static final String SUN_LOGIN_MODULE = "com.sun.security.auth.module.Krb5LoginModule required";
 
     private static String getModuleContext(String userPrincipal, String keyTabPath) {
+        String normalizedKeyTabPath = keyTabPath.replace('\\', '/');
         StringBuilder builder = new StringBuilder();
         if (IS_IBM_JDK) {
 //            builder.append(module.getName()).append(" {").append(LINE_SEPARATOR);
             builder.append(IBM_LOGIN_MODULE).append(LINE_SEPARATOR);
             builder.append("credsType=both").append(LINE_SEPARATOR);
             builder.append("principal=\"").append(userPrincipal).append("\"").append(LINE_SEPARATOR);
-            builder.append("useKeytab=\"").append(keyTabPath).append("\"").append(LINE_SEPARATOR);
+            builder.append("useKeytab=\"").append(normalizedKeyTabPath).append("\"").append(LINE_SEPARATOR);
             //            builder.append("};").append(LINE_SEPARATOR);
         } else {
 //            builder.append(module.getName()).append(" {").append(LINE_SEPARATOR);
             builder.append(SUN_LOGIN_MODULE).append(LINE_SEPARATOR);
             builder.append("useKeyTab=true").append(LINE_SEPARATOR);
-            builder.append("keyTab=\"").append(keyTabPath).append("\"").append(LINE_SEPARATOR);
+            builder.append("keyTab=\"").append(normalizedKeyTabPath).append("\"").append(LINE_SEPARATOR);
             builder.append("principal=\"").append(userPrincipal).append("\"").append(LINE_SEPARATOR);
             builder.append("useTicketCache=false").append(LINE_SEPARATOR);
+            builder.append("doNotPrompt=true").append(LINE_SEPARATOR);
             builder.append("storeKey=true").append(LINE_SEPARATOR);
             builder.append("refreshKrb5Config=true").append(LINE_SEPARATOR);
             //            builder.append("};").append(LINE_SEPARATOR);

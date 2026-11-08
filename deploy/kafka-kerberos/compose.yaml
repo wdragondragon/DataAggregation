@@ -8,7 +8,7 @@ services:
       KRB5_REALM: ${KRB5_REALM:-STUDIO.TEST}
       KDC_MASTER_PASSWORD: ${KDC_MASTER_PASSWORD:-studio-kdc-master-change-me}
       KAFKA_BROKER_PRINCIPAL: ${KAFKA_BROKER_PRINCIPAL:-kafka/kafka.kerberos.test@STUDIO.TEST}
-      KAFKA_EXTERNAL_BROKER_PRINCIPAL: ${KAFKA_EXTERNAL_BROKER_PRINCIPAL:-kafka/localhost@STUDIO.TEST}
+      KAFKA_EXTERNAL_BROKER_PRINCIPAL: ${KAFKA_EXTERNAL_BROKER_PRINCIPAL:-kafka/cryptomator-vault@STUDIO.TEST}
       KAFKA_CLIENT_PRINCIPAL: ${KAFKA_CLIENT_PRINCIPAL:-studio-client@STUDIO.TEST}
     command: ["init"]
     volumes:
@@ -75,7 +75,7 @@ services:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: EXTERNAL://:19092,INTERNAL://:19094,CONTROLLER://:19093
-      KAFKA_ADVERTISED_LISTENERS: EXTERNAL://localhost:19092,INTERNAL://kafka.kerberos.test:19094
+      KAFKA_ADVERTISED_LISTENERS: EXTERNAL://127.0.0.1:19092,INTERNAL://kafka.kerberos.test:19094
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: EXTERNAL:SASL_PLAINTEXT,INTERNAL:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka.kerberos.test:19093
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
@@ -87,7 +87,7 @@ services:
         com.sun.security.auth.module.Krb5LoginModule required
         useKeyTab=true storeKey=true useTicketCache=false
         keyTab="/etc/kerberos/keytabs/kafka.keytab"
-        principal="kafka/localhost@STUDIO.TEST";
+        principal="kafka/cryptomator-vault@STUDIO.TEST";
       KAFKA_LISTENER_NAME_INTERNAL_GSSAPI_SASL_JAAS_CONFIG: >-
         com.sun.security.auth.module.Krb5LoginModule required
         useKeyTab=true storeKey=true useTicketCache=false

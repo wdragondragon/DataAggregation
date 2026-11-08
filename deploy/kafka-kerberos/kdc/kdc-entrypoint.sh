@@ -4,7 +4,7 @@ set -euo pipefail
 realm="${KRB5_REALM:-STUDIO.TEST}"
 master_password="${KDC_MASTER_PASSWORD:-studio-kdc-master-change-me}"
 broker_principal="${KAFKA_BROKER_PRINCIPAL:-kafka/kafka.kerberos.test@STUDIO.TEST}"
-external_broker_principal="${KAFKA_EXTERNAL_BROKER_PRINCIPAL:-kafka/localhost@STUDIO.TEST}"
+external_broker_principal="${KAFKA_EXTERNAL_BROKER_PRINCIPAL:-kafka/cryptomator-vault@STUDIO.TEST}"
 client_principal="${KAFKA_CLIENT_PRINCIPAL:-studio-client@STUDIO.TEST}"
 
 require_supported_realm() {
