@@ -1,0 +1,27 @@
+deploy/kafka-kerberos/kdc/kdc-entrypoint.sh
+  s_bc74d69b7b32bf::t_6d16780e2f0c01 7
+deploy/kafka-kerberos/README.md
+  s_bc74d69b7b32bf::t_875301aafddf6c 12,40,56
+  s_bc74d69b7b32bf::t_6d16780e2f0c01 20
+deploy/kafka-kerberos/compose.yaml
+  s_bc74d69b7b32bf::t_875301aafddf6c 78
+  s_bc74d69b7b32bf::t_6d16780e2f0c01 11,90
+data-source-plugins/data-source-handler-queue-kafka/src/main/java/com/jdragon/aggregation/datasource/queue/kafka/KafkaAuthUtil.java
+  s_bc74d69b7b32bf::t_ec6b3446c5a9bf 172,179,185,188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "19e4eb877a80e36e409f55e6009ef34a0c861291",
+  "prompts": {},
+  "sessions": {
+    "s_bc74d69b7b32bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1af8e-aaa6-7d23-bb96-af0ec81d609e",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "jdragon <jdraong9527@gmail.com>"
+    }
+  }
+}
