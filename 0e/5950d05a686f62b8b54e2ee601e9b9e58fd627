@@ -1,0 +1,19 @@
+data-source-plugins/data-source-handler-queue-kafka/src/main/java/com/jdragon/aggregation/datasource/queue/kafka/KafkaAuthUtil.java
+  s_bc74d69b7b32bf::t_20f5b17d43523c 141-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0e5950d05a686f62b8b54e2ee601e9b9e58fd627",
+  "prompts": {},
+  "sessions": {
+    "s_bc74d69b7b32bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1af8e-aaa6-7d23-bb96-af0ec81d609e",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "jdragon <jdraong9527@gmail.com>"
+    }
+  }
+}
