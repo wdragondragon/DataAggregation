@@ -138,6 +138,11 @@ public class KafkaAuthUtil {
         if (StringUtils.isBlank(keytabPath)) {
             throw new IllegalArgumentException("Kafka Kerberos keytab path must not be blank");
         }
+        // The JDK Kerberos parser reads java.security.krb5.conf, not the
+        // Kafka property that carries the datasource field. Set it before any
+        // Kafka client or LoginModule initialization so a stale JVM-wide
+        // configuration cannot be reused.
+        setKrb5Config(krb5ConfigPath.replace('\\', '/'));
 //        setZookeeperServerPrincipal(zookeeperPrincipal);
         properties.putIfAbsent("security.protocol", "SASL_PLAINTEXT");
         properties.putIfAbsent("sasl.kerberos.service.name", "kafka");
