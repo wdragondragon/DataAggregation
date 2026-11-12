@@ -1,0 +1,44 @@
+job-plugins/transformer/pom.xml
+  s_750d3563fcafb4::t_fd4c72c68f10d6 40,52
+job-plugins/transformer/base64_str/src/main/assembly/package-zip.xml
+  s_750d3563fcafb4::t_fd4c72c68f10d6 1-24
+job-plugins/transformer/base64_str/src/main/assembly/package.xml
+  s_750d3563fcafb4::t_fd4c72c68f10d6 1-24
+job-plugins/transformer/base64_str/src/main/java/com/jdragon/aggregation/transformer/impl/Base64Str.java
+  s_750d3563fcafb4::t_fd4c72c68f10d6 1-108
+job-plugins/transformer/base64_str/README.md
+  s_750d3563fcafb4::t_fd4c72c68f10d6 1-35,37-39,41-49
+  s_750d3563fcafb4::t_a8daf22ca7e664 40
+  s_750d3563fcafb4::t_5acbedf9f3615e 36
+job-plugins/transformer/base64_str/src/main/resources/plugin_job_template.json
+  s_750d3563fcafb4::t_fd4c72c68f10d6 1-7
+job-plugins/transformer/base64_str/src/test/java/com/jdragon/aggregation/transformer/impl/Base64StrPackagedIT.java
+  s_750d3563fcafb4::t_a8daf22ca7e664 188-191
+  s_750d3563fcafb4::t_9ead7dfb7d6985 1-187,192-259
+job-plugins/transformer/base64_str/src/test/java/com/jdragon/aggregation/transformer/impl/Base64StrTest.java
+  s_750d3563fcafb4::t_5722b402025fc5 1-225
+job-plugins/transformer/base64_str/pom.xml
+  s_750d3563fcafb4::t_5722b402025fc5 41-44
+  s_750d3563fcafb4::t_fd4c72c68f10d6 1-40,45-82
+job-plugins/transformer/transformer.txt
+  s_750d3563fcafb4::t_fd4c72c68f10d6 34
+  s_750d3563fcafb4::t_daed6a64a8e61b 20
+job-plugins/transformer/base64_str/src/main/resources/transformer.json
+  s_750d3563fcafb4::t_fd4c72c68f10d6 1-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0de6e90d6ad58abd82846fb868f87ec3c412577c",
+  "prompts": {},
+  "sessions": {
+    "s_750d3563fcafb4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cfcf-fe0a-7630-a99f-06223bba430f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "jdragon <jdraong9527@gmail.com>"
+    }
+  }
+}
