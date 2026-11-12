@@ -1,0 +1,6 @@
+{
+  "name": "base64_str",
+  "class": "com.jdragon.aggregation.transformer.impl.Base64Str",
+  "description": "Base64 text encoding and decoding with standard or URL-safe alphabet and an explicit charset",
+  "developer": "jdragon"
+}

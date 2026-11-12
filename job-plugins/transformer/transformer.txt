@@ -17,6 +17,7 @@ replace_str	替换字符
 underline_toCamel_str	下划线转驼峰
 camel_toUnderline_str	驼峰转下划线
 number_cut	保留小数点后n位
+base64_str	Base64 编码解码
 
 脱敏
 SHA256_str	SHA256加密

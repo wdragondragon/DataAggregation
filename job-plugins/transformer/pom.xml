@@ -37,6 +37,7 @@
         <module>3des_str</module>
         <module>des_str</module>
         <module>aes_str</module>
+        <module>base64_str</module>
         <module>underline_toCamel_str</module>
         <module>value_filter</module>
         <module>replace_str</module>

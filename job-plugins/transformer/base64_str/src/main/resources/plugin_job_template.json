@@ -1,0 +1,7 @@
+{
+  "name": "base64_str",
+  "parameter": {
+    "columnIndex": 0,
+    "paras": ["encode", "standard", "UTF-8"]
+  }
+}
