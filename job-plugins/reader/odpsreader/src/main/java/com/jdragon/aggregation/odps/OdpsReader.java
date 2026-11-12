@@ -4,15 +4,19 @@ import com.alibaba.fastjson.JSONObject;
 import com.aliyun.odps.Column;
 import com.aliyun.odps.Instance;
 import com.aliyun.odps.Odps;
+import com.aliyun.odps.Partition;
 import com.aliyun.odps.PartitionSpec;
+import com.aliyun.odps.Table;
 import com.aliyun.odps.TableSchema;
 import com.aliyun.odps.data.Record;
+import com.aliyun.odps.data.RecordReader;
 import com.aliyun.odps.task.SQLTask;
 import com.aliyun.odps.tunnel.InstanceTunnel;
 import com.aliyun.odps.tunnel.TableTunnel;
 import com.aliyun.odps.tunnel.io.TunnelRecordReader;
 import com.jdragon.aggregation.commons.element.DoubleColumn;
 import com.jdragon.aggregation.commons.util.Configuration;
+import com.jdragon.aggregation.commons.util.DynamicFunctionResolver;
 import com.jdragon.aggregation.core.plugin.RecordSender;
 import com.jdragon.aggregation.core.plugin.spi.Reader;
 import com.jdragon.aggregation.core.utils.ColumnUtils;
@@ -23,8 +27,11 @@ import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -48,11 +55,14 @@ public class OdpsReader extends Reader.Job {
     private String partitionSpec;
     private List<String> columns;
     private boolean includePartitionColumns;
+    private boolean autoPartitionScan;
+    private volatile boolean cancelled;
     private long offset;
     private long maxRows;
 
     @Override
     public void init() {
+        cancelled = false;
         Configuration connectConfig = this.getPluginJobConf().getConfiguration("connect");
         if (connectConfig == null) {
             throw new IllegalArgumentException("Missing odps reader connect config.");
@@ -70,6 +80,7 @@ public class OdpsReader extends Reader.Job {
         partitionSpec = this.getPluginJobConf().getString("partitionSpec");
         columns = normalizeColumns(this.getPluginJobConf().getList("columns", String.class));
         includePartitionColumns = this.getPluginJobConf().getBool("includePartitionColumns", false);
+        autoPartitionScan = this.getPluginJobConf().getBool("autoPartitionScan", false);
         offset = this.getPluginJobConf().getLong("offset", 0L);
         maxRows = this.getPluginJobConf().getLong("maxRows", 0L);
     }
@@ -98,14 +109,33 @@ public class OdpsReader extends Reader.Job {
 
     @Override
     public void prepare() {
+        prepare(LocalDateTime.now());
+    }
+
+    void prepare(LocalDateTime baseTime) {
         validateConnect(dataSource);
         validateReadModeSqlCompatibility(configuredReadMode, selectSql);
         if (READ_MODE_SQL.equals(readMode)) {
+            if (isBlank(selectSql)) {
+                partitionSpec = resolveDynamicFunctions(partitionSpec, "partitionSpec", baseTime);
+            } else {
+                selectSql = resolveDynamicFunctions(selectSql, "selectSql", baseTime);
+            }
             selectSql = resolveSelectSql(selectSql, table, columns, partitionSpec);
         } else {
+            partitionSpec = resolveDynamicFunctions(partitionSpec, "partitionSpec", baseTime);
             requireNotBlank(table, "table");
         }
         validateReadWindow(offset, maxRows);
+    }
+
+    private static String resolveDynamicFunctions(String value, String fieldName, LocalDateTime baseTime) {
+        try {
+            return DynamicFunctionResolver.replaceAll(value, baseTime, DynamicFunctionResolver.Mode.STRICT);
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException("Invalid dynamic function in odps " + fieldName + ": "
+                    + exception.getMessage(), exception);
+        }
     }
 
     @Override
@@ -157,31 +187,115 @@ public class OdpsReader extends Reader.Job {
     }
 
     private void startTunnelRead(RecordSender recordSender) {
-        TunnelRecordReader reader = null;
+        PartitionSpec currentPartition = null;
+        long started = System.currentTimeMillis();
+        ReadWindow window = new ReadWindow(offset, maxRows);
         try {
             Odps odps = OdpsUtils.createOdps(dataSource);
-            TableTunnel.DownloadSession downloadSession = createDownloadSession(odps);
-            long total = downloadSession.getRecordCount();
-            long readCount = readCount(total, offset, maxRows);
-            if (readCount <= 0) {
-                LOG.info("odps tunnel reader has no rows to read. table={}, partition={}, total={}, offset={}",
-                        table, partitionSpec, total, offset);
-                return;
+            List<PartitionSpec> partitions = resolveTunnelPartitions(odps);
+            checkCancelled();
+            LOG.info("odps tunnel read started. project={}, table={}, partitions={}, offset={}, maxRows={}",
+                    resolveProjectName(dataSource), table, partitions.size(), offset, maxRows);
+            for (int i = 0; i < partitions.size() && !window.isComplete(); i++) {
+                checkCancelled();
+                currentPartition = partitions.get(i);
+                long partitionStarted = System.currentTimeMillis();
+                long emittedBefore = window.emitted;
+                readTunnelPartition(odps, currentPartition, recordSender, window);
+                checkCancelled();
+                LOG.info("odps tunnel partition completed. table={}, partition={}, position={}/{}, rows={}, emitted={}, elapsedMs={}",
+                        table, currentPartition, i + 1, partitions.size(), window.emitted - emittedBefore,
+                        window.emitted, System.currentTimeMillis() - partitionStarted);
             }
+            checkCancelled();
+            LOG.info("odps tunnel read completed. project={}, table={}, emitted={}, elapsedMs={}",
+                    resolveProjectName(dataSource), table, window.emitted, System.currentTimeMillis() - started);
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            throw new RuntimeException("odps tunnel read failed. table=" + table + ", partition="
+                    + currentPartition + ", emitted=" + window.emitted + ": " + e.getMessage(), e);
+        }
+    }
 
-            TableSchema schema = downloadSession.getSchema();
-            List<String> outputColumns = resolveTunnelColumns(columns, schema, includePartitionColumns);
-            Map<String, String> partitionValues = partitionValues(partitionSpec);
+    List<PartitionSpec> resolveTunnelPartitions(Odps odps) throws Exception {
+        checkCancelled();
+        if (!isBlank(partitionSpec)) {
+            return Collections.singletonList(new PartitionSpec(partitionSpec));
+        }
+        Table odpsTable = odps.tables().get(resolveProjectName(dataSource), table);
+        odpsTable.reload();
+        checkCancelled();
+        if (!odpsTable.isPartitioned()) {
+            return Collections.singletonList(null);
+        }
+        if (!autoPartitionScan) {
+            throw new IllegalArgumentException("ODPS table " + table
+                    + " is partitioned. Configure partitionSpec or enable autoPartitionScan.");
+        }
+        // The SDK iterator uses marker pagination with 1000 partitions per page and no total cap.
+        return collectPartitions(odpsTable.getPartitionIterator(), odpsTable.getSchema().getPartitionColumns());
+    }
 
-            reader = downloadSession.openRecordReader(offset, readCount);
+    List<PartitionSpec> collectPartitions(Iterator<Partition> iterator, List<Column> partitionColumns)
+            throws InterruptedException {
+        List<PartitionSpec> partitions = new ArrayList<>();
+        while (true) {
+            checkCancelled();
+            if (!iterator.hasNext()) {
+                break;
+            }
+            checkCancelled();
+            PartitionSpec source = iterator.next().getPartitionSpec();
+            PartitionSpec normalized = new PartitionSpec();
+            for (Column column : partitionColumns) {
+                normalized.set(column.getName(), source.get(column.getName()));
+            }
+            partitions.add(normalized);
+        }
+        checkCancelled();
+        partitions.sort(Comparator.comparing(PartitionSpec::toString));
+        checkCancelled();
+        return partitions;
+    }
+
+    void readTunnelPartition(Odps odps, PartitionSpec partition, RecordSender recordSender, ReadWindow window)
+            throws Exception {
+        checkCancelled();
+        TableTunnel.DownloadSession downloadSession = createDownloadSession(odps, partition);
+        checkCancelled();
+        long total = downloadSession.getRecordCount();
+        long start = Math.min(window.remainingOffset, total);
+        long count = window.readCount(total);
+        if (count <= 0) {
+            return;
+        }
+        List<String> outputColumns = resolveTunnelColumns(columns, downloadSession.getSchema(), includePartitionColumns);
+        Map<String, String> partitionValues = partitionValues(partition);
+        checkCancelled();
+        RecordReader reader = null;
+        try {
+            reader = openTunnelRecordReader(downloadSession, start, count);
             Record odpsRecord;
-            while ((odpsRecord = reader.read()) != null) {
+            long partitionEmitted = 0;
+            while (true) {
+                checkCancelled();
+                odpsRecord = reader.read();
+                checkCancelled();
+                if (odpsRecord == null) {
+                    break;
+                }
+                // Read through EOF so the SDK validates its stream count and checksum.
+                if (partitionEmitted >= count || window.isComplete()) {
+                    throw new IllegalStateException("ODPS download returned more records than requested");
+                }
                 com.jdragon.aggregation.commons.element.Record record = recordSender.createRecord();
                 addColumns(record, outputColumns, odpsRecord, partitionValues);
                 recordSender.sendToWriter(record);
+                window.emitted++;
+                partitionEmitted++;
             }
-        } catch (Exception e) {
-            throw new RuntimeException("odps tunnel read failed: " + e.getMessage(), e);
         } finally {
             if (reader != null) {
                 try {
@@ -193,7 +307,11 @@ public class OdpsReader extends Reader.Job {
         }
     }
 
-    private TableTunnel.DownloadSession createDownloadSession(Odps odps) throws Exception {
+    RecordReader openTunnelRecordReader(TableTunnel.DownloadSession session, long start, long count) throws Exception {
+        return session.openRecordReader(start, count);
+    }
+
+    private TableTunnel.DownloadSession createDownloadSession(Odps odps, PartitionSpec partition) throws Exception {
         String project = resolveProjectName(dataSource);
         TableTunnel tunnel = new TableTunnel(odps);
         String tunnelEndpoint = getTunnelEndpoint(dataSource);
@@ -201,10 +319,41 @@ public class OdpsReader extends Reader.Job {
             tunnel.setEndpoint(tunnelEndpoint);
         }
 
-        if (isBlank(partitionSpec)) {
+        if (partition == null) {
             return tunnel.createDownloadSession(project, table);
         }
-        return tunnel.createDownloadSession(project, table, new PartitionSpec(partitionSpec));
+        return tunnel.createDownloadSession(project, table, partition);
+    }
+
+    private void checkCancelled() throws InterruptedException {
+        if (cancelled || Thread.currentThread().isInterrupted()) {
+            throw new InterruptedException("ODPS partition read interrupted");
+        }
+    }
+
+    static final class ReadWindow {
+        private long remainingOffset;
+        private final long maxRows;
+        private long emitted;
+
+        ReadWindow(long offset, long maxRows) {
+            validateReadWindow(offset, maxRows);
+            this.remainingOffset = offset;
+            this.maxRows = maxRows;
+        }
+
+        long readCount(long total) {
+            if (isComplete()) {
+                return 0;
+            }
+            long count = OdpsReader.readCount(total, remainingOffset, maxRows > 0 ? maxRows - emitted : 0);
+            remainingOffset -= Math.min(remainingOffset, total);
+            return count;
+        }
+
+        boolean isComplete() {
+            return maxRows > 0 && emitted >= maxRows;
+        }
     }
 
     private InstanceTunnel.DownloadSession createSqlDownloadSession(Odps odps, Instance instance) throws Exception {
@@ -345,6 +494,16 @@ public class OdpsReader extends Reader.Job {
         return values;
     }
 
+    static Map<String, String> partitionValues(PartitionSpec partitionSpec) {
+        Map<String, String> values = new LinkedHashMap<>();
+        if (partitionSpec != null) {
+            for (String key : partitionSpec.keys()) {
+                values.put(key, partitionSpec.get(key));
+            }
+        }
+        return values;
+    }
+
     static String resolveSelectSql(String configuredSql, String table, List<String> columns, String partitionSpec) {
         if (!isBlank(configuredSql)) {
             return normalizeSelectSql(configuredSql);
@@ -474,6 +633,7 @@ public class OdpsReader extends Reader.Job {
 
     @Override
     public void destroy() {
-        // do nothing
+        // The SDK may clear a thread interrupt while retrying a network request.
+        cancelled = true;
     }
 }

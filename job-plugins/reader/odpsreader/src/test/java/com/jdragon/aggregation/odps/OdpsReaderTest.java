@@ -10,7 +10,9 @@ import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
 import com.jdragon.aggregation.datasource.odps.OdpsUtils;
 import org.junit.Test;
 
+import java.lang.reflect.Field;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -20,8 +22,12 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.fail;
 
 public class OdpsReaderTest {
+
+    private static final LocalDateTime EXECUTION_TIME = LocalDateTime.of(2026, 11, 12, 10, 0, 0);
 
     @Test
     public void resolveReadModeShouldUseSqlWhenAutoHasSelectSql() {
@@ -48,6 +54,93 @@ public class OdpsReaderTest {
     @Test
     public void resolveSelectSqlShouldUseConfiguredSqlWhenPresent() {
         assertEquals("select * from t;", OdpsReader.resolveSelectSql("select * from t", "ignored", Arrays.asList("id"), null));
+    }
+
+    @Test
+    public void customSqlShouldResolveFunctionsWithOneTimeAndIgnoreUnusedPartition() throws Exception {
+        String sql = " select * from orders where dt = '$getCurrentTime(\"yyyyMMdd\", \"-1d\")'"
+                + " and today = '$getCurrentTime(\"yyyyMMdd\")' and region = '$toLower(\"CN\")'"
+                + " and created_at < GETDATE();; ";
+        for (String mode : Arrays.asList("sql", "auto")) {
+            Configuration config = readerConfig(mode, sql, "dt='$unknown(\"ignored\")'");
+            OdpsReader reader = initializedReader(config);
+            reader.prepare(EXECUTION_TIME);
+
+            assertEquals("sql", readerField(reader, "readMode"));
+            assertEquals("select * from orders where dt = '20261111' and today = '20261112'"
+                    + " and region = 'cn' and created_at < GETDATE();", readerField(reader, "selectSql"));
+            assertEquals(sql, config.getString("selectSql"));
+        }
+    }
+
+    @Test
+    public void generatedSqlShouldResolvePartitionsBeforeSplittingAndEscapeValues() throws Exception {
+        Configuration config = readerConfig("sql", "", "dt='$getCurrentTime(\"yyyyMMdd\", \"-1d\")',"
+                + "today='$getCurrentTime(\"yyyyMMdd\")',region='$toLower(\"O'NEIL\")'");
+        config.set("columns", Arrays.asList("id", "name"));
+        OdpsReader reader = initializedReader(config);
+        reader.prepare(EXECUTION_TIME);
+
+        assertEquals("select id, name from orders where dt = '20261111' and today = '20261112'"
+                + " and region = 'o''neil';", readerField(reader, "selectSql"));
+    }
+
+    @Test
+    public void invalidFunctionsShouldFailPreparationWithFieldNameAndCause() {
+        for (String expression : Arrays.asList("$unknown(\"x\")", "$getCurrentTime(\"yyyyMMdd\", \"-xd\")",
+                "$getCurrentTime(\"yyyyMMdd\"", "$toLower(${region})")) {
+            for (String mode : Arrays.asList("tunnel", "sql")) {
+                for (boolean customSql : Arrays.asList(false, true)) {
+                    if (customSql && "tunnel".equals(mode)) {
+                        continue;
+                    }
+                    String fieldName = customSql ? "selectSql" : "partitionSpec";
+                    Configuration config = readerConfig(mode,
+                            customSql ? "select * from orders where dt = '" + expression + "'" : "",
+                            customSql ? "" : "dt='" + expression + "'");
+                    try {
+                        initializedReader(config).prepare(EXECUTION_TIME);
+                        fail("Expected invalid expression in " + fieldName + ": " + expression);
+                    } catch (IllegalArgumentException expected) {
+                        assertTrue(expected.getMessage().contains(fieldName));
+                        assertNotNull(expected.getCause());
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    public void eachExecutionShouldResolveOriginalConfigurationAgain() throws Exception {
+        for (String mode : Arrays.asList("tunnel", "sql")) {
+            String partition = "dt='$getCurrentTime(\"yyyyMMdd\", \"-1d\")'";
+            Configuration config = readerConfig(mode, "", partition);
+            OdpsReader first = initializedReader(config);
+            first.prepare(EXECUTION_TIME);
+            assertEquals("dt='20261111'", readerField(first, "partitionSpec"));
+            assertEquals(partition, config.getString("partitionSpec"));
+
+            OdpsReader next = initializedReader(config);
+            next.prepare(EXECUTION_TIME.plusDays(1));
+            assertEquals("dt='20261112'", readerField(next, "partitionSpec"));
+            assertEquals(partition, config.getString("partitionSpec"));
+        }
+    }
+
+    @Test
+    public void publicPreparationShouldResolveFunctionsAndRejectTunnelSql() throws Exception {
+        OdpsReader reader = initializedReader(readerConfig("auto", "", "region='$toLower(\"CN\")'"));
+        reader.prepare();
+        assertEquals("tunnel", readerField(reader, "readMode"));
+        assertEquals("region='cn'", readerField(reader, "partitionSpec"));
+
+        reader = initializedReader(readerConfig("tunnel", "select * from orders", ""));
+        try {
+            reader.prepare();
+            fail("Explicit Tunnel mode must reject selectSql");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("selectSql requires"));
+        }
     }
 
     @Test
@@ -208,5 +301,32 @@ public class OdpsReaderTest {
     public void normalizeColumnsShouldTrimAndDropBlankColumns() {
         List<String> columns = OdpsReader.normalizeColumns(Arrays.asList(" id ", "", null, "name"));
         assertEquals(Arrays.asList("id", "name"), columns);
+    }
+
+    private static Configuration readerConfig(String mode, String sql, String partition) {
+        Configuration config = Configuration.newDefault();
+        config.set("connect.type", "odps");
+        config.set("connect.host", "http://127.0.0.1:1");
+        config.set("connect.database", "project");
+        config.set("connect.userName", "dummy-access-id");
+        config.set("connect.password", "dummy-access-key");
+        config.set("table", "orders");
+        config.set("readMode", mode);
+        config.set("selectSql", sql);
+        config.set("partitionSpec", partition);
+        return config;
+    }
+
+    private static OdpsReader initializedReader(Configuration config) {
+        OdpsReader reader = new OdpsReader();
+        reader.setPluginJobConf(config);
+        reader.init();
+        return reader;
+    }
+
+    private static Object readerField(OdpsReader reader, String name) throws Exception {
+        Field field = OdpsReader.class.getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(reader);
     }
 }

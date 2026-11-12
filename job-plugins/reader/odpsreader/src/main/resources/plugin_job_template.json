@@ -21,6 +21,7 @@
       "*"
     ],
     "includePartitionColumns": false,
+    "autoPartitionScan": false,
     "offset": 0,
     "maxRows": 0
   }
