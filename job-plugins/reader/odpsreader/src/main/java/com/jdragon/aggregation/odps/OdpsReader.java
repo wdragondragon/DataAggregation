@@ -454,11 +454,42 @@ public class OdpsReader extends Reader.Job {
             Object value;
             if (partitionValues.containsKey(column)) {
                 value = partitionValues.get(column);
+                target.addColumn(toColumn(value));
             } else {
-                value = row.get(column);
+                target.addColumn(toTunnelColumn(row, column));
             }
-            target.addColumn(toColumn(value));
         }
+    }
+
+    /**
+     * Tunnel may expose ODPS STRING values as byte arrays. Use the SDK's typed
+     * accessor for text columns so they do not cross the framework boundary as
+     * BytesColumn; retain raw bytes for actual BINARY columns.
+     */
+    static com.jdragon.aggregation.commons.element.Column toTunnelColumn(Record row, String column) {
+        com.aliyun.odps.Column schemaColumn = findColumn(row, column);
+        if (schemaColumn != null && isTextColumn(schemaColumn.getType())) {
+            return toColumn(row.getString(column));
+        }
+        if (schemaColumn != null && schemaColumn.getType() == com.aliyun.odps.OdpsType.BINARY) {
+            return toColumn(row.getBytes(column));
+        }
+        return toColumn(row.get(column));
+    }
+
+    private static com.aliyun.odps.Column findColumn(Record row, String column) {
+        for (com.aliyun.odps.Column schemaColumn : row.getColumns()) {
+            if (schemaColumn != null && schemaColumn.getName().equals(column)) {
+                return schemaColumn;
+            }
+        }
+        return null;
+    }
+
+    private static boolean isTextColumn(com.aliyun.odps.OdpsType type) {
+        return type == com.aliyun.odps.OdpsType.STRING
+                || type == com.aliyun.odps.OdpsType.CHAR
+                || type == com.aliyun.odps.OdpsType.VARCHAR;
     }
 
     static com.jdragon.aggregation.commons.element.Column toColumn(Object value) {

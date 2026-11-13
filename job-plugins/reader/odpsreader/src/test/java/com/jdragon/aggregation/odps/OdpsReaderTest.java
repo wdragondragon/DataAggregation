@@ -8,10 +8,16 @@ import com.jdragon.aggregation.commons.util.Configuration;
 import com.jdragon.aggregation.core.transport.record.DefaultRecord;
 import com.jdragon.aggregation.datasource.BaseDataSourceDTO;
 import com.jdragon.aggregation.datasource.odps.OdpsUtils;
+import com.aliyun.odps.Column;
+import com.aliyun.odps.OdpsType;
+import com.aliyun.odps.TableSchema;
+import com.aliyun.odps.data.ArrayRecord;
+import com.aliyun.odps.data.Binary;
 import org.junit.Test;
 
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -280,6 +286,24 @@ public class OdpsReaderTest {
         assertEquals(Double.valueOf(12.34D), record.getColumn(2).asDouble());
         assertTrue(record.getColumn(3) instanceof BoolColumn);
         assertEquals(Boolean.TRUE, record.getColumn(3).asBoolean());
+    }
+
+    @Test
+    public void tunnelColumnsShouldDecodeTextBytesButPreserveBinaryBytes() {
+        TableSchema schema = new TableSchema();
+        schema.addColumn(new Column("name", OdpsType.STRING));
+        schema.addColumn(new Column("payload", OdpsType.BINARY));
+        ArrayRecord source = new ArrayRecord(schema);
+        source.set("name", "中文".getBytes(StandardCharsets.UTF_8));
+        source.setBinary("payload", new Binary(new byte[]{0, 1, 2}));
+
+        DefaultRecord target = new DefaultRecord();
+        OdpsReader.addColumns(target, Arrays.asList("payload", "name"), source, java.util.Collections.emptyMap());
+
+        assertEquals(2, target.getColumnNumber());
+        assertTrue(target.getColumn(0) instanceof com.jdragon.aggregation.commons.element.BytesColumn);
+        assertTrue(target.getColumn(1) instanceof StringColumn);
+        assertEquals("中文", target.getColumn(1).asString());
     }
 
     @Test
