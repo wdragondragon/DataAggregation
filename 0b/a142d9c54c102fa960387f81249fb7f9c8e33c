@@ -1,0 +1,24 @@
+job-plugins/reader/odpsreader/src/test/java/com/jdragon/aggregation/odps/OdpsReaderTest.java
+  s_750d3563fcafb4::t_e1019c49e00b77 15,298
+  s_750d3563fcafb4::t_666eb969418f31 11-14,20,291-297,299-308
+job-plugins/reader/odpsreader/src/main/java/com/jdragon/aggregation/odps/OdpsReader.java
+  s_750d3563fcafb4::t_ee6546df5d24f5 475
+  s_750d3563fcafb4::t_666eb969418f31 457,459,464-473,477-494
+  s_750d3563fcafb4::t_e1019c49e00b77 474,476
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0ba142d9c54c102fa960387f81249fb7f9c8e33c",
+  "prompts": {},
+  "sessions": {
+    "s_750d3563fcafb4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cfcf-fe0a-7630-a99f-06223bba430f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "jdragon <jdraong9527@gmail.com>"
+    }
+  }
+}
