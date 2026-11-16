@@ -1,0 +1,19 @@
+job-plugins/reader/odpsreader/README.md
+  s_32fb93ac28d512::t_1701f214b7435c 42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b54c8acc6061165db3b90c1bbf542cef1e493953",
+  "prompts": {},
+  "sessions": {
+    "s_32fb93ac28d512": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cebf-0d96-7900-8ffc-2a0308c5ee02",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "jdragon <jdraong9527@gmail.com>"
+    }
+  }
+}
