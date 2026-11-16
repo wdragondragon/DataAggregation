@@ -39,7 +39,7 @@ select * from orders where dt = '$getCurrentTime("yyyyMMdd", "-1d")'
 
 SQL 模式没有配置 `selectSql` 时，先替换 `partitionSpec`，再生成 SQL；配置了 `selectSql` 时仅处理该 SQL，忽略 `partitionSpec`。`auto` 模式沿用原有模式选择。MaxCompute 原生 SQL 函数由 MaxCompute 执行；本次接入仅替换 `$函数名(...)`，不增加 `${bizdate}` 等变量、函数嵌套或分区范围表达式。
 
-本次动态函数接入只需升级 ODPS Reader 插件，Worker 运行时需已有带 `DynamicFunctionResolver` 的 aggregation commons；现有 release_1106/release_1112 基线构建已包含该类。此项能力无需新增数据库迁移或修改前端。
+Studio 采集任务的 ODPS 分区条件和自定义 SQL 支持通过动态函数弹窗插入表达式。运行时需升级 ODPS Reader 插件，Worker 需已有带 `DynamicFunctionResolver` 的 aggregation commons；现有 release_1106/release_1112 基线构建已包含该类。弹窗入口需更新 Studio 前端，无需新增数据库迁移。
 
 ## 分区读取行为
 
